@@ -1,0 +1,98 @@
+{
+  "id": "starter_zone",
+  "name": "Meadow of Beginnings",
+  "ground": {
+    "color": { "r": 0.35, "g": 0.55, "b": 0.25 },
+    "size": 120,
+    "heightVariation": 0.15
+  },
+  "fog": {
+    "color": { "r": 0.7, "g": 0.85, "b": 0.95 },
+    "density": 0.003
+  },
+  "playerSpawn": { "x": 0, "y": 0, "z": -50 },
+  "objects": [
+    { "type": "tree", "position": { "x": -15, "y": 0, "z": -20 }, "scale": 1.2, "model": "Pine.glb" },
+    { "type": "tree", "position": { "x": 10, "y": 0, "z": -35 }, "scale": 0.9, "model": "Pine.glb" },
+    { "type": "tree", "position": { "x": -30, "y": 0, "z": -10 }, "scale": 1.1, "model": "Pine (1).glb" },
+    { "type": "tree", "position": { "x": 25, "y": 0, "z": -15 }, "scale": 1.0, "model": "Pine.glb" },
+    { "type": "tree", "position": { "x": -10, "y": 0, "z": 15 }, "scale": 0.8, "model": "Pine (1).glb" },
+    { "type": "tree", "position": { "x": 40, "y": 0, "z": 5 }, "scale": 1.3, "model": "Pine.glb" },
+    { "type": "tree", "position": { "x": -35, "y": 0, "z": 20 }, "scale": 1.0, "model": "Pine (2).glb" },
+    { "type": "tree", "position": { "x": 15, "y": 0, "z": 40 }, "scale": 1.1, "model": "Pine.glb" },
+    { "type": "tree", "position": { "x": -25, "y": 0, "z": -35 }, "scale": 0.9, "model": "Pine (1).glb" },
+    { "type": "tree", "position": { "x": 35, "y": 0, "z": -40 }, "scale": 1.2, "model": "Pine (2).glb" },
+    { "type": "tree", "position": { "x": -45, "y": 0, "z": 10 }, "scale": 1.0, "model": "Pine.glb" },
+    { "type": "tree", "position": { "x": 45, "y": 0, "z": 25 }, "scale": 0.8, "model": "Pine (1).glb" },
+    { "type": "tree", "position": { "x": -5, "y": 0, "z": -30 }, "scale": 1.1, "model": "Pine (2).glb" },
+    { "type": "tree", "position": { "x": 20, "y": 0, "z": -35 }, "scale": 1.0, "model": "Pine.glb" },
+    { "type": "tree", "position": { "x": -50, "y": 0, "z": -45 }, "scale": 1.0, "model": "Pine (1).glb" },
+    { "type": "tree", "position": { "x": 50, "y": 0, "z": -30 }, "scale": 0.9, "model": "Pine.glb" },
+    { "type": "tree", "position": { "x": -40, "y": 0, "z": 40 }, "scale": 1.1, "model": "Pine (2).glb" },
+    { "type": "tree", "position": { "x": 30, "y": 0, "z": 45 }, "scale": 1.0, "model": "Pine (1).glb" },
+    { "type": "rock", "position": { "x": 5, "y": 0, "z": 10 }, "scale": 1.0, "model": "Rock Medium.glb" },
+    { "type": "rock", "position": { "x": -20, "y": 0, "z": -5 }, "scale": 1.5, "model": "Rock Medium (1).glb" },
+    { "type": "rock", "position": { "x": 30, "y": 0, "z": 15 }, "scale": 0.7, "model": "Rock Medium.glb" },
+    { "type": "rock", "position": { "x": -10, "y": 0, "z": 30 }, "scale": 1.2, "model": "Rock Medium (1).glb" },
+    { "type": "rock", "position": { "x": 15, "y": 0, "z": -20 }, "scale": 0.9, "model": "Rock Medium.glb" },
+    { "type": "rock", "position": { "x": -40, "y": 0, "z": -25 }, "scale": 1.1, "model": "Rock Medium (1).glb" },
+    { "type": "rock", "position": { "x": -48, "y": 0, "z": 30 }, "scale": 0.8, "model": "Rock Medium.glb" },
+    { "type": "rock", "position": { "x": 48, "y": 0, "z": 10 }, "scale": 1.0, "model": "Rock Medium (1).glb" }
+  ],
+  "structures": [
+    {
+      "type": "platform",
+      "position": { "x": -5, "y": 0, "z": -52 },
+      "size": { "w": 6, "h": 0.3, "d": 6 },
+      "color": { "r": 0.55, "g": 0.45, "b": 0.3 }
+    },
+    {
+      "type": "fence",
+      "position": { "x": -2, "y": 0, "z": -46 },
+      "size": { "w": 8, "h": 0.8, "d": 0.1 },
+      "color": { "r": 0.45, "g": 0.3, "b": 0.15 }
+    },
+    {
+      "type": "fence",
+      "position": { "x": -2, "y": 0, "z": -54 },
+      "size": { "w": 8, "h": 0.8, "d": 0.1 },
+      "color": { "r": 0.45, "g": 0.3, "b": 0.15 }
+    },
+    {
+      "type": "house",
+      "position": { "x": -10, "y": 0, "z": -42 },
+      "size": { "w": 5, "h": 3, "d": 4 },
+      "wallsColor": { "r": 0.8, "g": 0.7, "b": 0.55 },
+      "roofColor": { "r": 0.6, "g": 0.25, "b": 0.15 }
+    },
+    {
+      "type": "house",
+      "position": { "x": 8, "y": 0, "z": -42 },
+      "size": { "w": 4, "h": 2.5, "d": 3.5 },
+      "wallsColor": { "r": 0.75, "g": 0.65, "b": 0.5 },
+      "roofColor": { "r": 0.5, "g": 0.2, "b": 0.1 }
+    }
+  ],
+  "teleporters": [
+    {
+      "id": "tp_to_forest",
+      "position": { "x": 50, "y": 0, "z": -25 },
+      "targetZone": "forest_zone",
+      "targetSpawn": "tp_from_starter",
+      "radius": 2,
+      "label": "Whispering Woods"
+    },
+    {
+      "id": "tp_to_astir",
+      "position": { "x": -50, "y": 0, "z": 0 },
+      "targetZone": "astir_central",
+      "targetSpawn": "tp_to_starter",
+      "radius": 2,
+      "label": "Astir Central Plaza"
+    }
+  ],
+  "lights": [
+    { "type": "point", "position": { "x": -7, "y": 3.5, "z": -42 }, "intensity": 0.5, "range": 10, "color": { "r": 1, "g": 0.9, "b": 0.7 } },
+    { "type": "point", "position": { "x": 10, "y": 3, "z": -42 }, "intensity": 0.4, "range": 8, "color": { "r": 1, "g": 0.85, "b": 0.6 } }
+  ]
+}

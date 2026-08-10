@@ -1,0 +1,61 @@
+{
+  "id": "tumblejean_sand_sea",
+  "name": "Tumblejean Sand Sea",
+  "ground": {
+    "color": { "r": 0.85, "g": 0.7, "b": 0.4 },
+    "size": 200,
+    "heightVariation": 0.25
+  },
+  "fog": {
+    "color": { "r": 0.8, "g": 0.6, "b": 0.35 },
+    "density": 0.005
+  },
+  "playerSpawn": { "x": 0, "y": 0, "z": -80 },
+  "objects": [
+    { "type": "rock", "position": { "x": -25, "y": 0, "z": -65 }, "scale": 2.5, "model": "Rock Medium.glb" },
+    { "type": "rock", "position": { "x": 30, "y": 0, "z": -55 }, "scale": 2.8, "model": "Rock Medium (1).glb" },
+    { "type": "rock", "position": { "x": -45, "y": 0, "z": -45 }, "scale": 2.2, "model": "Rock Medium.glb" },
+    { "type": "rock", "position": { "x": 50, "y": 0, "z": -40 }, "scale": 3.0, "model": "Rock Medium (1).glb" },
+    { "type": "rock", "position": { "x": -35, "y": 0, "z": -30 }, "scale": 2.6, "model": "Rock Medium.glb" },
+    { "type": "rock", "position": { "x": 40, "y": 0, "z": -25 }, "scale": 2.4, "model": "Rock Medium (1).glb" },
+    { "type": "rock", "position": { "x": -55, "y": 0, "z": -15 }, "scale": 2.8, "model": "Rock Medium.glb" },
+    { "type": "rock", "position": { "x": 60, "y": 0, "z": -10 }, "scale": 2.5, "model": "Rock Medium (1).glb" },
+    { "type": "rock", "position": { "x": -40, "y": 0, "z": 0 }, "scale": 2.3, "model": "Rock Medium.glb" },
+    { "type": "rock", "position": { "x": 45, "y": 0, "z": 5 }, "scale": 2.7, "model": "Rock Medium (1).glb" },
+    { "type": "rock", "position": { "x": -60, "y": 0, "z": 15 }, "scale": 2.5, "model": "Rock Medium.glb" },
+    { "type": "rock", "position": { "x": 55, "y": 0, "z": 20 }, "scale": 2.9, "model": "Rock Medium (1).glb" },
+    { "type": "rock", "position": { "x": -30, "y": 0, "z": 30 }, "scale": 2.0, "model": "Rock Medium.glb" },
+    { "type": "rock", "position": { "x": 35, "y": 0, "z": 35 }, "scale": 2.3, "model": "Rock Medium (1).glb" },
+    { "type": "rock", "position": { "x": -50, "y": 0, "z": 45 }, "scale": 2.6, "model": "Rock Medium.glb" },
+    { "type": "rock", "position": { "x": 55, "y": 0, "z": 50 }, "scale": 2.2, "model": "Rock Medium (1).glb" },
+    { "type": "rock", "position": { "x": -65, "y": 0, "z": 55 }, "scale": 3.2, "model": "Rock Medium.glb" },
+    { "type": "rock", "position": { "x": 70, "y": 0, "z": 60 }, "scale": 2.8, "model": "Rock Medium (1).glb" },
+    { "type": "rock", "position": { "x": -20, "y": 0, "z": 65 }, "scale": 1.8, "model": "Rock Medium.glb" },
+    { "type": "rock", "position": { "x": 25, "y": 0, "z": 70 }, "scale": 2.1, "model": "Rock Medium (1).glb" },
+    { "type": "rock", "position": { "x": -75, "y": 0, "z": -35 }, "scale": 3.0, "model": "Rock Medium.glb" },
+    { "type": "rock", "position": { "x": 75, "y": 0, "z": 40 }, "scale": 2.5, "model": "Rock Medium (1).glb" },
+    { "type": "tree", "position": { "x": -10, "y": 0, "z": -70 }, "scale": 0.4, "model": "Pine.glb" },
+    { "type": "tree", "position": { "x": 15, "y": 0, "z": 50 }, "scale": 0.3, "model": "Pine (1).glb" }
+  ],
+  "structures": [
+    {
+      "type": "path",
+      "position": { "x": 0, "y": 0.01, "z": 0 },
+      "size": { "w": 3, "h": 0.02, "d": 160 },
+      "color": { "r": 0.55, "g": 0.48, "b": 0.35 }
+    }
+  ],
+  "teleporters": [
+    {
+      "id": "tp_from_latugan",
+      "position": { "x": 0, "y": 0, "z": -80 },
+      "targetZone": "latugan_empire",
+      "targetSpawn": "tp_to_tumblejean",
+      "radius": 2,
+      "label": "Latugan Empire"
+    }
+  ],
+  "lights": [
+    { "type": "point", "position": { "x": 0, "y": 5, "z": 0 }, "intensity": 0.2, "range": 20, "color": { "r": 1.0, "g": 0.85, "b": 0.5 } }
+  ]
+}

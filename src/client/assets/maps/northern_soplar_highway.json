@@ -1,0 +1,70 @@
+{
+  "id": "northern_soplar_highway",
+  "name": "Northern Soplar Highway",
+  "ground": {
+    "color": { "r": 0.35, "g": 0.45, "b": 0.3 },
+    "size": 200,
+    "heightVariation": 0.3
+  },
+  "fog": {
+    "color": { "r": 0.6, "g": 0.7, "b": 0.9 },
+    "density": 0.005
+  },
+  "playerSpawn": { "x": 0, "y": 0, "z": -80 },
+  "objects": [
+    { "type": "tree", "position": { "x": -25, "y": 0, "z": -60 }, "scale": 1.4, "model": "Pine.glb" },
+    { "type": "tree", "position": { "x": 30, "y": 0, "z": -50 }, "scale": 1.2, "model": "Pine (1).glb" },
+    { "type": "tree", "position": { "x": -40, "y": 0, "z": -40 }, "scale": 1.5, "model": "Pine (2).glb" },
+    { "type": "tree", "position": { "x": 45, "y": 0, "z": -30 }, "scale": 1.1, "model": "Pine.glb" },
+    { "type": "tree", "position": { "x": -20, "y": 0, "z": -25 }, "scale": 1.3, "model": "Pine (1).glb" },
+    { "type": "tree", "position": { "x": 35, "y": 0, "z": -15 }, "scale": 1.0, "model": "Pine (2).glb" },
+    { "type": "tree", "position": { "x": -50, "y": 0, "z": -5 }, "scale": 1.6, "model": "Pine.glb" },
+    { "type": "tree", "position": { "x": 55, "y": 0, "z": 5 }, "scale": 1.2, "model": "Pine (1).glb" },
+    { "type": "tree", "position": { "x": -35, "y": 0, "z": 15 }, "scale": 1.4, "model": "Pine (2).glb" },
+    { "type": "tree", "position": { "x": 40, "y": 0, "z": 25 }, "scale": 1.1, "model": "Pine.glb" },
+    { "type": "tree", "position": { "x": -30, "y": 0, "z": 35 }, "scale": 1.5, "model": "Pine (1).glb" },
+    { "type": "tree", "position": { "x": 25, "y": 0, "z": 45 }, "scale": 1.3, "model": "Pine (2).glb" },
+    { "type": "tree", "position": { "x": -45, "y": 0, "z": 55 }, "scale": 1.0, "model": "Pine.glb" },
+    { "type": "tree", "position": { "x": 50, "y": 0, "z": 65 }, "scale": 1.2, "model": "Pine (1).glb" },
+    { "type": "tree", "position": { "x": -55, "y": 0, "z": 70 }, "scale": 1.4, "model": "Pine (2).glb" },
+    { "type": "rock", "position": { "x": -60, "y": 0, "z": -55 }, "scale": 1.7, "model": "Rock Medium.glb" },
+    { "type": "rock", "position": { "x": 65, "y": 0, "z": -45 }, "scale": 2.0, "model": "Rock Medium (1).glb" },
+    { "type": "rock", "position": { "x": -65, "y": 0, "z": 20 }, "scale": 1.5, "model": "Rock Medium.glb" },
+    { "type": "rock", "position": { "x": 60, "y": 0, "z": 35 }, "scale": 1.8, "model": "Rock Medium (1).glb" },
+    { "type": "rock", "position": { "x": -10, "y": 0, "z": -70 }, "scale": 1.3, "model": "Rock Medium.glb" },
+    { "type": "rock", "position": { "x": 15, "y": 0, "z": 60 }, "scale": 1.4, "model": "Rock Medium (1).glb" },
+    { "type": "rock", "position": { "x": -70, "y": 0, "z": -20 }, "scale": 2.3, "model": "Rock Medium.glb" },
+    { "type": "rock", "position": { "x": 70, "y": 0, "z": 50 }, "scale": 1.6, "model": "Rock Medium (1).glb" },
+    { "type": "rock", "position": { "x": 5, "y": 0, "z": 10 }, "scale": 1.0, "model": "Rock Medium.glb" },
+    { "type": "rock", "position": { "x": -15, "y": 0, "z": -10 }, "scale": 0.9, "model": "Rock Medium (1).glb" }
+  ],
+  "structures": [
+    {
+      "type": "path",
+      "position": { "x": 0, "y": 0.01, "z": 0 },
+      "size": { "w": 3, "h": 0.02, "d": 160 },
+      "color": { "r": 0.38, "g": 0.35, "b": 0.28 }
+    }
+  ],
+  "teleporters": [
+    {
+      "id": "tp_from_conf_road",
+      "position": { "x": 0, "y": 0, "z": -80 },
+      "targetZone": "northern_confederation_road",
+      "targetSpawn": "tp_to_north_highway",
+      "radius": 2,
+      "label": "Northern Confederation Road"
+    },
+    {
+      "id": "tp_to_jortio",
+      "position": { "x": 0, "y": 0, "z": 80 },
+      "targetZone": "mountains_of_jortio",
+      "targetSpawn": "tp_from_highway",
+      "radius": 2,
+      "label": "Mountains of Jortio"
+    }
+  ],
+  "lights": [
+    { "type": "point", "position": { "x": 0, "y": 3, "z": 0 }, "intensity": 0.3, "range": 15, "color": { "r": 0.85, "g": 0.85, "b": 1.0 } }
+  ]
+}

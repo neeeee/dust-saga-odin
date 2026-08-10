@@ -1,0 +1,96 @@
+{
+  "id": "dungeon_zone",
+  "name": "Crypt of Shadows",
+  "ground": {
+    "color": { "r": 0.15, "g": 0.15, "b": 0.2 },
+    "size": 80,
+    "heightVariation": 0.05
+  },
+  "fog": {
+    "color": { "r": 0.2, "g": 0.15, "b": 0.3 },
+    "density": 0.015
+  },
+  "playerSpawn": { "x": 0, "y": 0, "z": 35 },
+  "objects": [
+    { "type": "rock", "position": { "x": -15, "y": 0, "z": -15 }, "scale": 2.0, "model": "Rock Medium.glb" },
+    { "type": "rock", "position": { "x": 15, "y": 0, "z": -10 }, "scale": 1.8, "model": "Rock Medium (1).glb" },
+    { "type": "rock", "position": { "x": 0, "y": 0, "z": -25 }, "scale": 2.2, "model": "Rock Medium.glb" },
+    { "type": "rock", "position": { "x": -20, "y": 0, "z": 5 }, "scale": 1.5, "model": "Rock Medium (1).glb" },
+    { "type": "rock", "position": { "x": 20, "y": 0, "z": 10 }, "scale": 1.7, "model": "Rock Medium.glb" },
+    { "type": "rock", "position": { "x": -10, "y": 0, "z": 20 }, "scale": 1.3, "model": "Rock Medium (1).glb" },
+    { "type": "rock", "position": { "x": 10, "y": 0, "z": 25 }, "scale": 1.6, "model": "Rock Medium.glb" }
+  ],
+  "structures": [
+    {
+      "type": "wall",
+      "position": { "x": -30, "y": 2, "z": 0 },
+      "size": { "w": 1, "h": 5, "d": 70 },
+      "color": { "r": 0.3, "g": 0.3, "b": 0.35 }
+    },
+    {
+      "type": "wall",
+      "position": { "x": 30, "y": 2, "z": 0 },
+      "size": { "w": 1, "h": 5, "d": 70 },
+      "color": { "r": 0.3, "g": 0.3, "b": 0.35 }
+    },
+    {
+      "type": "wall",
+      "position": { "x": 0, "y": 2, "z": -35 },
+      "size": { "w": 60, "h": 5, "d": 1 },
+      "color": { "r": 0.3, "g": 0.3, "b": 0.35 }
+    },
+    {
+      "type": "pillar",
+      "position": { "x": -15, "y": 0, "z": -10 },
+      "size": { "w": 1.5, "h": 5, "d": 1.5 },
+      "color": { "r": 0.35, "g": 0.35, "b": 0.4 }
+    },
+    {
+      "type": "pillar",
+      "position": { "x": 15, "y": 0, "z": -10 },
+      "size": { "w": 1.5, "h": 5, "d": 1.5 },
+      "color": { "r": 0.35, "g": 0.35, "b": 0.4 }
+    },
+    {
+      "type": "pillar",
+      "position": { "x": -15, "y": 0, "z": 10 },
+      "size": { "w": 1.5, "h": 5, "d": 1.5 },
+      "color": { "r": 0.35, "g": 0.35, "b": 0.4 }
+    },
+    {
+      "type": "pillar",
+      "position": { "x": 15, "y": 0, "z": 10 },
+      "size": { "w": 1.5, "h": 5, "d": 1.5 },
+      "color": { "r": 0.35, "g": 0.35, "b": 0.4 }
+    },
+    {
+      "type": "platform",
+      "position": { "x": 0, "y": 0, "z": 33 },
+      "size": { "w": 5, "h": 0.3, "d": 5 },
+      "color": { "r": 0.3, "g": 0.25, "b": 0.35 }
+    }
+  ],
+  "teleporters": [
+    {
+      "id": "tp_from_forest",
+      "position": { "x": 0, "y": 0, "z": 35 },
+      "targetZone": "dungeon_zone",
+      "targetSpawn": "tp_from_forest",
+      "radius": 2,
+      "label": "Arrival Point"
+    },
+    {
+      "id": "tp_to_forest",
+      "position": { "x": 0, "y": 0, "z": 32 },
+      "targetZone": "forest_zone",
+      "targetSpawn": "tp_to_dungeon",
+      "radius": 2,
+      "label": "Whispering Woods"
+    }
+  ],
+  "lights": [
+    { "type": "point", "position": { "x": 0, "y": 4, "z": 0 }, "intensity": 0.3, "range": 20, "color": { "r": 0.5, "g": 0.4, "b": 0.8 } },
+    { "type": "point", "position": { "x": -15, "y": 3, "z": -10 }, "intensity": 0.2, "range": 10, "color": { "r": 0.3, "g": 0.5, "b": 0.8 } },
+    { "type": "point", "position": { "x": 15, "y": 3, "z": -10 }, "intensity": 0.2, "range": 10, "color": { "r": 0.3, "g": 0.5, "b": 0.8 } }
+  ]
+}

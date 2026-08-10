@@ -1,0 +1,881 @@
+package systems
+
+import "core:encoding/json"
+import "core:fmt"
+import "core:strings"
+import rl "vendor:raylib"
+
+// ── game context ──────────────────────────────────────────────────────────
+//
+// Aggregates everything the gameplay layer and the packet dispatcher touch:
+// the network client, the entity scene, the local player, the chat log, the
+// loaded zone, and transient UI flags (notifications, floating text). The
+// gameplay scene owns one of these and hands it to handle_packet() for each
+// inbound packet drained from the network client.
+
+Notification :: struct {
+	message:  [256]u8,
+	msg_len:  int,
+	kind:     [32]u8, // "error" | "info" | ...
+	kind_len: int,
+	life:     f32, // seconds remaining on screen
+}
+
+Game_Context :: struct {
+	net:                 ^Network_Client,
+	scene:               ^Scene,
+	player:              ^Local_Player,
+	chat:                ^Chat_Log,
+	zone:                ^Zone_Definition,
+	zone_loaded:         bool,
+	engine_ready:        bool,
+	notifications:       [dynamic]Notification,
+	floating:            [dynamic]Floating_Text,
+
+	// Pending ENTITY_SPAWN packets that arrived before WORLD_STATE finished
+	// loading (mirrors the TS client's pendingSpawns).
+	pending_spawns:      [dynamic]JSON_Value,
+
+	// Clock sync: server timestamp of the first packet we saw, mapped to our
+	// local clock, so entity interpolation lines up with server time.
+	server_time_base_ms: u64,
+	local_time_base_ms:  u64,
+	clock_synced:        bool,
+}
+
+game_context_init :: proc(
+	net: ^Network_Client,
+	scene: ^Scene,
+	player: ^Local_Player,
+	chat: ^Chat_Log,
+) -> ^Game_Context {
+	ctx := new(Game_Context)
+	ctx.net = net
+	ctx.scene = scene
+	ctx.player = player
+	ctx.chat = chat
+	ctx.notifications = make([dynamic]Notification)
+	ctx.floating = make([dynamic]Floating_Text)
+	ctx.pending_spawns = make([dynamic]JSON_Value)
+	return ctx
+}
+
+game_context_destroy :: proc(ctx: ^Game_Context) {
+	delete(ctx.notifications)
+	delete(ctx.floating)
+	delete(ctx.pending_spawns)
+	free(ctx)
+}
+
+// Convert a server timestamp (ms) to a clock comparable with get_time()-style
+// seconds used by the interpolation buffer.
+server_to_clock_seconds :: proc(ctx: ^Game_Context, server_ms: u64) -> f64 {
+	if !ctx.clock_synced do return f64(rl.GetTime())
+	elapsed_ms := f64(server_ms - ctx.server_time_base_ms)
+	return f64(ctx.local_time_base_ms) / 1000.0 + elapsed_ms / 1000.0
+}
+
+sync_clock :: proc(ctx: ^Game_Context, server_ms: u64) {
+	if ctx.clock_synced do return
+	ctx.server_time_base_ms = server_ms
+	ctx.local_time_base_ms = now_ms_local()
+	ctx.clock_synced = true
+}
+
+now_ms_local :: proc "contextless" () -> u64 {
+	return u64(rl.GetTime() * 1000.0)
+}
+
+// ── dispatch ──────────────────────────────────────────────────────────────
+
+// Process one inbound packet. `free_after` should be true for packets drained
+// from the network client (so we free the cloned data); false for replayed
+// BATCH_COMBAT sub-events.
+handle_packet :: proc(ctx: ^Game_Context, p: ^Packet, free_after: bool) {
+	if p.data != nil {
+		sync_clock(ctx, p.timestamp)
+	}
+
+	#partial switch p.type {
+	case .WORLD_STATE:
+		handle_world_state(ctx, p.data)
+	case .PLAYER_POSITION_UPDATE:
+		handle_position_update(ctx, p.data)
+	case .ENTITY_SPAWN:
+		handle_entity_spawn(ctx, p.data)
+	case .ENTITY_DESPAWN:
+		handle_entity_despawn(ctx, p.data)
+	case .DAMAGE:
+		handle_damage(ctx, p.data)
+	case .HEAL:
+		handle_heal(ctx, p.data)
+	case .DEATH:
+		handle_death(ctx, p.data)
+	case .STATS_UPDATE:
+		handle_stats_update(ctx, p.data)
+	case .EXPERIENCE_GAIN:
+		handle_experience(ctx, p.data)
+	case .LEVEL_UP:
+		handle_level_up(ctx, p.data)
+	case .INVENTORY_UPDATE:
+		handle_inventory_update(ctx, p.data)
+	case .CHAT_MESSAGE:
+		handle_chat(ctx, p.data)
+	case .NOTIFICATION:
+		handle_notification(ctx, p.data)
+	case .ERROR:
+		handle_error(ctx, p.data)
+	case .COOLDOWN_UPDATE:
+		handle_cooldown(ctx, p.data)
+	case .STATUS_EFFECT_UPDATE:
+		handle_status_effect_update(ctx, p.data)
+	case .ENTITY_STATUS_EFFECTS:
+		handle_entity_status_effects(ctx, p.data)
+	case .ENEMY_STATE_CHANGE:
+		handle_enemy_state(ctx, p.data)
+	case .CHARACTER_SELECT:
+		handle_character_select(ctx, p.data)
+	case .CHARACTER_LIST:
+	// handled by the character-select scene directly
+	case .AUTH_SUCCESS:
+		handle_auth_success_reconnect(ctx)
+	case .AUTH_FAILURE:
+	// handled by the login scene directly
+	case .BATCH_COMBAT:
+		handle_batch_combat(ctx, p.data)
+	case:
+	}
+
+	if free_after && p.data != nil do free_packet(p)
+}
+
+// ── individual handlers ───────────────────────────────────────────────────
+
+handle_world_state :: proc(ctx: ^Game_Context, data: ^JSON_Value) {
+	if data == nil do return
+	root := obj_of(data^)
+	if is_null(data^) do return
+
+	// zone_id is a non-owning string view into the parsed packet data. The
+	// packet is freed by handle_packet's caller after dispatch, so copy the id
+	// into the player's owned fixed buffer for long-term use (HUD display).
+	zone_id := get_string(root, "zoneId", "")
+	copy_name(ctx.player.zone_id_buf[:], &ctx.player.zone_id_len, zone_id)
+
+	// Load the static map (rendering); the server's zoneDef is metadata-only.
+	if ctx.zone != nil do zone_destroy(ctx.zone)
+	ctx.zone = load_zone_map(zone_id)
+	ctx.zone_loaded = true
+	ctx.engine_ready = true
+
+	// Reset the entity scene and spawn everything from the snapshot.
+	scene_clear(ctx.scene)
+	ctx.scene.player_id = string_to_entity_id(character_id_string(ctx.player))
+
+	spawn_entities_from_array(ctx, get_array(root, "enemies"), .ENEMY)
+	spawn_entities_from_array(ctx, get_array(root, "npcs"), .NPC)
+	spawn_entities_from_array(ctx, get_array(root, "players"), .PLAYER)
+	spawn_entities_from_array(ctx, get_array(root, "summons"), .SUMMON)
+
+	// Only reset position to spawn on first character select (position will
+	// be 0,0,0). On reconnect, CHARACTER_SELECT already restored the saved
+	// position, so don't overwrite it with spawn.
+	pos := ctx.player.position
+	if pos.x == 0 && pos.y == 0 && pos.z == 0 {
+		if ctx.zone.loaded {
+			ctx.player.position = ctx.zone.player_spawn
+		} else {
+			sp := vec3_from(root, "playerSpawn")
+			ctx.player.position = as_vector3(sp)
+		}
+	}
+
+	// Replay any spawns that arrived during load.
+	for &ps in ctx.pending_spawns {
+		handle_entity_spawn(ctx, &ps)
+	}
+	clear(&ctx.pending_spawns)
+}
+
+as_vector3 :: proc "contextless" (v: Vec3) -> rl.Vector3 {
+	return {v[0], v[1], v[2]}
+}
+
+spawn_entities_from_array :: proc(ctx: ^Game_Context, arr: JSON_Array, kind: Entity_Kind) {
+	dyn := as_dyn(arr)
+	for i in 0 ..< len(dyn) {
+		spawn_one_entity(ctx, obj_of(dyn[i]), kind)
+	}
+}
+
+spawn_one_entity :: proc(ctx: ^Game_Context, o: JSON_Object, kind: Entity_Kind) {
+	id_str := get_string(o, "id")
+	if len(id_str) == 0 do return
+	id := string_to_entity_id(id_str)
+	if id == ctx.scene.player_id do return
+	idx := add_entity(ctx.scene, id)
+	if idx < 0 do return
+	set_entity_string_id(ctx.scene, idx, id_str)
+
+	t := &ctx.scene.transforms[idx]
+	pos := vec3_from(o, "position")
+	t.position = {pos[0], pos[1], pos[2]}
+	rot := quat_from(o, "rotation")
+	t.rotation = {0, quat_to_yaw(rot), 0}
+
+	meta := &ctx.scene.metas[idx]
+	meta.kind = kind
+
+	d := get_object(o, "data")
+	ui := &ctx.scene.ui[idx]
+	r := &ctx.scene.renderables[idx]
+
+	#partial switch kind {
+	case .ENEMY:
+		r.color = {200, 80, 80, 255}
+		r.height = 1.6
+		r.radius = 0.5
+		meta.max_health = get_f32(d, "maxHealth", 100)
+		meta.health = get_f32(d, "health", meta.max_health)
+		meta.level = get_int(d, "level")
+		set_entity_state(ctx.scene, idx, get_string(d, "state"))
+		set_entity_name(ctx.scene, idx, get_string(d, "name"))
+	case .NPC:
+		r.color = {80, 180, 220, 255}
+		r.height = 1.7
+		r.radius = 0.5
+		set_entity_name(ctx.scene, idx, get_string(d, "name"))
+	case .PLAYER:
+		r.color = {80, 220, 120, 255}
+		r.height = 1.8
+		r.radius = 0.5
+		set_entity_name(ctx.scene, idx, get_string(d, "name"))
+		meta.level = get_int(d, "level")
+	case .SUMMON:
+		r.color = {180, 120, 220, 255}
+		r.height = 1.5
+		r.radius = 0.45
+		set_entity_name(ctx.scene, idx, get_string(d, "summonType"))
+	case:
+	}
+
+	ui.health_ratio = meta.max_health > 0 ? meta.health / meta.max_health : 0.0
+}
+
+handle_position_update :: proc(ctx: ^Game_Context, data: ^JSON_Value) {
+	if data == nil do return
+	root := obj_of(data^)
+	if is_null(data^) do return
+
+	// Form 1: batched enemies/summons.
+	entities := get_array(root, "entities")
+	if len(as_dyn(entities)) > 0 {
+		dyn := as_dyn(entities)
+		for i in 0 ..< len(dyn) {
+			apply_entity_position(ctx, obj_of(dyn[i]))
+		}
+	}
+	summons := get_array(root, "summons")
+	if len(as_dyn(summons)) > 0 {
+		dyn := as_dyn(summons)
+		for i in 0 ..< len(dyn) {
+			apply_entity_position(ctx, obj_of(dyn[i]))
+		}
+	}
+
+	// Form 2: single other-player update.
+	if len(as_dyn(entities)) == 0 && len(as_dyn(summons)) == 0 {
+		character_id := get_string(root, "characterId")
+		if len(character_id) == 0 do return
+		id := string_to_entity_id(character_id)
+		idx := find_index(ctx.scene, id)
+		if idx == -1 {
+			if id == ctx.scene.player_id do return
+			idx = add_entity(ctx.scene, id)
+			if idx >= 0 {
+				ctx.scene.renderables[idx] = {
+					shape  = .CAPSULE,
+					color  = {80, 220, 120, 255},
+					height = 1.8,
+					radius = 0.5,
+				}
+				ctx.scene.metas[idx].kind = .PLAYER
+			}
+		}
+		if idx >= 0 {
+			pos := vec3_from(root, "position")
+			push_interp(ctx, idx, pos)
+			ctx.scene.metas[idx].is_invisible = get_bool(root, "invisible")
+		}
+	}
+}
+
+apply_entity_position :: proc(ctx: ^Game_Context, o: JSON_Object) {
+	id_str := get_string(o, "id")
+	if len(id_str) == 0 do return
+	id := string_to_entity_id(id_str)
+	idx := find_index(ctx.scene, id)
+	if idx == -1 do return
+	push_interp(ctx, idx, vec3_from(o, "position"))
+
+	meta := &ctx.scene.metas[idx]
+	if has_field(o, "health") {
+		meta.health = get_f32(o, "health")
+		h := meta.health
+		m := meta.max_health > 0 ? meta.max_health : 1
+		ctx.scene.ui[idx].health_ratio = h / m
+	}
+	if has_field(o, "state") {
+		set_entity_state(ctx.scene, idx, get_string(o, "state"))
+	}
+}
+
+push_interp :: proc(ctx: ^Game_Context, idx: int, pos: Vec3) {
+	if idx < 0 do return
+	t := server_to_clock_seconds(ctx, ctx.net.last_pong_recv_ms)
+	// Use wall-clock time for the buffer; server timestamps are coarse.
+	add_position_snapshot(&ctx.scene.interp_bufs[idx], pos[0], pos[1], pos[2], f64(rl.GetTime()))
+}
+
+handle_entity_spawn :: proc(ctx: ^Game_Context, data: ^JSON_Value) {
+	if !ctx.engine_ready {
+		if data != nil do append(&ctx.pending_spawns, data^)
+		return
+	}
+	if data == nil do return
+	o := obj_of(data^)
+	if is_null(data^) do return
+	type_str := get_string(o, "type")
+	kind: Entity_Kind = .PLAYER
+	switch type_str {
+	case "enemy":
+		kind = .ENEMY
+	case "npc":
+		kind = .NPC
+	case "summon":
+		kind = .SUMMON
+	case "player":
+		kind = .PLAYER
+	case:
+	}
+	spawn_one_entity(ctx, o, kind)
+}
+
+handle_entity_despawn :: proc(ctx: ^Game_Context, data: ^JSON_Value) {
+	if data == nil do return
+	o := obj_of(data^)
+	id_str := get_string(o, "entityId")
+	if len(id_str) == 0 do return
+	remove_entity(ctx.scene, string_to_entity_id(id_str))
+}
+
+handle_damage :: proc(ctx: ^Game_Context, data: ^JSON_Value) {
+	if data == nil do return
+	o := obj_of(data^)
+	target_id := get_string(o, "targetId")
+	if len(target_id) == 0 do return
+
+	missed := get_bool(o, "missed")
+	amount := get_int(o, "damage")
+	is_crit := get_bool(o, "isCritical")
+
+	id := string_to_entity_id(target_id)
+	idx := find_index(ctx.scene, id)
+	world_pos: rl.Vector3
+	if idx >= 0 {
+		world_pos = ctx.scene.transforms[idx].position
+		meta := &ctx.scene.metas[idx]
+		if missed {
+			amount = 0
+		} else {
+			meta.health -= f32(amount)
+			m := meta.max_health > 0 ? meta.max_health : 1
+			ctx.scene.ui[idx].health_ratio = max(0, meta.health) / m
+		}
+	} else if target_id == character_id_string(ctx.player) {
+		world_pos = ctx.player.position
+		ctx.player.stats.health -= f32(amount)
+	}
+
+	col := rl.Color{255, 80, 80, 255}
+	if is_crit do col = rl.YELLOW
+	push_floating(ctx, id, world_pos, amount, missed, false, is_crit, col)
+}
+
+handle_heal :: proc(ctx: ^Game_Context, data: ^JSON_Value) {
+	if data == nil do return
+	o := obj_of(data^)
+	target_id := get_string(o, "targetId")
+	amount := get_int(o, "amount")
+	if len(target_id) == 0 do return
+	id := string_to_entity_id(target_id)
+	idx := find_index(ctx.scene, id)
+	world_pos: rl.Vector3
+	if idx >= 0 {
+		world_pos = ctx.scene.transforms[idx].position
+		meta := &ctx.scene.metas[idx]
+		meta.health += f32(amount)
+	} else if target_id == character_id_string(ctx.player) {
+		world_pos = ctx.player.position
+		ctx.player.stats.health += f32(amount)
+	}
+	push_floating(ctx, id, world_pos, amount, false, true, false, rl.Color{80, 255, 120, 255})
+}
+
+handle_death :: proc(ctx: ^Game_Context, data: ^JSON_Value) {
+	if data == nil do return
+	o := obj_of(data^)
+	entity_id := get_string(o, "entityId")
+	if len(entity_id) == 0 do return
+
+	if entity_id == character_id_string(ctx.player) {
+		ctx.player.is_dead = get_bool(o, "isDead", true)
+		return
+	}
+	id := string_to_entity_id(entity_id)
+	idx := find_index(ctx.scene, id)
+	if idx >= 0 {
+		ctx.scene.metas[idx].health = 0
+		ctx.scene.ui[idx].health_ratio = 0
+		set_entity_state(ctx.scene, idx, "dead")
+	}
+}
+
+handle_stats_update :: proc(ctx: ^Game_Context, data: ^JSON_Value) {
+	if data == nil do return
+	o := obj_of(data^)
+
+	// Self-targeted: carries `characterId` + `stats`.
+	if has_field(o, "characterId") {
+		cid := get_string(o, "characterId")
+		if cid != character_id_string(ctx.player) do return
+		stats := get_object(o, "stats")
+		if !is_null(json.Value(stats)) {
+			s := &ctx.player.stats
+			s.health = get_f32(stats, "health", s.health)
+			s.max_health = get_f32(stats, "maxHealth", s.max_health)
+			s.mana = get_f32(stats, "mana", s.mana)
+			s.max_mana = get_f32(stats, "maxMana", s.max_mana)
+			s.attack = get_f32(stats, "attack", s.attack)
+			s.defense = get_f32(stats, "defense", s.defense)
+			s.level = get_int(stats, "level", s.level)
+			s.experience = i64(get_f64(stats, "experience", f64(s.experience)))
+			s.experience_to_next = i64(
+				get_f64(stats, "experienceToNext", f64(s.experience_to_next)),
+			)
+		}
+		if has_field(o, "unspentStatPoints") {
+			ctx.player.unspent_stat_points = get_int(o, "unspentStatPoints")
+		}
+		if has_field(o, "unspentSkillPoints") {
+			ctx.player.unspent_skill_points = get_int(o, "unspentSkillPoints")
+		}
+		return
+	}
+
+	// Other-entity variant: {entityId, health, maxHealth, level?}
+	if has_field(o, "entityId") {
+		id := string_to_entity_id(get_string(o, "entityId"))
+		idx := find_index(ctx.scene, id)
+		if idx >= 0 {
+			meta := &ctx.scene.metas[idx]
+			meta.health = get_f32(o, "health")
+			meta.max_health = get_f32(o, "maxHealth", meta.max_health)
+			if has_field(o, "level") do meta.level = get_int(o, "level")
+			m := meta.max_health > 0 ? meta.max_health : 1
+			ctx.scene.ui[idx].health_ratio = meta.health / m
+		}
+	}
+}
+
+handle_experience :: proc(ctx: ^Game_Context, data: ^JSON_Value) {
+	if data == nil do return
+	o := obj_of(data^)
+	ctx.player.stats.experience = i64(
+		get_f64(o, "totalExperience", f64(ctx.player.stats.experience)),
+	)
+	ctx.player.stats.level = get_int(o, "level", ctx.player.stats.level)
+}
+
+handle_level_up :: proc(ctx: ^Game_Context, data: ^JSON_Value) {
+	if data == nil do return
+	o := obj_of(data^)
+	ctx.player.stats.level = get_int(o, "level", ctx.player.stats.level)
+	if has_field(o, "unspentStatPoints") {
+		ctx.player.unspent_stat_points = get_int(o, "unspentStatPoints")
+	}
+	if has_field(o, "unspentSkillPoints") {
+		ctx.player.unspent_skill_points = get_int(o, "unspentSkillPoints")
+	}
+	if has_field(o, "stats") {
+		stats := get_object(o, "stats")
+		s := &ctx.player.stats
+		s.max_health = get_f32(stats, "maxHealth", s.max_health)
+		s.health = s.max_health
+		s.max_mana = get_f32(stats, "maxMana", s.max_mana)
+	}
+	push_notification(ctx, fmt.tprintf("Level Up! → %d", ctx.player.stats.level), "info")
+}
+
+handle_inventory_update :: proc(ctx: ^Game_Context, data: ^JSON_Value) {
+	if data == nil do return
+	o := obj_of(data^)
+	inv := &ctx.player.inventory
+	clear(&inv.items)
+
+	items := get_array(o, "inventory")
+	dyn := as_dyn(items)
+	for i in 0 ..< len(dyn) {
+		it := obj_of(dyn[i])
+		item: Inventory_Item
+		// Copy strings into the item's owned fixed buffers so the inventory
+		// outlives the packet (whose data is freed after dispatch).
+		copy_field(item.item_id[:], &item.item_id_len, get_string(it, "itemId"))
+		item.quantity = get_int(it, "quantity")
+		item.slot = get_int(it, "slot")
+		item.enhancement_level = get_int(it, "enhancementLevel")
+		copy_field(
+			item.enhancement_element[:],
+			&item.enhancement_elem_len,
+			get_string(it, "enhancementElement"),
+		)
+		append(&inv.items, item)
+	}
+	// equipment (13 slots) — record which item ids are equipped.
+	eq := get_object(o, "equipment")
+	slot_names := EQUIP_SLOT_NAMES
+	for slot in EQUIP_SLOT {
+		name := slot_names[int(slot)]
+		if has_field(eq, name) {
+			eq_it := get_object(eq, name)
+			if !is_null(json.Value(eq_it)) {
+				eq_id := get_string(eq_it, "itemId")
+				found := -1
+				for &iv, i in inv.items {
+					if item_id_string(&iv) == eq_id {found = int(i); break}
+				}
+				inv.equipment[int(slot)] = found
+			} else {
+				inv.equipment[int(slot)] = -1
+			}
+		}
+	}
+}
+
+// copy_field: copy a string into a fixed [N]u8 buffer + length. (Same idea as
+// the login/character_select copy_field, kept local to avoid cross-package
+// duplication.)
+copy_field :: proc(dst: []u8, dst_len: ^int, src: string) {
+	n := min(len(src), len(dst))
+	dst_len^ = n
+	copy(dst[:n], transmute([]u8)src)
+}
+
+// String names for each equipment slot, parallel to the EQUIP_SLOT enum order.
+EQUIP_SLOT_NAMES :: [EQUIP_SLOT_COUNT]string {
+	"weapon",
+	"armor",
+	"helmet",
+	"boots",
+	"gloves",
+	"legs",
+	"shield",
+	"earring_1",
+	"earring_2",
+	"necklace",
+	"belt",
+	"ring_1",
+	"ring_2",
+}
+
+handle_chat :: proc(ctx: ^Game_Context, data: ^JSON_Value) {
+	if data == nil do return
+	o := obj_of(data^)
+	chat_push(
+		ctx.chat,
+		chat_channel_from_string(get_string(o, "channel", "zone")),
+		get_string(o, "sender", ""),
+		get_string(o, "message", ""),
+	)
+}
+
+handle_notification :: proc(ctx: ^Game_Context, data: ^JSON_Value) {
+	if data == nil do return
+	o := obj_of(data^)
+	push_notification(ctx, get_string(o, "message"), get_string(o, "type", "info"))
+}
+
+handle_error :: proc(ctx: ^Game_Context, data: ^JSON_Value) {
+	if data == nil do return
+	o := obj_of(data^)
+	push_notification(ctx, get_string(o, "message"), "error")
+}
+
+handle_cooldown :: proc(ctx: ^Game_Context, data: ^JSON_Value) {
+	if data == nil do return
+	o := obj_of(data^)
+	kind := get_string(o, "type")
+	skill := get_string(o, "skillName")
+	switch kind {
+	case "cast_start":
+		ctx.player.casting.active = true
+		ctx.player.casting.cast_time = get_f64(o, "castTime")
+		ctx.player.casting.elapsed = 0
+		copy_name(ctx.player.casting.skill_name[:], &ctx.player.casting.name_len, skill)
+	case "cast_cancel":
+		ctx.player.casting.active = false
+	case "used":
+		ctx.player.casting.active = false
+		// Track remaining cooldown for the HUD.
+		remaining := get_f64(o, "cooldownRemaining")
+		found := false
+		for i in 0 ..< len(ctx.player.cooldowns) {
+			if matches_name(
+				ctx.player.cooldowns[i].skill_name[:],
+				ctx.player.cooldowns[i].name_len,
+				skill,
+			) {
+				ctx.player.cooldowns[i].remaining_ms = remaining
+				found = true
+				break
+			}
+		}
+		if !found {
+			cd := Skill_Cooldown {
+				remaining_ms = remaining,
+			}
+			copy_name(cd.skill_name[:], &cd.name_len, skill)
+			append(&ctx.player.cooldowns, cd)
+		}
+	case:
+	}
+}
+
+handle_enemy_state :: proc(ctx: ^Game_Context, data: ^JSON_Value) {
+	if data == nil do return
+	o := obj_of(data^)
+	id := string_to_entity_id(get_string(o, "entityId", "enemy"))
+	idx := find_index(ctx.scene, id)
+	if idx >= 0 {
+		set_entity_state(ctx.scene, idx, get_string(o, "state"))
+	}
+}
+
+// CHARACTER_SELECT (server response): the full local-player state hydration.
+// Mirrors characterHandlers.ts:230-258.
+handle_character_select :: proc(ctx: ^Game_Context, data: ^JSON_Value) {
+	if data == nil do return
+	o := obj_of(data^)
+	if is_null(data^) do return
+
+	p := ctx.player
+	copy_name(p.character_id_buf[:], &p.character_id_len, get_string(o, "characterId"))
+	copy_name(p.name[:], &p.name_len, get_string(o, "characterName"))
+	p.job_id = get_string(o, "jobId")
+	p.base_class = get_string(o, "baseClass")
+	p.race = get_string(o, "race")
+	copy_name(p.zone_id_buf[:], &p.zone_id_len, get_string(o, "zoneId"))
+
+	pos := vec3_from(o, "position")
+	p.position = {pos[0], pos[1], pos[2]}
+
+	stats := get_object(o, "stats")
+	if !is_null(json.Value(stats)) {
+		s := &p.stats
+		s.health = get_f32(stats, "health")
+		s.max_health = get_f32(stats, "maxHealth")
+		s.mana = get_f32(stats, "mana")
+		s.max_mana = get_f32(stats, "maxMana")
+		s.attack = get_f32(stats, "attack")
+		s.defense = get_f32(stats, "defense")
+		s.speed = get_f32(stats, "speed")
+		s.speed_multiplier = get_f32(stats, "speedMultiplier", 1.0)
+		s.crit_chance = get_f32(stats, "critChance")
+		s.cast_speed = get_f32(stats, "castSpeed")
+		s.level = get_int(stats, "level")
+		s.experience = i64(get_f64(stats, "experience"))
+		s.experience_to_next = i64(get_f64(stats, "experienceToNext"))
+	}
+
+	if has_field(o, "unspentStatPoints") {
+		p.unspent_stat_points = get_int(o, "unspentStatPoints")
+	}
+	if has_field(o, "unspentSkillPoints") {
+		p.unspent_skill_points = get_int(o, "unspentSkillPoints")
+	}
+	if has_field(o, "gold") {
+		p.inventory.gold = i64(get_f64(o, "gold"))
+	}
+
+	// Inventory + equipment: the CHARACTER_SELECT payload has `inventory` and
+	// `equipment` at the top level, the same shape INVENTORY_UPDATE expects.
+	// Reuse that handler but pass the *packet's own* data node — do NOT build a
+	// wrapper object, which would alias the inventory/equipment arrays and then
+	// double-free them when both the wrapper and the packet are freed.
+	if has_field(o, "inventory") {
+		handle_inventory_update(ctx, data)
+	}
+
+	// The scene's player_id is set once WORLD_STATE arrives; set it now so any
+	// packets that arrive before WORLD_STATE route correctly.
+	ctx.scene.player_id = string_to_entity_id(character_id_string(p))
+}
+
+handle_batch_combat :: proc(ctx: ^Game_Context, data: ^JSON_Value) {
+	if data == nil do return
+	o := obj_of(data^)
+	events := get_array(o, "events")
+	dyn := as_dyn(events)
+	for i in 0 ..< len(dyn) {
+		ev := obj_of(dyn[i])
+		// event.type is a numeric PacketType, event.data is its payload.
+		ev_type := field(ev, "type")
+		ev_data := field(ev, "data")
+		ptype, ok := int_to_packet_type(int(number_of(ev_type)))
+		if !ok do continue
+		sub := Packet {
+			type = ptype,
+			data = clone_value(ev_data),
+		}
+		handle_packet(ctx, &sub, false)
+		free_value(sub.data)
+	}
+}
+
+// ── status effects ──────────────────────────────────────────────────────────
+
+handle_entity_status_effects :: proc(ctx: ^Game_Context, data: ^JSON_Value) {
+	if data == nil do return
+	root := obj_of(data^)
+	entity_id := get_string(root, "entityId")
+	idx := find_index(ctx.scene, string_to_entity_id(entity_id))
+	if idx < 0 do return
+
+	now := now_ms_local()
+	effects_arr := get_array(root, "effects")
+	dyn := as_dyn(effects_arr)
+
+	ef := &ctx.scene.effects[idx]
+	ef.count = 0
+
+	for i in 0 ..< len(dyn) {
+		if ef.count >= MAX_STATUS_EFFECTS do break
+		eff_obj := obj_of(dyn[i])
+		e := &ef.effects[ef.count]
+
+		t := get_string(eff_obj, "type")
+		n := min(len(t), len(e.type_str))
+		copy(e.type_str[:n], transmute([]u8)t)
+		e.type_len = n
+		e.is_buff = is_status_buff(t)
+
+		duration := get_f64(eff_obj, "duration", 0)
+		e.expires_at = now + u64(duration)
+
+		ef.count += 1
+	}
+}
+
+handle_status_effect_update :: proc(ctx: ^Game_Context, data: ^JSON_Value) {
+	if data == nil do return
+	root := obj_of(data^)
+	effects_arr := get_array(root, "effects")
+	dyn := as_dyn(effects_arr)
+
+	player_idx := find_index(ctx.scene, ctx.scene.player_id)
+	if player_idx < 0 do return
+
+	now := now_ms_local()
+	ef := &ctx.scene.effects[player_idx]
+	ef.count = 0
+
+	for i in 0 ..< len(dyn) {
+		if ef.count >= MAX_STATUS_EFFECTS do break
+		eff_obj := obj_of(dyn[i])
+		e := &ef.effects[ef.count]
+
+		t := get_string(eff_obj, "type")
+		n := min(len(t), len(e.type_str))
+		copy(e.type_str[:n], transmute([]u8)t)
+		e.type_len = n
+		e.is_buff = is_status_buff(t)
+
+		duration := get_f64(eff_obj, "duration", 0)
+		e.expires_at = now + u64(duration)
+
+		ef.count += 1
+	}
+}
+
+// ── helpers ───────────────────────────────────────────────────────────────
+
+copy_name :: proc(dst: []u8, dst_len: ^int, src: string) {
+	n := min(len(src), len(dst))
+	dst_len^ = n
+	copy(dst[:n], transmute([]u8)src)
+}
+
+matches_name :: proc "contextless" (buf: []u8, buf_len: int, s: string) -> bool {
+	if buf_len != len(s) do return false
+	for i in 0 ..< buf_len {
+		if buf[i] != u8(s[i]) do return false
+	}
+	return true
+}
+
+push_notification :: proc(ctx: ^Game_Context, message, kind: string) {
+	n := Notification {
+		life = 4.0,
+	}
+	n.msg_len = min(len(message), len(n.message))
+	copy(n.message[:n.msg_len], transmute([]u8)message)
+	n.kind_len = min(len(kind), len(n.kind))
+	copy(n.kind[:n.kind_len], transmute([]u8)kind)
+	append(&ctx.notifications, n)
+	if len(ctx.notifications) > 6 {
+		_ = pop_front(&ctx.notifications)
+	}
+}
+
+push_floating :: proc(
+	ctx: ^Game_Context,
+	id: Entity_Id,
+	world_pos: rl.Vector3,
+	amount: int,
+	is_miss, is_heal, is_crit: bool,
+	color: rl.Color,
+) {
+	append(
+		&ctx.floating,
+		Floating_Text {
+			entity_id = id,
+			world_pos = world_pos,
+			amount = amount,
+			color = color,
+			life = 1.0,
+			is_miss = is_miss,
+			is_heal = is_heal,
+			is_crit = is_crit,
+		},
+	)
+}
+
+handle_auth_success_reconnect :: proc(ctx: ^Game_Context) {
+	nc := ctx.net
+	fmt.printf(
+		"[net] AUTH_SUCCESS in gameplay: auth_sent=%v char_select_sent=%v has_char_id=%v\n",
+		nc.auth_sent,
+		nc.char_select_sent,
+		nc.auth_character_id_len > 0,
+	)
+	if nc.char_select_sent || !nc.auth_sent do return
+	nc.auth_sent = true
+	char_id := get_auth_character_id(nc)
+	if len(char_id) > 0 {
+		nc.char_select_sent = true
+		send_character_select(nc, char_id)
+		fmt.printf("[net] gameplay: re-auth complete, sending CHARACTER_SELECT id=%s\n", char_id)
+	} else {
+		fmt.printf("[net] gameplay: re-auth complete, but no character_id stored\n")
+	}
+}
