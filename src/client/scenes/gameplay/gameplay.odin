@@ -35,6 +35,10 @@ Bar_Button :: struct {
 	menu:  ^ui.Menu,
 }
 
+// Set by the Exit Game countdown; main watches it to break the run loop. The
+// deferred destroy_network_client sends the final LOGOUT on the way out.
+quit_requested: bool
+
 state: struct {
 	ctx:                    ^sys.Game_Context,
 	net:                    ^sys.Network_Client,
@@ -174,9 +178,6 @@ update :: proc(dt: f32) -> (requested: sys.App_State, has_request: bool) {
 	// 2b. ESC chain: close menus → unfocus chat → untarget → toggle system menu.
 	apply_escape()
 
-	// 2c. System menu button clicks (must happen before gameplay menus update).
-	handle_system_menu_clicks(inp)
-
 	if state.status == .RETURNING {
 		return .CHARACTER_SELECT, true
 	}
@@ -259,12 +260,23 @@ update :: proc(dt: f32) -> (requested: sys.App_State, has_request: bool) {
 	// 12. Menus.
 	update_menus()
 
-	// 13. Logout/exit timers.
+	// 13. Logout/exit countdowns. When they elapse, perform the actual
+	//     handoff (previously this only switched scenes and never told the
+	//     server, so the character stayed online until ping-timeout).
 	if state.logout_start_ms > 0 && f64(state.clock_ms - state.logout_start_ms) >= 30000.0 {
+		state.logout_start_ms = 0
+		// RETURN_TO_CHARACTER_SELECT saves the char server-side and drops the
+		// session but keeps the socket/auth, so char-select can re-list without
+		// re-authenticating.
+		sys.send(state.net, .RETURN_TO_CHARACTER_SELECT)
 		return .CHARACTER_SELECT, true
 	}
 	if state.exit_start_ms > 0 && f64(state.clock_ms - state.exit_start_ms) >= 30000.0 {
-		return .TITLE, true
+		state.exit_start_ms = 0
+		// Signal main to break the loop; its deferred destroy_network_client
+		// sends the final LOGOUT (save + disconnect) on the way out.
+		quit_requested = true
+		return .GAMEPLAY, false
 	}
 
 	return .TITLE, false

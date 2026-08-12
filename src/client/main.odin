@@ -57,7 +57,7 @@ main :: proc() {
 	state: sys.App_State = .TITLE
 	title_screen.init()
 
-	for !rl.WindowShouldClose() {
+	for !rl.WindowShouldClose() && !gameplay.quit_requested {
 		// All transient per-frame allocations land in the frame arena.
 		context.temp_allocator = mem.dynamic_arena_allocator(&frame_arena)
 		dt := rl.GetFrameTime()

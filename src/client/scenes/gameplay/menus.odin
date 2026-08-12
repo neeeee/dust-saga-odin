@@ -282,6 +282,7 @@ update_menus :: proc() {
 	}
 
 	// Action menus: read clicks AFTER menu_update sets them this frame.
+	handle_system_menu_clicks()
 	handle_character_menu_clicks()
 	handle_debug_menu_clicks()
 	handle_settings_menu_clicks()
@@ -355,66 +356,43 @@ refresh_system_menu :: proc() {
 
 	for i in 0 ..< 4 {
 		label := btns[i]
+		// While a logout/exit countdown is active, show the remaining seconds.
+		// The actual handoff fires in gameplay.update when the timer elapses;
+		// clicking the entry again cancels it (handle_system_menu_clicks).
 		if i == 2 && state.logout_start_ms > 0 {
-			elapsed := f64(now - state.logout_start_ms)
-			remaining := 30.0 - elapsed / 1000.0
-			if remaining > 0 {
-				label = fmt.tprintf("Logout (%.0fs)", remaining)
-			} else {
-			ui.menu_add_button_id(m, label, ids[i])
-			state.logout_start_ms = 0
-			continue
-			}
+			remaining := 30.0 - f64(now - state.logout_start_ms) / 1000.0
+			if remaining > 0 do label = fmt.tprintf("Logout (%.0fs) — click to cancel", remaining)
 		}
 		if i == 3 && state.exit_start_ms > 0 {
-			elapsed := f64(now - state.exit_start_ms)
-			remaining := 30.0 - elapsed / 1000.0
-			if remaining > 0 {
-				label = fmt.tprintf("Exit (%.0fs)", remaining)
-			} else {
-			ui.menu_add_button_id(m, label, ids[i])
-			state.exit_start_ms = 0
-			continue
-			}
+			remaining := 30.0 - f64(now - state.exit_start_ms) / 1000.0
+			if remaining > 0 do label = fmt.tprintf("Exit (%.0fs) — click to cancel", remaining)
 		}
 		ui.menu_add_button_id(m, label, ids[i])
 	}
 }
 
-handle_system_menu_clicks :: proc(inp: sys.Input_State) {
+handle_system_menu_clicks :: proc() {
 	m := &state.system_menu
 	if !m.open do return
-	if !inp.mouse_left_pressed do return
-	if !m.focused do return
 
 	for i in 0 ..< len(m.items) {
 		item := &m.items[i]
 		if item.kind == .BUTTON && item.clicked {
-			if item.id == 0 {
-				// System Settings — just close system menu and open settings
+			switch item.id {
+			case 0: // System Settings
 				ui.menu_close(m)
 				ui.menu_toggle(&state.settings_menu)
-			} else if item.id == 1 {
-				// Character Settings — placeholder, just close
+			case 1: // Character Settings (placeholder)
 				ui.menu_close(m)
-			} else if item.id == 2 {
-				// Logout
-				if state.logout_start_ms > 0 {
-					state.logout_start_ms = 0
-				} else {
-					state.logout_start_ms = state.clock_ms
-				}
-		} else if item.id == 3 {
-			// Exit Game
-			if state.exit_start_ms > 0 {
-				state.exit_start_ms = 0
-			} else {
-				state.exit_start_ms = state.clock_ms
+			case 2: // Logout — toggle the 30s countdown
+				state.logout_start_ms = state.logout_start_ms > 0 ? 0 : state.clock_ms
+			case 3: // Exit Game — toggle the 30s countdown
+				state.exit_start_ms = state.exit_start_ms > 0 ? 0 : state.clock_ms
+			case:
 			}
+			return
 		}
-		return
 	}
-}
 }
 
 // ── skills + character (allocation) menus ─────────────────────────────────
