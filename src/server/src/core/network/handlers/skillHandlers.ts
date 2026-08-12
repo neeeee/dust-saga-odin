@@ -9,6 +9,7 @@ import {
   AOETargetMode,
   isZonePvpEnabled,
   isBeneficialSkillType,
+  RANGED_WEAPON_TYPES,
 } from '@dust-saga/shared';
 import { NetworkContext, PacketHandler } from '../NetworkContext';
 import { hasLineOfSight } from '../../world/LineOfSight';
@@ -103,6 +104,34 @@ function handleSkillUse(ctx: NetworkContext, socket: Socket, data: any): void {
       data: { skillName, error: check.error }
     });
     return;
+  }
+
+  // Range check: ensure the target is within attack range. Skips self-cast,
+  // ground-targeted, and non-targeted skills.
+  if (targetId && targetId !== characterId && !aoePosition) {
+    const ts = ctx.state.players.get(targetId);
+    const te = ctx.spawnMgr.getEnemy(targetId);
+    const tp = ts?.position || te?.position;
+    if (tp && earlySkillDef) {
+      const dx = tp.x - session.position.x;
+      const dz = tp.z - session.position.z;
+      const dist = Math.sqrt(dx * dx + dz * dz);
+      // Determine max range: skill-specific `range` field, else weapon type.
+      let maxRange = (earlySkillDef as any).range || 0;
+      if (maxRange === 0) {
+        const weapon = session.equipment?.weapon as any;
+        const wdef = weapon ? ctx.itemSys.getItemDefinition(weapon.itemId) : null;
+        const isRanged = wdef?.weaponType && RANGED_WEAPON_TYPES.has(wdef.weaponType);
+        maxRange = isRanged ? 20 : 4; // bow/crossbow = 20, melee = 4
+      }
+      if (dist > maxRange) {
+        ctx.sendToPlayer(characterId, {
+          type: PacketType.SKILL_USE, timestamp: Date.now(),
+          data: { skillName, error: 'out_of_range' }
+        });
+        return;
+      }
+    }
   }
 
   const mpCost = earlySkillDef?.mpCost || 0;
@@ -621,7 +650,12 @@ function handleGroundAOESkillUse(
 ): void {
   const characterId = session.characterId;
 
-  const check = ctx.skillSys.canUseSkill(session, skillName, null);
+  // Ground-targeted AOE: the position IS the target. Pass a dummy non-null
+  // targetId so canUseSkill's OTHER_ONLY check (DAMAGE_PHYSICAL → requires
+  // target) doesn't reject with 'no_target'. The dummy isn't the caster's id
+  // so 'no_self_target' doesn't fire either. targetId isn't used elsewhere in
+  // canUseSkill.
+  const check = ctx.skillSys.canUseSkill(session, skillName, 'ground-aoe');
   if (!check.canUse) {
     ctx.sendToPlayer(characterId, {
       type: PacketType.SKILL_USE,

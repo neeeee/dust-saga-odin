@@ -531,6 +531,23 @@ send_npc_interact :: proc(nc: ^Network_Client, npc_id: string) {
 	send_object(nc, .NPC_INTERACT, fields[:])
 }
 
+// Equip an item from inventory by id. Server derives the slot from the item's
+// equipmentSlot def; the returned INVENTORY_UPDATE confirms it.
+send_equip_item :: proc(nc: ^Network_Client, item_id: string) {
+	fields := make([dynamic]JSON_Field, 0, 1)
+	defer delete(fields)
+	append(&fields, JSON_Field{"itemId", json_str(item_id)})
+	send_object(nc, .EQUIP_ITEM, fields[:])
+}
+
+// Unequip a slot by its key string ("weapon", "ring_1", …).
+send_unequip_item :: proc(nc: ^Network_Client, slot_key: string) {
+	fields := make([dynamic]JSON_Field, 0, 1)
+	defer delete(fields)
+	append(&fields, JSON_Field{"slot", json_str(slot_key)})
+	send_object(nc, .UNEQUIP_ITEM, fields[:])
+}
+
 // Stat-point allocation: add one point to `stat` ("STA"/"STR"/…).
 // Assumed payload shape: { stat: "STR" }.
 send_stat_allocate :: proc(nc: ^Network_Client, stat: string) {

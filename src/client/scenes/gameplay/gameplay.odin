@@ -214,6 +214,10 @@ update :: proc(dt: f32) -> (requested: sys.App_State, has_request: bool) {
 
 	// 6. Skill bar. Ground-targeted skills arm the reticle instead of firing
 	//    immediately — the cast goes out on the confirm click (update_ground_target).
+	//    TARGET_CENTERED AOE skills (Arrow Rain/Storm) send aoePosition computed
+	//    from the current target's ground position so the server runs its AOE
+	//    handler (the server needs aoePosition for skills in
+	//    GROUND_TARGETED_AOE_SKILLS, even when the client targets an entity).
 	if inp.skill_slot >= 0 {
 		// A new skill press supersedes any armed reticle.
 		state.ground_target.active = false
@@ -225,6 +229,15 @@ update :: proc(dt: f32) -> (requested: sys.App_State, has_request: bool) {
 				gt.active = true
 				sys.copy_string_to_buffer(gt.skill_name[:], &gt.name_len, name)
 				gt.radius = sk.targeting.aoe_radius > 0 ? sk.targeting.aoe_radius : sys.DEFAULT_AOE_RADIUS
+			} else if sk != nil && sk.targeting.aoe_mode == .TARGET_CENTERED && sk.targeting.aoe_radius > 0 {
+				// Target-centered AOE: send the target's ground position as
+				// aoePosition so the server's ground-AOE handler fires.
+				idx := sys.find_index(state.scene, state.player.target_id)
+				if idx >= 0 {
+					pos := state.scene.transforms[idx].position
+					sys.send_skill_use_ground(state.net, name, pos.x, pos.y, pos.z)
+				}
+				// No target → silently skip (player needs a target for centered AOE).
 			} else {
 				sys.send_skill_use(state.net, name, target_string_id())
 			}

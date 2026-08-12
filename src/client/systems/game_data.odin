@@ -812,7 +812,7 @@ resolve_tiered :: proc(t: ^Tiered_Mod, gate_stat_value: f32, proficiency_value: 
 
 // ── sample population (exercises every branch of the schema) ───────────────
 
-init_game_data :: proc() {
+	init_game_data :: proc() {
 	if game_data_loaded do return
 	game_data_loaded = true
 
@@ -820,6 +820,7 @@ init_game_data :: proc() {
 	registry_init(&job_registry)
 	registry_init(&skill_registry)
 	for sc in Sub_Category do tree_skills[sc] = make([dynamic]Skill_Id)
+	init_item_defs()
 
 	// Races (data from src/constants/races.ts RACE_DATA). Models are per-race.
 	registry_add(&race_registry, "human", Race_Def{

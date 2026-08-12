@@ -70,15 +70,60 @@ create_quest_list_menu :: proc() {
 	ui.menu_add_button(m, "Gather Herbs   (5/10)")
 }
 
+// Button-id bases: equip a backpack item (6000 + inv index) / unequip a slot
+// (7000 + slot index).
+INV_EQUIP_BASE   :: 6000
+INV_UNEQUIP_BASE :: 7000
+
 refresh_inventory_menu :: proc() {
 	m := &state.inventory_menu
+	inv := &state.player.inventory
 	ui.menu_clear(m)
-	ui.menu_add_label(m, fmt.tprintf("Gold: %d", state.player.inventory.gold))
+	ui.menu_add_label(m, fmt.tprintf("Gold: %d", inv.gold))
+
+	// Equipped slots (click to unequip).
+	ui.menu_add_label(m, "— Equipped —")
+	any_eq := false
+	for slot in sys.EQUIP_SLOT {
+		es := &inv.equipment[int(slot)]
+		if es.item_id_len == 0 do continue
+		any_eq = true
+		label := fmt.tprintf("%-9s %s  [remove]", sys.EQUIP_SLOT_NAMES[int(slot)], sys.item_name(sys.item_id_string(es)))
+		ui.menu_add_button_id(m, label, INV_UNEQUIP_BASE + int(slot))
+	}
+	if !any_eq do ui.menu_add_label(m, "(nothing equipped)")
+
 	ui.menu_add_separator(m)
-	for i in 0 ..< len(state.player.inventory.items) {
-		it := &state.player.inventory.items[i]
-		row := fmt.tprintf("%d. %s x%d", i + 1, sys.item_id_string(it), it.quantity)
-		ui.menu_add_button(m, row)
+	ui.menu_add_label(m, "— Backpack (click to equip) —")
+	for i in 0 ..< len(inv.items) {
+		it := &inv.items[i]
+		id := sys.item_id_string(it)
+		name := sys.item_name(id)
+		if sys.item_is_equippable(id) {
+			ui.menu_add_button_id(m, fmt.tprintf("%s x%d  [equip]", name, it.quantity), INV_EQUIP_BASE + i)
+		} else {
+			ui.menu_add_label(m, fmt.tprintf("%s x%d", name, it.quantity))
+		}
+	}
+	ui.menu_auto_height(m, 560)
+}
+
+handle_inventory_menu_clicks :: proc() {
+	m := &state.inventory_menu
+	if !m.open do return
+	inv := &state.player.inventory
+	for i in 0 ..< len(m.items) {
+		item := &m.items[i]
+		if item.kind != .BUTTON || !item.clicked do continue
+		if item.id >= INV_UNEQUIP_BASE && item.id < INV_UNEQUIP_BASE + sys.EQUIP_SLOT_COUNT {
+			slot := sys.EQUIP_SLOT(item.id - INV_UNEQUIP_BASE)
+			sys.send_unequip_item(state.net, sys.EQUIP_SLOT_NAMES[int(slot)])
+		} else if item.id >= INV_EQUIP_BASE {
+			idx := item.id - INV_EQUIP_BASE
+			if idx >= 0 && idx < len(inv.items) {
+				sys.send_equip_item(state.net, sys.item_id_string(&inv.items[idx]))
+			}
+		}
 	}
 }
 
@@ -283,6 +328,7 @@ update_menus :: proc() {
 
 	// Action menus: read clicks AFTER menu_update sets them this frame.
 	handle_system_menu_clicks()
+	handle_inventory_menu_clicks()
 	handle_character_menu_clicks()
 	handle_debug_menu_clicks()
 	handle_settings_menu_clicks()
@@ -567,6 +613,13 @@ DEBUG_COMMANDS: []Debug_Cmd = {
 	{"Spawn Dummy", "/spawn_dummy"},
 	{"Kill All Enemies", "/killallenemies"},
 	{"Dummy List", "/dummy_list"},
+	{"Give Wooden Sword", "/giveitem wooden_sword 1"},
+	{"Give Wooden Bow", "/giveitem wooden_bow 1"},
+	{"Give Rusty Dagger", "/giveitem rusty_dagger 1"},
+	{"Give Basic Staff", "/giveitem basic_staff 1"},
+	{"Give Leather Armor", "/giveitem leather_armor 1"},
+	{"Give Health Potion", "/giveitem health_potion 5"},
+	{"List Item IDs (chat)", "/giveitem ?"},
 }
 
 DEBUG_CMD_BASE :: 3000

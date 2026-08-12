@@ -578,22 +578,24 @@ handle_inventory_update :: proc(ctx: ^Game_Context, data: ^JSON_Value) {
 		)
 		append(&inv.items, item)
 	}
-	// equipment (13 slots) — record which item ids are equipped.
+	// equipment (13 slots) — store each equipped item directly (the server
+	// removes equipped items from inventory, so they aren't in items[]).
 	eq := get_object(o, "equipment")
-	slot_names := EQUIP_SLOT_NAMES
 	for slot in EQUIP_SLOT {
-		name := slot_names[int(slot)]
+		name := EQUIP_SLOT_NAMES[int(slot)]
+		es := &inv.equipment[int(slot)]
+		es.item_id_len = 0 // clear (empty until proven otherwise)
 		if has_field(eq, name) {
 			eq_it := get_object(eq, name)
 			if !is_null(json.Value(eq_it)) {
-				eq_id := get_string(eq_it, "itemId")
-				found := -1
-				for &iv, i in inv.items {
-					if item_id_string(&iv) == eq_id {found = int(i); break}
-				}
-				inv.equipment[int(slot)] = found
-			} else {
-				inv.equipment[int(slot)] = -1
+				copy_string_to_buffer(es.item_id[:], &es.item_id_len, get_string(eq_it, "itemId"))
+				es.quantity = get_int(eq_it, "quantity")
+				es.enhancement_level = get_int(eq_it, "enhancementLevel")
+				copy_string_to_buffer(
+					es.enhancement_element[:],
+					&es.enhancement_elem_len,
+					get_string(eq_it, "enhancementElement"),
+				)
 			}
 		}
 	}
@@ -603,7 +605,7 @@ handle_inventory_update :: proc(ctx: ^Game_Context, data: ^JSON_Value) {
 // (types.odin). Call sites below use that directly.
 
 // String names for each equipment slot, parallel to the EQUIP_SLOT enum order.
-EQUIP_SLOT_NAMES :: [EQUIP_SLOT_COUNT]string {
+EQUIP_SLOT_NAMES: [EQUIP_SLOT_COUNT]string = {
 	"weapon",
 	"armor",
 	"helmet",
@@ -713,6 +715,7 @@ skill_error_message :: proc "contextless" (err: string) -> string {
 	case "blocking":                   return "can't use while blocking"
 	case "field_blocked":              return "blocked by a field"
 	case "pvp_disabled":               return "PvP is disabled here"
+	case "out_of_range":               return "out of range"
 	case "no_los":                     return "no line of sight"
 	case "no_materials":               return "missing materials"
 	case "party_member":               return "can't target a party member"

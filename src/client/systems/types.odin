@@ -108,16 +108,24 @@ character_id_string :: proc "contextless" (p: ^Local_Player) -> string {
 Inventory :: struct {
 	items:     [dynamic]Inventory_Item,
 	gold:      i64,
-	// equipment[slot] is an index into items, or -1 if empty.
-	equipment: [EQUIP_SLOT_COUNT]int,
+	// Equipped item per slot. The server holds inventory and equipment as two
+	// separate arrays (equipping removes the item from inventory), so we store
+	// the equipped Inventory_Item directly — an empty slot has item_id_len == 0.
+	equipment: [EQUIP_SLOT_COUNT]Inventory_Item,
 }
 
 inventory_init :: proc(inv: ^Inventory) {
 	inv.items = make([dynamic]Inventory_Item)
-	for i in 0 ..< EQUIP_SLOT_COUNT {
-		inv.equipment[i] = -1
-	}
+	// equipment is zero-init ⇒ every slot's item_id_len == 0 (empty).
 }
+
+// Whether an equipment slot currently holds an item.
+equip_slot_filled :: proc(inv: ^Inventory, slot: EQUIP_SLOT) -> bool {
+	return inv.equipment[int(slot)].item_id_len > 0
+}
+
+// NOTE: the EQUIP_SLOT enum above is misspelled "WAPON" — left as-is to avoid
+// churn (it's only ever iterated, never referenced by member name).
 
 inventory_destroy :: proc(inv: ^Inventory) {
 	delete(inv.items)
