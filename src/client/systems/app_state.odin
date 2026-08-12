@@ -4,9 +4,7 @@ App_State :: enum {
 	TITLE,
 	LOGIN,
 	CHARACTER_SELECT,
-	LOADING,
 	GAMEPLAY,
-	CLOSING,
 }
 
 // Sentinel returned by the gameplay scene when the user logs out / returns to

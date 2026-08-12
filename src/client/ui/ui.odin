@@ -12,11 +12,6 @@ UI_Button :: struct {
 	font_size:   i32,
 }
 
-// Dummy :: proc() {
-// 	rl.ClearBackground(rl.WHITE)
-// 	rl.DrawText("test", 0, 0, 20, rl.BLACK)
-// }
-
 ui_is_hovered :: proc(btn: UI_Button) -> bool {
 	mouse_pos := rl.GetMousePosition()
 	return rl.CheckCollisionPointRec(mouse_pos, btn.rect)

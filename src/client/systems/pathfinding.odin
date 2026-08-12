@@ -113,6 +113,82 @@ is_blocked :: proc(col, row: int, zone: ^Zone_Definition) -> bool {
 }
 
 // ── A* pathfinding ───────────────────────────────────────────────────────
+//
+// Scratch (g / par / closed + the open-set binary heap) lives in a persistent
+// module-level Pathfinder so click-to-move does NO heap allocation after the
+// first zone-sized growth — the original allocated ~4 × cols×rows cells every
+// click. The open set is a binary min-heap keyed on f = g + h with lazy
+// duplicate-push deletion (stale pops are skipped via the closed flag),
+// replacing the O(n²) linear scan.
+
+PF_INF :: f32(1e15)
+
+PF_Heap_Entry :: struct {
+	f:    f32,
+	node: int,
+}
+
+Pathfinder :: struct {
+	capacity: int,
+	g:        [dynamic]f32,
+	par:      [dynamic]int,
+	closed:   [dynamic]bool,
+	heap:     [dynamic]PF_Heap_Entry,
+}
+
+pathfinder: Pathfinder
+
+// Ensure scratch arrays are at least `total` cells, then reset the first
+// `total` cells. Grows only when a larger zone is loaded; no per-call alloc.
+pathfinder_reset :: proc(total: int) {
+	if total > pathfinder.capacity {
+		resize(&pathfinder.g, total)
+		resize(&pathfinder.par, total)
+		resize(&pathfinder.closed, total)
+		pathfinder.capacity = total
+	}
+	for i in 0 ..< total {
+		pathfinder.g[i] = PF_INF
+		pathfinder.par[i] = -1
+		pathfinder.closed[i] = false
+	}
+	clear(&pathfinder.heap)
+}
+
+pf_heap_push :: proc(e: PF_Heap_Entry) {
+	append(&pathfinder.heap, e)
+	i := len(pathfinder.heap) - 1
+	for i > 0 {
+		parent := (i - 1) / 2
+		if pathfinder.heap[parent].f <= pathfinder.heap[i].f do break
+		pathfinder.heap[parent], pathfinder.heap[i] = pathfinder.heap[i], pathfinder.heap[parent]
+		i = parent
+	}
+}
+
+// Pop the lowest-f entry. Returns false when the heap is empty.
+pf_heap_pop_min :: proc() -> (PF_Heap_Entry, bool) {
+	if len(pathfinder.heap) == 0 do return {}, false
+	top := pathfinder.heap[0]
+	last := pathfinder.heap[len(pathfinder.heap) - 1]
+	resize(&pathfinder.heap, len(pathfinder.heap) - 1)
+	n := len(pathfinder.heap)
+	if n > 0 {
+		pathfinder.heap[0] = last
+		i := 0
+		for {
+			l := 2 * i + 1
+			r := 2 * i + 2
+			best := i
+			if l < n && pathfinder.heap[l].f < pathfinder.heap[best].f do best = l
+			if r < n && pathfinder.heap[r].f < pathfinder.heap[best].f do best = r
+			if best == i do break
+			pathfinder.heap[best], pathfinder.heap[i] = pathfinder.heap[i], pathfinder.heap[best]
+			i = best
+		}
+	}
+	return top, true
+}
 
 octile :: proc "contextless" (c1, r1, c2, r2: int) -> f32 {
 	dx := abs(c2 - c1)
@@ -132,35 +208,12 @@ astar :: proc(zone: ^Zone_Definition, sc, sr, ec, er: int) -> [dynamic][2]int {
 	if is_blocked(sc, sr, zone) do return path
 	if is_blocked(ec, er, zone) do return path
 
-	INF: f32 = 1e15
 	start_idx := sr * cols + sc
 	end_idx := er * cols + ec
 
-	g: [dynamic]f32
-	defer delete(g)
-	resize(&g, total)
-	for i in 0 ..< total do g[i] = INF
-	g[start_idx] = 0
-
-	par: [dynamic]int
-	defer delete(par)
-	resize(&par, total)
-	for i in 0 ..< total do par[i] = -1
-
-	in_open: [dynamic]bool
-	defer delete(in_open)
-	resize(&in_open, total)
-	for i in 0 ..< total do in_open[i] = false
-
-	closed: [dynamic]bool
-	defer delete(closed)
-	resize(&closed, total)
-	for i in 0 ..< total do closed[i] = false
-
-	open: [dynamic]int
-	defer delete(open)
-	append(&open, start_idx)
-	in_open[start_idx] = true
+	pathfinder_reset(total)
+	pathfinder.g[start_idx] = 0
+	pf_heap_push({f = octile(sc, sr, ec, er), node = start_idx})
 
 	dirs := [8][2]int{
 		{0, -1}, {0, 1}, {-1, 0}, {1, 0},
@@ -168,19 +221,14 @@ astar :: proc(zone: ^Zone_Definition, sc, sr, ec, er: int) -> [dynamic][2]int {
 	}
 	costs := [8]f32{1, 1, 1, 1, 1.414, 1.414, 1.414, 1.414}
 
-	for len(open) > 0 {
-		best_j := 0
-		best_f: f32 = INF
-		for j in 0 ..< len(open) {
-			idx := open[j]
-			f := g[idx] + octile(idx % cols, idx / cols, ec, er)
-			if f < best_f { best_f = f; best_j = j }
-		}
-
-		cur := open[best_j]
-		open[best_j] = open[len(open) - 1]
-		resize(&open, len(open) - 1)
-		in_open[cur] = false
+	for {
+		entry, ok := pf_heap_pop_min()
+		if !ok do break
+		cur := entry.node
+		// Lazy deletion: a node may have several stale entries in the heap;
+		// the lowest-f one is popped first and marks the node closed, so any
+		// later (higher-f) duplicate is skipped here.
+		if pathfinder.closed[cur] do continue
 
 		if cur == end_idx {
 			raw: [dynamic]int
@@ -188,7 +236,7 @@ astar :: proc(zone: ^Zone_Definition, sc, sr, ec, er: int) -> [dynamic][2]int {
 			idx := cur
 			for idx != start_idx {
 				append(&raw, idx)
-				p := par[idx]
+				p := pathfinder.par[idx]
 				if p < 0 do break
 				idx = p
 			}
@@ -201,7 +249,7 @@ astar :: proc(zone: ^Zone_Definition, sc, sr, ec, er: int) -> [dynamic][2]int {
 			return path
 		}
 
-		closed[cur] = true
+		pathfinder.closed[cur] = true
 		cc := cur % cols
 		cr_idx := cur / cols
 
@@ -210,20 +258,17 @@ astar :: proc(zone: ^Zone_Definition, sc, sr, ec, er: int) -> [dynamic][2]int {
 			nr := cr_idx + dirs[d][1]
 			if nc < 0 || nc >= cols || nr < 0 || nr >= rows do continue
 			nidx := nr * cols + nc
-			if closed[nidx] do continue
+			if pathfinder.closed[nidx] do continue
 			if zone.collision_grid[nidx] do continue
 			if dirs[d][0] != 0 && dirs[d][1] != 0 {
 				if zone.collision_grid[cr_idx * cols + nc] do continue
 				if zone.collision_grid[nr * cols + cc] do continue
 			}
-			new_g := g[cur] + costs[d]
-			if new_g < g[nidx] {
-				g[nidx] = new_g
-				par[nidx] = cur
-				if !in_open[nidx] {
-					append(&open, nidx)
-					in_open[nidx] = true
-				}
+			new_g := pathfinder.g[cur] + costs[d]
+			if new_g < pathfinder.g[nidx] {
+				pathfinder.g[nidx] = new_g
+				pathfinder.par[nidx] = cur
+				pf_heap_push({f = new_g + octile(nc, nr, ec, er), node = nidx})
 			}
 		}
 	}

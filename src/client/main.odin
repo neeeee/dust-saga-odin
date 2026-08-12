@@ -1,6 +1,7 @@
 package main
 
 import "core:fmt"
+import "core:mem"
 import rl "vendor:raylib"
 import sys "systems"
 
@@ -14,12 +15,25 @@ import character_select "scenes/character_select"
 // Shared resources (network client, entity scene, local player, chat log) live
 // here so they survive across scene transitions (e.g. reconnecting keeps the
 // socket; logging out keeps the character list).
+//
+// A per-frame Dynamic_Arena backs context.temp_allocator so all the transient
+// allocations made by gameplay/UI code each frame (fmt.tprintf HUD strings,
+// strings.clone_to_cstring for raylib text APIs, etc.) are bulk-freed at frame
+// end instead of accumulating on the heap for the whole session.
 
 main :: proc() {
 	rl.InitWindow(1280, 720, "Dust Saga")
 	rl.SetTargetFPS(60)
 	rl.SetExitKey(.KEY_NULL) // we handle ESC ourselves
 	defer rl.CloseWindow()
+
+	frame_arena: mem.Dynamic_Arena
+	mem.dynamic_arena_init(&frame_arena)
+	defer mem.dynamic_arena_destroy(&frame_arena)
+
+	// Static game data (races / jobs / skills) — registries populated once.
+	sys.init_game_data()
+	defer sys.destroy_game_data()
 
 	// Shared, long-lived state.
 	net := sys.new_network_client(sys.DEFAULT_SERVER_HOST, sys.DEFAULT_SERVER_PORT)
@@ -37,14 +51,16 @@ main :: proc() {
 	defer sys.chat_destroy(&chat)
 
 	state: sys.App_State = .TITLE
-	title_screen.Init()
+	title_screen.init()
 
 	for !rl.WindowShouldClose() {
+		// All transient per-frame allocations land in the frame arena.
+		context.temp_allocator = mem.dynamic_arena_allocator(&frame_arena)
 		dt := rl.GetFrameTime()
 
 		#partial switch state {
 		case .TITLE:
-			if title_screen.Update() {
+			if title_screen.update() {
 				state = .LOGIN
 				login.init(net)
 			}
@@ -76,7 +92,7 @@ main :: proc() {
 				// Exit game timer expired.
 				gameplay.shutdown()
 				state = .TITLE
-				title_screen.Init()
+				title_screen.init()
 			}
 		case:
 		}
@@ -85,7 +101,7 @@ main :: proc() {
 		rl.BeginDrawing()
 		#partial switch state {
 		case .TITLE:
-			title_screen.Render()
+			title_screen.render()
 		case .LOGIN:
 			login.render()
 		case .CHARACTER_SELECT:
@@ -98,6 +114,9 @@ main :: proc() {
 		}
 		rl.DrawFPS(10, 690)
 		rl.EndDrawing()
+
+		// Reset the frame arena — all per-frame temp allocations are freed here.
+		mem.dynamic_arena_free_all(&frame_arena)
 	}
 }
 

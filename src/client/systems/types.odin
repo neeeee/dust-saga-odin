@@ -91,6 +91,15 @@ item_id_string :: proc "contextless" (it: ^Inventory_Item) -> string {
 	return string(it.item_id[:it.item_id_len])
 }
 
+// Copy a string into a fixed [N]u8 buffer + companion length, truncating to
+// fit. The single owned-buffer setter used across packet parsing and the
+// character-select scene (replaces the former copy_field / copy_name dupes).
+copy_string_to_buffer :: proc "contextless" (dst: []u8, dst_len: ^int, src: string) {
+	n := min(len(src), len(dst))
+	dst_len^ = n
+	copy(dst[:n], transmute([]u8)src)
+}
+
 // Read the local player's character_id as an owned string view.
 character_id_string :: proc "contextless" (p: ^Local_Player) -> string {
 	return string(p.character_id_buf[:p.character_id_len])
@@ -246,9 +255,9 @@ Local_Player :: struct {
 	role:                  string, // 'player' | 'gm' | 'admin'
 
 	// class / job
-	job_id:                string,
-	base_class:            string,
-	race:                  string,
+	job_id:                Job_Id,
+	base_class:            Base_Class,
+	race:                  Race_Id,
 	// zone id is stored in an owned fixed buffer (the server-sent string is a
 	// view into a packet that gets freed after dispatch).
 	zone_id_buf:           [64]u8,
@@ -262,6 +271,14 @@ Local_Player :: struct {
 	stats:                 Player_Stats,
 	unspent_stat_points:   int,
 	unspent_skill_points:  int,
+	// per-attribute stat allocations + per-sub-category skill points/proficiency
+	// (server-authoritative; parsed from CHARACTER_SELECT / STATS_UPDATE).
+	// allocated_stats      ← session.statPoints         (spent stat points)
+	// allocated_skill_points ← session.skillProficiencies (spent skill points = the cap)
+	// skill_adeptness      ← session.skillAdeptness      (use-grown proficiency, ≤ allocated)
+	allocated_stats:         [Attr]i32,
+	allocated_skill_points:  [Sub_Category]i32,
+	skill_adeptness:         [Sub_Category]f32,
 
 	// inventory
 	inventory:             Inventory,
@@ -285,6 +302,8 @@ Local_Player :: struct {
 
 local_player_init :: proc(p: ^Local_Player) {
 	p.target_id = INVALID_ENTITY
+	p.race = INVALID_RACE_ID
+	p.job_id = INVALID_JOB_ID
 	inventory_init(&p.inventory)
 	p.cooldowns = make([dynamic]Skill_Cooldown)
 }

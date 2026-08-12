@@ -43,17 +43,10 @@ create_settings_menu :: proc() {
 }
 
 create_skills_menu :: proc() {
-	m := &state.skills_menu
-	m^ = ui.menu_create("Skills", 350, 200, 400, 400)
-	ui.menu_add_label(m, "Skill Points: 5")
-	ui.menu_add_separator(m)
-	ui.menu_add_button(m, "Fireball      3/5")
-	ui.menu_add_button(m, "Ice Shard     1/5")
-	ui.menu_add_button(m, "Heal         2/5")
-	ui.menu_add_button(m, "Shield       0/5")
-	ui.menu_add_button(m, "Dash         4/5")
-	ui.menu_add_separator(m)
-	ui.menu_add_button(m, "Reset Skills")
+	// Content is rebuilt each frame by refresh_skills_menu (it depends on the
+	// player's live job / adeptness / caps).
+	state.skills_menu = ui.menu_create("Skills", 300, 120, 460, 540)
+	state.skills_menu.close_on_esc = true
 }
 
 create_friends_menu :: proc() {
@@ -229,13 +222,23 @@ init_menus :: proc() {
 	state.click_path = make([dynamic]rl.Vector3)
 
 	state.system_menu = ui.menu_create("System", 0, 0, 240, 220)
-	state.system_menu.close_on_esc = true
+	state.system_menu.close_on_esc = false
 	state.system_menu.closable = false
+
+	// Character sheet (stat + skill point allocation). Refresh-populated.
+	state.character_profile_menu = ui.menu_create("Character", 820, 120, 360, 560)
+	state.character_profile_menu.close_on_esc = true
+
+	// Admin/debug overlay (toggled with F1, not on the bar). Sends GM chat
+	// commands the server honors for accounts with the gm/admin role.
+	state.debug_menu = ui.menu_create("Debug (F1)", 20, 120, 360, 520)
+	state.debug_menu.close_on_esc = true
 
 	state.bar_buttons = make([dynamic]Bar_Button)
 	append(&state.bar_buttons, Bar_Button{"Inv", &state.inventory_menu})
-	append(&state.bar_buttons, Bar_Button{"Set", &state.settings_menu})
+	append(&state.bar_buttons, Bar_Button{"Chr", &state.character_profile_menu})
 	append(&state.bar_buttons, Bar_Button{"Skl", &state.skills_menu})
+	append(&state.bar_buttons, Bar_Button{"Set", &state.settings_menu})
 	append(&state.bar_buttons, Bar_Button{"Frn", &state.friends_menu})
 	append(&state.bar_buttons, Bar_Button{"Pty", &state.party_menu})
 	append(&state.bar_buttons, Bar_Button{"Qst", &state.quest_list_menu})
@@ -256,6 +259,9 @@ update_menus :: proc() {
 
 	if state.inventory_menu.open do refresh_inventory_menu()
 	if state.shop_menu.open do refresh_shop_menu()
+	if state.skills_menu.open do refresh_skills_menu()
+	if state.character_profile_menu.open do refresh_character_menu()
+	if state.debug_menu.open do refresh_debug_menu()
 	update_shop_menu()
 
 	ui.menu_update(&state.inventory_menu)
@@ -272,6 +278,11 @@ update_menus :: proc() {
 	ui.menu_update(&state.loot_party_menu)
 	ui.menu_update(&state.shop_menu)
 	ui.menu_update(&state.system_menu)
+	ui.menu_update(&state.debug_menu)
+
+	// Action menus: read clicks AFTER menu_update sets them this frame.
+	handle_character_menu_clicks()
+	handle_debug_menu_clicks()
 }
 
 draw_menu_bar :: proc() {
@@ -315,6 +326,7 @@ draw_menu_bar :: proc() {
 	ui.menu_draw(&state.character_profile_menu)
 	ui.menu_draw(&state.loot_drop_menu)
 	ui.menu_draw(&state.loot_party_menu)
+	ui.menu_draw(&state.debug_menu)
 	draw_system_menu()
 }
 
@@ -327,7 +339,6 @@ draw_system_menu :: proc() {
 	m.rect.y = 200.0
 
 	refresh_system_menu()
-	ui.menu_update(m)
 	ui.menu_draw(m)
 }
 
@@ -390,15 +401,211 @@ handle_system_menu_clicks :: proc(inp: sys.Input_State) {
 				} else {
 					state.logout_start_ms = state.clock_ms
 				}
-			} else if item.id == 3 {
-				// Exit Game
-				if state.exit_start_ms > 0 {
-					state.exit_start_ms = 0
-				} else {
-					state.exit_start_ms = state.clock_ms
-				}
+		} else if item.id == 3 {
+			// Exit Game
+			if state.exit_start_ms > 0 {
+				state.exit_start_ms = 0
+			} else {
+				state.exit_start_ms = state.clock_ms
 			}
-			return
+		}
+		return
+	}
+}
+}
+
+// ── skills + character (allocation) menus ─────────────────────────────────
+// Button-id bases so handle_character_menu_clicks can tell a stat button from
+// a skill-sub-category button. stat: 1000+attr (0..5), skill: 2000+subcat.
+STAT_BTN_BASE  :: 1000
+SKILL_BTN_BASE :: 2000
+
+// Read-only skills browser: lists the player's class-kit skills (level-gated)
+// and the skill trees the job can invest in (with current adeptness / cap and
+// each skill's requirement, marking ones whose requirement is met).
+refresh_skills_menu :: proc() {
+	m := &state.skills_menu
+	p := state.player
+	ui.menu_clear(m)
+	if p.job_id == sys.INVALID_JOB_ID {
+		ui.menu_add_label(m, "No job loaded.")
+		return
+	}
+	job := sys.registry_get(&sys.job_registry, p.job_id)
+	ui.menu_add_label(m, fmt.tprintf("Skill Points: %d", p.unspent_skill_points))
+	ui.menu_add_label(m, fmt.tprintf("Job: %s", job.name))
+	ui.menu_add_separator(m)
+
+	ui.menu_add_label(m, "-- Class Skills --")
+	for i in 0 ..< len(job.kit_skill_ids) {
+		sk := sys.registry_get(&sys.skill_registry, job.kit_skill_ids[i])
+		lvl := sys.skill_req_level(sk)
+		tag := sys.skill_req_met(sk, p) ? "OK" : fmt.tprintf("Lv%d", lvl)
+		ui.menu_add_label(m, fmt.tprintf("[%s] %s — %s", tag, sk.name, sk.description))
+	}
+	ui.menu_add_separator(m)
+
+	ui.menu_add_label(m, "-- Skill Trees --")
+	for sc in sys.Sub_Category {
+		prof := job.proficiency[sc]
+		if prof.max_potential == 0 do continue
+		adepts := p.skill_adeptness[sc]        // use-grown proficiency
+		alloc := p.allocated_skill_points[sc]  // spent skill points (the cap)
+		ui.menu_add_label(
+			m,
+			fmt.tprintf("%s: prof %.1f / pts %d / max %d", sys.sub_category_name(sc), adepts, alloc, prof.max_potential),
+		)
+		for j in 0 ..< len(sys.tree_skills[sc]) {
+			sk := sys.registry_get(&sys.skill_registry, sys.tree_skills[sc][j])
+			pts := sys.skill_req_points(sk)
+			tag := sys.skill_req_met(sk, p) ? "OK" : (pts > 0 ? fmt.tprintf("%d", pts) : "x")
+			ui.menu_add_label(m, fmt.tprintf("   [%s] %s", tag, sk.name))
+		}
+	}
+	ui.menu_auto_height(m, 560)
+}
+
+// Character sheet: spend stat points into the 6 attributes and skill points
+// into the job's available sub-categories. Buttons send the allocation packet;
+// the server's STATS_UPDATE reconciles unspent points + derived stats.
+refresh_character_menu :: proc() {
+	m := &state.character_profile_menu
+	p := state.player
+	ui.menu_clear(m)
+
+	ui.menu_add_label(m, fmt.tprintf("Stat Points: %d", p.unspent_stat_points))
+	for a in sys.Attr {
+		total := sys.attr_total(p, a)
+		cost := sys.attr_next_cost(p, a)
+		affordable := p.unspent_stat_points >= cost && total < 99
+		mark := affordable ? fmt.tprintf(" [+%d]", cost) : fmt.tprintf("  (%d)", cost)
+		ui.menu_add_button_id(
+			m,
+			fmt.tprintf("%-4s %3d  tot %d%s", sys.attr_name(a), p.allocated_stats[a], total, mark),
+			STAT_BTN_BASE + int(a),
+		)
+	}
+	ui.menu_add_separator(m)
+
+	ui.menu_add_label(m, fmt.tprintf("Skill Points: %d", p.unspent_skill_points))
+	if p.job_id != sys.INVALID_JOB_ID {
+		job := sys.registry_get(&sys.job_registry, p.job_id)
+		for sc in sys.Sub_Category {
+			prof := job.proficiency[sc]
+			if prof.max_potential == 0 do continue
+			adepts := p.skill_adeptness[sc]        // proficiency (grows via use)
+			alloc := p.allocated_skill_points[sc]  // spent points — the cap [+ raises]
+			can := p.unspent_skill_points > 0 && alloc < i32(prof.max_potential)
+			mark := can ? "  [+]" : ""
+			ui.menu_add_button_id(
+				m,
+				fmt.tprintf("%-12s %.0f/%d/%d%s", sys.sub_category_name(sc), adepts, alloc, prof.max_potential, mark),
+				SKILL_BTN_BASE + int(sc),
+			)
+		}
+	}
+	ui.menu_add_separator(m)
+	s := &p.stats
+	ui.menu_add_label(
+		m,
+		fmt.tprintf("Lv %d   HP %.0f/%.0f   MP %.0f/%.0f", s.level, s.health, s.max_health, s.mana, s.max_mana),
+	)
+	ui.menu_add_label(m, fmt.tprintf("ATK %.0f  DEF %.0f  MATK %.0f", s.attack, s.defense, s.magic_attack))
+	ui.menu_add_label(m, fmt.tprintf("SPD %.0f  Crit %.0f%%", s.speed, s.crit_chance))
+	ui.menu_auto_height(m, 600)
+}
+
+// Read clicks from the character menu's buttons (must run AFTER menu_update).
+handle_character_menu_clicks :: proc() {
+	m := &state.character_profile_menu
+	if !m.open do return
+	p := state.player
+	for i in 0 ..< len(m.items) {
+		item := &m.items[i]
+		if item.kind != .BUTTON || !item.clicked do continue
+		if item.id >= STAT_BTN_BASE && item.id < STAT_BTN_BASE + sys.ATTR_COUNT {
+			a := sys.Attr(item.id - STAT_BTN_BASE)
+			// Gate on the server's exact rule: enough unspent points for the
+			// escalating cost, and total (base + allocated) below the 99 cap.
+			cost := sys.attr_next_cost(p, a)
+			if p.unspent_stat_points >= cost && sys.attr_total(p, a) < 99 {
+				sys.send_stat_allocate(state.net, sys.attr_name(a))
+			}
+		} else if item.id >= SKILL_BTN_BASE && item.id < SKILL_BTN_BASE + sys.SUB_CATEGORY_COUNT {
+			sys.send_skill_allocate(state.net, sys.sub_category_name(sys.Sub_Category(item.id - SKILL_BTN_BASE)))
+		}
+	}
+}
+
+// ── debug / admin window (F1) ──────────────────────────────────────────────
+// Sends GM chat commands (server honors them for gm/admin-role accounts) and
+// shows live diagnostics. Add commands here as needed — the server's full set
+// lives in src/server/.../chatHandlers.ts handleChatCommand.
+Debug_Cmd :: struct { label, cmd: string }
+
+DEBUG_COMMANDS: []Debug_Cmd = {
+	{"Level Up", "/levelup"},
+	{"Set Lv 10", "/setlevel 10"},
+	{"Set Lv 20", "/setlevel 20"},
+	{"Set Lv 30", "/setlevel 30"},
+	{"Set Lv 40", "/setlevel 40"},
+	{"Set Lv 50", "/setlevel 50"},
+	{"Reset Stats", "/resetstats"},
+	{"Reset Skills", "/resetskills"},
+	{"Advance (see chat)", "/advance"},
+	{"Spawn Dummy", "/spawn_dummy"},
+	{"Kill All Enemies", "/killallenemies"},
+	{"Dummy List", "/dummy_list"},
+}
+
+DEBUG_CMD_BASE :: 3000
+
+refresh_debug_menu :: proc() {
+	m := &state.debug_menu
+	p := state.player
+	ui.menu_clear(m)
+
+	// diagnostics
+	ui.menu_add_label(m, fmt.tprintf("FPS %d   Entities %d", rl.GetFPS(), state.scene.count))
+	zone := string(p.zone_id_buf[:p.zone_id_len])
+	ui.menu_add_label(
+		m,
+		fmt.tprintf("Pos (%.1f, %.1f, %.1f)  Zone %s", p.position.x, p.position.y, p.position.z, zone),
+	)
+	job_name := "—"
+	if p.job_id != sys.INVALID_JOB_ID do job_name = sys.registry_get(&sys.job_registry, p.job_id).name
+	race_name := "—"
+	if p.race != sys.INVALID_RACE_ID do race_name = sys.registry_get(&sys.race_registry, p.race).name
+	ui.menu_add_label(m, fmt.tprintf("Job %s   Race %s   Lv %d", job_name, race_name, p.stats.level))
+	tgt := p.target_id != sys.INVALID_ENTITY ? fmt.tprintf("%d", u32(p.target_id)) : "none"
+	ui.menu_add_label(m, fmt.tprintf("Target %s", tgt))
+	conn := "—"
+	switch state.net.state {
+	case .DISCONNECTED: conn = "DISCONNECTED"
+	case .CONNECTING:   conn = "CONNECTING"
+	case .OPEN:         conn = "OPEN"
+	case .FAILED:       conn = "FAILED"
+	}
+	ui.menu_add_label(m, fmt.tprintf("Conn %s   reconnects %d", conn, state.net.reconnect_attempts))
+	ui.menu_add_separator(m)
+
+	// GM command buttons
+	ui.menu_add_label(m, "— GM commands —")
+	for i in 0 ..< len(DEBUG_COMMANDS) {
+		ui.menu_add_button_id(m, DEBUG_COMMANDS[i].label, DEBUG_CMD_BASE + int(i))
+	}
+	ui.menu_auto_height(m, 560)
+}
+
+handle_debug_menu_clicks :: proc() {
+	m := &state.debug_menu
+	if !m.open do return
+	for i in 0 ..< len(m.items) {
+		item := &m.items[i]
+		if item.kind != .BUTTON || !item.clicked do continue
+		idx := item.id - DEBUG_CMD_BASE
+		if idx >= 0 && idx < len(DEBUG_COMMANDS) {
+			sys.send_chat(state.net, DEBUG_COMMANDS[idx].cmd)
 		}
 	}
 }

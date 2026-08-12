@@ -1,11 +1,6 @@
 package title_screen
 
 import "../../ui"
-
-// Dummy :: proc() {
-//     ui.Dummy()
-// }
-
 import "core:strings"
 import rl "vendor:raylib"
 
@@ -14,7 +9,7 @@ state: struct {
 	quit_button: ui.UI_Button,
 }
 
-Init :: proc() {
+init :: proc() {
 	state.play_button = ui.UI_Button {
 		rect        = {300, 350, 200, 50},
 		text        = "Play Game",
@@ -34,7 +29,7 @@ Init :: proc() {
 	}
 }
 
-Update :: proc() -> bool {
+update :: proc() -> bool {
 	if ui.ui_is_clicked(state.play_button) {
 		return true
 	}
@@ -44,7 +39,7 @@ Update :: proc() -> bool {
 	return false
 }
 
-Render :: proc() {
+render :: proc() {
 	rl.ClearBackground({20, 20, 30, 255})
 
 	title_text := "DUST SAGA"

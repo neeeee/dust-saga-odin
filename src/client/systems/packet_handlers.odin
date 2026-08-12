@@ -160,7 +160,7 @@ handle_world_state :: proc(ctx: ^Game_Context, data: ^JSON_Value) {
 	// packet is freed by handle_packet's caller after dispatch, so copy the id
 	// into the player's owned fixed buffer for long-term use (HUD display).
 	zone_id := get_string(root, "zoneId", "")
-	copy_name(ctx.player.zone_id_buf[:], &ctx.player.zone_id_len, zone_id)
+	copy_string_to_buffer(ctx.player.zone_id_buf[:], &ctx.player.zone_id_len, zone_id)
 
 	// Load the static map (rendering); the server's zoneDef is metadata-only.
 	if ctx.zone != nil do zone_destroy(ctx.zone)
@@ -441,6 +441,38 @@ handle_death :: proc(ctx: ^Game_Context, data: ^JSON_Value) {
 	}
 }
 
+// Parse the player's per-attribute allocations and per-sub-category skill
+// points/proficiency from a CHARACTER_SELECT / STATS_UPDATE payload. All are
+// optional; absent fields keep the existing value. Server field names:
+//   statPoints          { STA, STR, AGI, DEX, SPI, INT } — spent stat points
+//   skillProficiencies  { Slash, Thrust, … }            — spent skill points (the cap)
+//   skillAdeptness      { Slash, Thrust, … }            — use-grown proficiency (≤ cap)
+parse_allocated_stats :: proc(p: ^Local_Player, o: JSON_Object) {
+	if !has_field(o, "statPoints") do return
+	sp := get_object(o, "statPoints")
+	for a in Attr {
+		p.allocated_stats[a] = i32(get_f64(sp, attr_name(a), f64(p.allocated_stats[a])))
+	}
+}
+
+parse_skill_proficiencies :: proc(p: ^Local_Player, o: JSON_Object) {
+	if !has_field(o, "skillProficiencies") do return
+	sp := get_object(o, "skillProficiencies")
+	for sc in Sub_Category {
+		p.allocated_skill_points[sc] = i32(
+			get_f64(sp, sub_category_name(sc), f64(p.allocated_skill_points[sc])),
+		)
+	}
+}
+
+parse_skill_adeptness :: proc(p: ^Local_Player, o: JSON_Object) {
+	if !has_field(o, "skillAdeptness") do return
+	sa := get_object(o, "skillAdeptness")
+	for sc in Sub_Category {
+		p.skill_adeptness[sc] = f32(get_f64(sa, sub_category_name(sc), f64(p.skill_adeptness[sc])))
+	}
+}
+
 handle_stats_update :: proc(ctx: ^Game_Context, data: ^JSON_Value) {
 	if data == nil do return
 	o := obj_of(data^)
@@ -470,6 +502,9 @@ handle_stats_update :: proc(ctx: ^Game_Context, data: ^JSON_Value) {
 		if has_field(o, "unspentSkillPoints") {
 			ctx.player.unspent_skill_points = get_int(o, "unspentSkillPoints")
 		}
+		parse_allocated_stats(ctx.player, o)
+		parse_skill_proficiencies(ctx.player, o)
+		parse_skill_adeptness(ctx.player, o)
 		return
 	}
 
@@ -530,11 +565,11 @@ handle_inventory_update :: proc(ctx: ^Game_Context, data: ^JSON_Value) {
 		item: Inventory_Item
 		// Copy strings into the item's owned fixed buffers so the inventory
 		// outlives the packet (whose data is freed after dispatch).
-		copy_field(item.item_id[:], &item.item_id_len, get_string(it, "itemId"))
+		copy_string_to_buffer(item.item_id[:], &item.item_id_len, get_string(it, "itemId"))
 		item.quantity = get_int(it, "quantity")
 		item.slot = get_int(it, "slot")
 		item.enhancement_level = get_int(it, "enhancementLevel")
-		copy_field(
+		copy_string_to_buffer(
 			item.enhancement_element[:],
 			&item.enhancement_elem_len,
 			get_string(it, "enhancementElement"),
@@ -562,14 +597,8 @@ handle_inventory_update :: proc(ctx: ^Game_Context, data: ^JSON_Value) {
 	}
 }
 
-// copy_field: copy a string into a fixed [N]u8 buffer + length. (Same idea as
-// the login/character_select copy_field, kept local to avoid cross-package
-// duplication.)
-copy_field :: proc(dst: []u8, dst_len: ^int, src: string) {
-	n := min(len(src), len(dst))
-	dst_len^ = n
-	copy(dst[:n], transmute([]u8)src)
-}
+// copy_field/copy_name were here — consolidated into copy_string_to_buffer
+// (types.odin). Call sites below use that directly.
 
 // String names for each equipment slot, parallel to the EQUIP_SLOT enum order.
 EQUIP_SLOT_NAMES :: [EQUIP_SLOT_COUNT]string {
@@ -621,7 +650,7 @@ handle_cooldown :: proc(ctx: ^Game_Context, data: ^JSON_Value) {
 		ctx.player.casting.active = true
 		ctx.player.casting.cast_time = get_f64(o, "castTime")
 		ctx.player.casting.elapsed = 0
-		copy_name(ctx.player.casting.skill_name[:], &ctx.player.casting.name_len, skill)
+		copy_string_to_buffer(ctx.player.casting.skill_name[:], &ctx.player.casting.name_len, skill)
 	case "cast_cancel":
 		ctx.player.casting.active = false
 	case "used":
@@ -644,7 +673,7 @@ handle_cooldown :: proc(ctx: ^Game_Context, data: ^JSON_Value) {
 			cd := Skill_Cooldown {
 				remaining_ms = remaining,
 			}
-			copy_name(cd.skill_name[:], &cd.name_len, skill)
+			copy_string_to_buffer(cd.skill_name[:], &cd.name_len, skill)
 			append(&ctx.player.cooldowns, cd)
 		}
 	case:
@@ -669,12 +698,28 @@ handle_character_select :: proc(ctx: ^Game_Context, data: ^JSON_Value) {
 	if is_null(data^) do return
 
 	p := ctx.player
-	copy_name(p.character_id_buf[:], &p.character_id_len, get_string(o, "characterId"))
-	copy_name(p.name[:], &p.name_len, get_string(o, "characterName"))
-	p.job_id = get_string(o, "jobId")
-	p.base_class = get_string(o, "baseClass")
-	p.race = get_string(o, "race")
-	copy_name(p.zone_id_buf[:], &p.zone_id_len, get_string(o, "zoneId"))
+	copy_string_to_buffer(p.character_id_buf[:], &p.character_id_len, get_string(o, "characterId"))
+	copy_string_to_buffer(p.name[:], &p.name_len, get_string(o, "characterName"))
+	// job_id / base_class are interned at the packet boundary (views are safe —
+	// consumed before free_packet). base_class is kept as a typed enum even
+	// though it's derivable from the job, since the server sends it explicitly.
+	job_str := get_string(o, "jobId")
+	if jid, ok := job_by_name(job_str); ok {
+		p.job_id = jid
+	} else {
+		p.job_id = INVALID_JOB_ID
+		net_log("character select: unknown job '%s'", job_str)
+	}
+	p.base_class = base_class_from_string(get_string(o, "baseClass"))
+	// race is interned to a Race_Id (view is safe — consumed before free_packet).
+	race_str := get_string(o, "race")
+	if rid, ok := race_by_name(race_str); ok {
+		p.race = rid
+	} else {
+		p.race = INVALID_RACE_ID
+		net_log("character select: unknown race '%s'", race_str)
+	}
+	copy_string_to_buffer(p.zone_id_buf[:], &p.zone_id_len, get_string(o, "zoneId"))
 
 	pos := vec3_from(o, "position")
 	p.position = {pos[0], pos[1], pos[2]}
@@ -703,6 +748,9 @@ handle_character_select :: proc(ctx: ^Game_Context, data: ^JSON_Value) {
 	if has_field(o, "unspentSkillPoints") {
 		p.unspent_skill_points = get_int(o, "unspentSkillPoints")
 	}
+	parse_allocated_stats(p, o)
+	parse_skill_proficiencies(p, o)
+	parse_skill_adeptness(p, o)
 	if has_field(o, "gold") {
 		p.inventory.gold = i64(get_f64(o, "gold"))
 	}
@@ -808,12 +856,6 @@ handle_status_effect_update :: proc(ctx: ^Game_Context, data: ^JSON_Value) {
 }
 
 // ── helpers ───────────────────────────────────────────────────────────────
-
-copy_name :: proc(dst: []u8, dst_len: ^int, src: string) {
-	n := min(len(src), len(dst))
-	dst_len^ = n
-	copy(dst[:n], transmute([]u8)src)
-}
 
 matches_name :: proc "contextless" (buf: []u8, buf_len: int, s: string) -> bool {
 	if buf_len != len(s) do return false

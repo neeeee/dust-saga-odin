@@ -141,30 +141,29 @@ has_field :: proc(o: JSON_Object, key: string) -> bool {
 
 // ---- typed field getters (with fallback defaults) -----------------------
 
+// Returns a NON-OWNING string view into the JSON tree (or `default` if absent).
+// No allocation. Safe as long as the tree lives — for inbound packets that is
+// until free_packet runs after dispatch, so callers that store the string past
+// dispatch must use get_string_owned (or copy_string_to_buffer) instead.
 get_string :: proc(obj: json.Object, key: string, default: string = "") -> string {
 	val, ok := obj[key]
-	if !ok {
-		// Clone default to heap
-		if len(default) == 0 do return "" // Empty string as literal
-		cloned := make([]u8, len(default))
-		copy(cloned, default)
-		return string(cloned)
+	if ok {
+		if s, s_ok := val.(json.String); s_ok {
+			return string(s)
+		}
 	}
+	return default
+}
 
-	if s, ok := val.(json.String); ok {
-		str := string(s)
-		// Clone the string to heap
-		if len(str) == 0 do return ""
-		cloned := make([]u8, len(str))
-		copy(cloned, str)
-		return string(cloned)
-	}
-
-	// Fallback: clone default
-	if len(default) == 0 do return ""
-	cloned := make([]u8, len(default))
-	copy(cloned, default)
-	return string(cloned)
+// Same as get_string but heap-clones the result so it outlives the JSON tree.
+// Use only for the few fields stored past the packet/parse lifetime (e.g.
+// Local_Player.job_id, Network_Client.sid, Zone_Definition.* string fields).
+get_string_owned :: proc(obj: json.Object, key: string, default: string = "") -> string {
+	s := get_string(obj, key, default)
+	if len(s) == 0 do return ""
+	owned := make([]u8, len(s))
+	copy(owned, s)
+	return string(owned)
 }
 
 get_f64 :: proc(o: JSON_Object, key: string, default := 0.0) -> f64 {

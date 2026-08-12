@@ -18,7 +18,7 @@ Character_Entry :: struct {
 }
 
 CREATE_CLASSES :: [4]string{"warrior", "mage", "archer", "cleric"}
-CREATE_RACES   :: [3]string{"human", "elf", "dwarf"}
+CREATE_RACES   :: [6]string{"human", "elf", "dwarf", "myrine", "enkidu", "lapin"}
 
 state: struct {
 	net:         ^sys.Network_Client,
@@ -96,20 +96,14 @@ parse_list :: proc(data: sys.JSON_Value) {
 	for i in 0..<len(dyn) {
 		c := sys.obj_of(dyn[i])
 		e: Character_Entry
-		copy_field(e.id[:], &e.id_len, sys.get_string(c, "id"))
-		copy_field(e.name[:], &e.name_len, sys.get_string(c, "name"))
-		copy_field(e.class[:], &e.class_len, sys.get_string(c, "class"))
-		copy_field(e.race[:], &e.race_len, sys.get_string(c, "race"))
+		sys.copy_string_to_buffer(e.id[:], &e.id_len, sys.get_string(c, "id"))
+		sys.copy_string_to_buffer(e.name[:], &e.name_len, sys.get_string(c, "name"))
+		sys.copy_string_to_buffer(e.class[:], &e.class_len, sys.get_string(c, "class"))
+		sys.copy_string_to_buffer(e.race[:], &e.race_len, sys.get_string(c, "race"))
 		e.level = sys.get_int(c, "level")
-		copy_field(e.zone_id[:], &e.zone_len, sys.get_string(c, "zoneId"))
+		sys.copy_string_to_buffer(e.zone_id[:], &e.zone_len, sys.get_string(c, "zoneId"))
 		append(&state.entries, e)
 	}
-}
-
-copy_field :: proc(dst: []u8, dst_len: ^int, src: string) {
-	n := min(len(src), len(dst))
-	dst_len^ = n
-	copy(dst[:n], transmute([]u8)src)
 }
 
 

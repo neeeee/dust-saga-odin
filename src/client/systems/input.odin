@@ -39,7 +39,7 @@ Input_State :: struct {
 	mouse_delta:         rl.Vector2,
 }
 
-poll_input :: proc(chat_focused, dialog_active: bool, p: ^Local_Player, dt: f32) -> Input_State {
+poll_input :: proc(chat_focused, menu_open: bool, p: ^Local_Player, dt: f32) -> Input_State {
 	state: Input_State
 	state.skill_slot = -1
 
@@ -62,7 +62,13 @@ poll_input :: proc(chat_focused, dialog_active: bool, p: ^Local_Player, dt: f32)
 		return state
 	}
 
-	if dialog_active {
+	// A menu window is open → suppress gameplay keys (movement, skills, Tab,
+	// combat, click-to-move). Mouse is still returned so menu dragging works;
+	// the menus read clicks directly via menu_update.
+	if menu_open {
+		state.mouse_left_pressed = rl.IsMouseButtonPressed(.LEFT)
+		state.mouse_right_pressed = rl.IsMouseButtonPressed(.RIGHT)
+		state.mouse_delta = rl.GetMouseDelta()
 		return state
 	}
 
@@ -153,7 +159,7 @@ init_camera :: proc(p: ^Local_Player) {
 	p.camera.projection = .PERSPECTIVE
 }
 
-update_camera :: proc(dt: f32, p: ^Local_Player) {
+update_camera :: proc(dt: f32, p: ^Local_Player, block_zoom: bool) {
 	// Aim at the player's chest; the camera orbits at cam_control.distance,
 	// positioned from the current yaw/pitch. NOTE: this drives p.camera — the
 	// same Camera3D the render loop passes to BeginMode3D — not a local copy.
@@ -189,8 +195,9 @@ update_camera :: proc(dt: f32, p: ^Local_Player) {
 	}
 
 	// Scroll-wheel zoom: GetMouseWheelMove() is positive scrolling up (toward
-	// the user), which zooms in (shrinks the orbit radius).
-	wheel := rl.GetMouseWheelMove()
+	// the user), which zooms in (shrinks the orbit radius). Skipped when the
+	// cursor is over a menu so the wheel scrolls the menu instead.
+	wheel := block_zoom ? 0.0 : rl.GetMouseWheelMove()
 	if wheel != 0 {
 		cam_control.distance = clamp(
 			cam_control.distance - wheel * cam_control.zoom_step,

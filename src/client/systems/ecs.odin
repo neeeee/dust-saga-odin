@@ -5,16 +5,6 @@ import "core:math"
 import "core:strings"
 import rl "vendor:raylib"
 
-// ── global engine state ───────────────────────────────────────────────────
-
-State :: struct {
-	running:    bool,
-	time_scale: f32,
-	delta_time: f32,
-	total_time: f32,
-	fps:        int,
-}
-
 // ── components ────────────────────────────────────────────────────────────
 
 Transform :: struct {
@@ -84,8 +74,6 @@ Entity_Effects :: struct {
 	count:   int,
 	effects: [MAX_STATUS_EFFECTS]Status_Effect,
 }
-
-Entity :: distinct u32
 
 MAX_ENTITIES :: 1024
 
@@ -259,6 +247,14 @@ render_entity_ui_2d :: proc(s: ^Scene, camera: rl.Camera3D) {
 
 		if s.is_frozen[i] do continue
 		if !ui.show_name && ui.health_ratio <= 0 && meta.kind != .NPC do continue
+
+		// Behind-camera cull: keep only entities in the camera's forward
+		// hemisphere. GetWorldToScreen does not clip points behind the camera,
+		// so without this they project to bogus on-screen positions and their
+		// nameplates draw over the scene (e.g. behind the player).
+		forward := rl.Vector3Normalize(camera.target - camera.position)
+		to_entity := t.position - camera.position
+		if rl.Vector3DotProduct(forward, to_entity) <= 0.0 do continue
 
 		// Label position ~2.5 units above the entity origin.
 		world_pos := rl.Vector3{t.position.x, t.position.y + 2.5, t.position.z}

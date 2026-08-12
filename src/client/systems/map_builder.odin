@@ -50,8 +50,8 @@ load_zone_map :: proc(zone_id: string) -> ^Zone_Definition {
 		return z
 	}
 
-	z.id = get_string(root, "id", zone_id)
-	z.name = get_string(root, "name")
+	z.id = get_string_owned(root, "id", zone_id)
+	z.name = get_string_owned(root, "name")
 
 	ground := get_object(root, "ground")
 	z.ground.color = rgb_from(get_object(ground, "color"))
@@ -88,10 +88,10 @@ parse_objects :: proc(z: ^Zone_Definition, arr: json.Array) {
 		if !ok do continue
 
 		o := Map_Object {
-			otype    = get_string(obj, "type", ""),
+			otype    = get_string_owned(obj, "type", ""),
 			position = vec3_from(obj, "position"),
 			scale    = get_f32(obj, "scale", 1.0),
-			model    = get_string(obj, "model", ""),
+			model    = get_string_owned(obj, "model", ""),
 		}
 		append(&z.objects, o)
 	}
@@ -102,7 +102,7 @@ parse_structures :: proc(z: ^Zone_Definition, arr: JSON_Array) {
 	for i in 0 ..< len(dyn) {
 		o := obj_of(dyn[i])
 		s := Map_Structure {
-			otype    = get_string(o, "type"),
+			otype    = get_string_owned(o, "type"),
 			position = vec3_from(o, "position"),
 		}
 		sz := get_object(o, "size")
@@ -127,12 +127,12 @@ parse_teleporters :: proc(z: ^Zone_Definition, arr: json.Array) {
 		if !ok do continue
 
 		t := Teleporter {
-			id           = get_string(obj, "id", ""),
+			id           = get_string_owned(obj, "id", ""),
 			position     = vec3_from(obj, "position"),
-			target_zone  = get_string(obj, "targetZone", ""),
-			target_spawn = get_string(obj, "targetSpawn", ""),
+			target_zone  = get_string_owned(obj, "targetZone", ""),
+			target_spawn = get_string_owned(obj, "targetSpawn", ""),
 			radius       = get_f32(obj, "radius", 2.0),
-			label        = get_string(obj, "label", ""),
+			label        = get_string_owned(obj, "label", ""),
 		}
 		append(&z.teleporters, t)
 	}
@@ -145,7 +145,7 @@ parse_lights :: proc(z: ^Zone_Definition, arr: JSON_Array) {
 		append(
 			&z.lights,
 			Map_Light {
-				otype = get_string(o, "type"),
+				otype = get_string_owned(o, "type"),
 				position = vec3_from(o, "position"),
 				intensity = get_f32(o, "intensity", 0.5),
 				range = get_f32(o, "range", 10),
