@@ -204,7 +204,11 @@ menu_clear :: proc(m: ^Menu) {
 	delete(m.items)
 	m.items = make([dynamic]Menu_Item)
 	m.next_id = 1
-	m.scroll_y = 0
+	// NOTE: scroll_y is intentionally preserved. Dynamic menus call menu_clear
+	// every frame to rebuild; resetting scroll here would wipe the position
+	// menu_update just set, making the wheel never accumulate (1-frame jitter).
+	// menu_update clamps scroll_y to [0, max_scroll], so a content shrink
+	// self-corrects next frame.
 }
 
 menu_find :: proc(m: ^Menu, id: int) -> ^Menu_Item {
@@ -219,6 +223,7 @@ menu_find :: proc(m: ^Menu, id: int) -> ^Menu_Item {
 menu_open :: proc(m: ^Menu) {
 	m.open = true
 	m.focused = true
+	m.scroll_y = 0 // start at the top on (re)open
 }
 
 menu_close :: proc(m: ^Menu) {

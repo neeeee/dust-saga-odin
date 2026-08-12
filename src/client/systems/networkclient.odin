@@ -493,6 +493,23 @@ send_skill_use :: proc(nc: ^Network_Client, skill_name: string, target_id: strin
 	send_object(nc, .SKILL_USE, fields[:])
 }
 
+// Ground-targeted SKILL_USE: sends `aoePosition` {x,y,z} instead of targetId
+// (server: handleGroundAOESkillUse when GROUND_TARGETED_AOE_SKILLS has the name).
+send_skill_use_ground :: proc(nc: ^Network_Client, skill_name: string, x, y, z: f32) {
+	pos_fields := make([dynamic]JSON_Field, 3)
+	defer delete(pos_fields)
+	pos_fields[0] = JSON_Field{"x", json_float(x)}
+	pos_fields[1] = JSON_Field{"y", json_float(y)}
+	pos_fields[2] = JSON_Field{"z", json_float(z)}
+	pos := build_object(pos_fields[:])
+
+	fields := make([dynamic]JSON_Field, 2)
+	defer delete(fields)
+	fields[0] = JSON_Field{"skillName", json_str(skill_name)}
+	fields[1] = JSON_Field{"aoePosition", pos^}
+	send_object(nc, .SKILL_USE, fields[:])
+}
+
 send_chat :: proc(nc: ^Network_Client, message: string) {
 	fields := make([dynamic]JSON_Field, 0, 1)
 	defer delete(fields)

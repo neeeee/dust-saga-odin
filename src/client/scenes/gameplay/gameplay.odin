@@ -83,8 +83,19 @@ state: struct {
 	click_path_index:       int,
 	click_move_active:      bool,
 
+	// Ground-targeted skill aiming: when active, a reticle follows the cursor
+	// and the next left-click casts at that ground point (Esc cancels).
+	ground_target:          Ground_Target,
+
 	logout_start_ms:        u64,
 	exit_start_ms:          u64,
+}
+
+Ground_Target :: struct {
+	active:     bool,
+	skill_name: [64]u8,
+	name_len:   int,
+	radius:     f32,
 }
 
 
@@ -157,7 +168,7 @@ update :: proc(dt: f32) -> (requested: sys.App_State, has_request: bool) {
 	}
 
 	// 2. Input.
-	inp := sys.poll_input(state.chat_focused, any_menu_open(), state.player, dt)
+	inp := sys.poll_input(state.chat_focused, state.player, dt)
 	handle_chat_input(inp)
 
 	// 2b. ESC chain: close menus → unfocus chat → untarget → toggle system menu.
@@ -171,8 +182,9 @@ update :: proc(dt: f32) -> (requested: sys.App_State, has_request: bool) {
 	}
 
 	if state.player.is_dead {
-		// Allow only respawn request (R) while dead.
-		if inp.toggle_rest || (!state.chat_focused && rl.IsKeyPressed(.R)) {
+		// Allow only respawn request (rebindable Toggle_Rest, already gated by
+		// chat/menu inside poll_input) while dead.
+		if inp.toggle_rest {
 			sys.send(state.net, .RESPAWN_REQUEST)
 		}
 		update_timers(dt)
@@ -193,14 +205,28 @@ update :: proc(dt: f32) -> (requested: sys.App_State, has_request: bool) {
 	// 4. Combat.
 	apply_combat(inp)
 
-	// 5. Targeting.
+	// 5. Targeting (suppressed while aiming a ground-targeted skill).
 	apply_targeting(inp)
 
-	// 6. Skill bar.
+	// 5b. Ground-targeted skill aiming: confirm/cancel an armed reticle.
+	update_ground_target(inp)
+
+	// 6. Skill bar. Ground-targeted skills arm the reticle instead of firing
+	//    immediately — the cast goes out on the confirm click (update_ground_target).
 	if inp.skill_slot >= 0 {
+		// A new skill press supersedes any armed reticle.
+		state.ground_target.active = false
 		name := sys.skill_bar_get(state.player, inp.skill_slot)
 		if len(name) > 0 {
-			sys.send_skill_use(state.net, name, target_string_id())
+			sk := sys.get_skill(name)
+			if sk != nil && sk.targeting.aoe_mode == .GROUND_TARGETED {
+				gt := &state.ground_target
+				gt.active = true
+				sys.copy_string_to_buffer(gt.skill_name[:], &gt.name_len, name)
+				gt.radius = sk.targeting.aoe_radius > 0 ? sk.targeting.aoe_radius : sys.DEFAULT_AOE_RADIUS
+			} else {
+				sys.send_skill_use(state.net, name, target_string_id())
+			}
 		}
 	}
 
@@ -221,11 +247,14 @@ update :: proc(dt: f32) -> (requested: sys.App_State, has_request: bool) {
 	tick_cast(dt)
 
 	// 10. Camera follow.
-	sys.update_camera(dt, state.player, cursor_over_any_menu())
+	sys.update_camera(dt, state.player, cursor_over_ui())
 
-	// 11. Toggle inventory.
-	if rl.IsKeyPressed(.I) do ui.menu_toggle(&state.inventory_menu)
-	if rl.IsKeyPressed(.F1) do ui.menu_toggle(&state.debug_menu)
+	// 11. Menu shortcuts — routed through menu_keybind (rebindable + auto-
+	// suppressed while chatting).
+	menu_keybind(&state.inventory_menu, .Menu_Inventory)
+	menu_keybind(&state.character_profile_menu, .Menu_Character)
+	menu_keybind(&state.skills_menu, .Menu_Skills)
+	menu_keybind(&state.debug_menu, .Menu_Debug)
 
 	// 12. Menus.
 	update_menus()
@@ -246,7 +275,7 @@ update_timers :: proc(dt: f32) {
 	tick_floating(dt)
 	ppos := [3]f32{state.player.position.x, state.player.position.y, state.player.position.z}
 	sys.update(state.scene, dt, f64(rl.GetTime()), ppos, int(rl.GetFPS()))
-	sys.update_camera(dt, state.player, cursor_over_any_menu())
+	sys.update_camera(dt, state.player, cursor_over_ui())
 }
 
 // ── movement ──────────────────────────────────────────────────────────────
@@ -294,6 +323,12 @@ cancel_click_to_move :: proc() {
 apply_escape :: proc() {
 	esc := rl.IsKeyPressed(.ESCAPE)
 	if !esc do return
+
+	// Cancel a ground-target reticle first (before the menu/escape chain).
+	if state.ground_target.active {
+		state.ground_target.active = false
+		return
+	}
 
 	// 1. Close any open/focused menu.
 	if any_menu_focused() do return
@@ -350,6 +385,32 @@ send_movement_tick :: proc() {
 	if f64(state.clock_ms - state.last_move_send_ms) >= sys.NET.MOVEMENT_SEND_RATE_MS {
 		send_player_move()
 		state.last_move_send_ms = state.clock_ms
+	}
+}
+
+// Ground-targeted skill aiming. While a ground skill is armed, a reticle follows
+// the cursor (drawn in render.odin); Esc cancels, a left-click on the world
+// casts at that ground point. Movement/camera still work while aiming.
+update_ground_target :: proc(inp: sys.Input_State) {
+	gt := &state.ground_target
+	if !gt.active do return
+
+	if rl.IsKeyPressed(.ESCAPE) {
+		gt.active = false
+		return
+	}
+
+	if inp.mouse_left_pressed && !cursor_over_ui() {
+		ray := rl.GetScreenToWorldRay(rl.GetMousePosition(), state.player.camera)
+		hit, point := sys.ray_ground_hit(ray, 0.0)
+		if hit && state.ctx.zone != nil {
+			half := state.ctx.zone.ground.size / 2.0
+			if point.x >= -half && point.x <= half && point.z >= -half && point.z <= half {
+				name := string(gt.skill_name[:gt.name_len])
+				sys.send_skill_use_ground(state.net, name, point.x, point.y, point.z)
+			}
+		}
+		gt.active = false
 	}
 }
 
@@ -515,32 +576,20 @@ any_menu_focused :: proc() -> bool {
 	       state.debug_menu.open           && state.debug_menu.focused
 }
 
-// True if any menu window is open. Gameplay input (WASD, click-to-move, skill
-// bar, Tab) is suppressed while a menu is open so interacting with UI doesn't
-// also move/fight.
-any_menu_open :: proc() -> bool {
-	return state.inventory_menu.open       ||
-	       state.settings_menu.open        ||
-	       state.skills_menu.open          ||
-	       state.friends_menu.open         ||
-	       state.party_menu.open           ||
-	       state.quest_list_menu.open      ||
-	       state.accept_deny_menu.open     ||
-	       state.blacksmith_menu.open      ||
-	       state.soul_extraction_menu.open ||
-	       state.character_profile_menu.open ||
-	       state.loot_drop_menu.open       ||
-	       state.loot_party_menu.open      ||
-	       state.shop_menu.open            ||
-	       state.system_menu.open          ||
-	       state.debug_menu.open
-}
-
-// True if the cursor is currently over an open menu. Used to decide whether the
-// scroll wheel goes to the menu (scroll its contents) or the camera (zoom).
-cursor_over_any_menu :: proc() -> bool {
-	if !any_menu_open() do return false
+// True if the cursor is over UI chrome — the menu bar (always present) or any
+// open menu window. Used for two gates: (a) the scroll wheel goes to a menu
+// rather than zooming the camera, and (b) click-to-move won't walk the
+// character when clicking on the bar / a window.
+cursor_over_ui :: proc() -> bool {
 	mouse := rl.GetMousePosition()
+
+	// Menu bar (top-left button strip) — always interactable.
+	if len(state.bar_buttons) > 0 {
+		bar_w := f32(len(state.bar_buttons) * (BAR_BTN_SIZE + BAR_BTN_GAP) - BAR_BTN_GAP)
+		bar_rect := rl.Rectangle{f32(BAR_X) - 4, f32(BAR_Y) - 4, bar_w + 8, BAR_BTN_SIZE + 8}
+		if rl.CheckCollisionPointRec(mouse, bar_rect) do return true
+	}
+
 	if state.inventory_menu.open       && rl.CheckCollisionPointRec(mouse, state.inventory_menu.rect) do return true
 	if state.settings_menu.open        && rl.CheckCollisionPointRec(mouse, state.settings_menu.rect) do return true
 	if state.skills_menu.open          && rl.CheckCollisionPointRec(mouse, state.skills_menu.rect) do return true
@@ -557,6 +606,14 @@ cursor_over_any_menu :: proc() -> bool {
 	if state.system_menu.open          && rl.CheckCollisionPointRec(mouse, state.system_menu.rect) do return true
 	if state.debug_menu.open           && rl.CheckCollisionPointRec(mouse, state.debug_menu.rect) do return true
 	return false
+}
+
+// Toggle a menu via its rebindable action, suppressed while the chat input has
+// focus so typing a letter doesn't pop a window. Every menu-open shortcut goes
+// through this — the chat gate lives in one place, and the key comes from the
+// settings keybind table (so e.g. inventory on I, J, or whatever the user set).
+menu_keybind :: proc(m: ^ui.Menu, action: sys.Action) {
+	if !state.chat_focused && sys.bind_pressed(action) do ui.menu_toggle(m)
 }
 
 // ── camera ────────────────────────────────────────────────────────────────

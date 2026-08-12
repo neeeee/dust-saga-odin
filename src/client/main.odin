@@ -35,6 +35,9 @@ main :: proc() {
 	sys.init_game_data()
 	defer sys.destroy_game_data()
 
+	// Rebindable keybinds (keybinds.json, falls back to WASD defaults).
+	sys.load_keybinds()
+
 	// Shared, long-lived state.
 	net := sys.new_network_client(sys.DEFAULT_SERVER_HOST, sys.DEFAULT_SERVER_PORT)
 	defer sys.destroy_network_client(net)
@@ -45,6 +48,7 @@ main :: proc() {
 	player: sys.Local_Player
 	sys.local_player_init(&player)
 	defer sys.local_player_destroy(&player)
+	sys.load_skill_bar(&player)
 
 	chat: sys.Chat_Log
 	sys.chat_init(&chat)

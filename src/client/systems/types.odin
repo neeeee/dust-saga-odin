@@ -324,3 +324,12 @@ skill_bar_get :: proc(p: ^Local_Player, slot: int) -> string {
 	if slot < 0 || slot >= len(p.skill_bar) do return ""
 	return string(p.skill_bar[slot][:p.skill_bar_lens[slot]])
 }
+
+// Remaining cooldown (ms) for a skill by name, or 0 if not on cooldown.
+skill_cooldown_remaining :: proc(p: ^Local_Player, name: string) -> f64 {
+	for i in 0 ..< len(p.cooldowns) {
+		cd := &p.cooldowns[i]
+		if string(cd.skill_name[:cd.name_len]) == name do return cd.remaining_ms
+	}
+	return 0
+}

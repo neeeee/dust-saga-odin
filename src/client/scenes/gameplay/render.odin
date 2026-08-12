@@ -22,6 +22,7 @@ render :: proc() {
 	// Draw the local player as a capsule too (distinct color).
 	draw_local_player()
 	sys.render(state.scene, state.player.camera)
+	draw_ground_reticle_3d()
 	rl.EndMode3D()
 
 	// 2D entity nameplates / health bars / target indicators.
@@ -33,9 +34,32 @@ render :: proc() {
 	draw_floating_text()
 	draw_chat()
 	draw_notifications()
+	draw_ground_reticle_hint()
 	draw_menu_bar()
 	draw_menus()
 	if state.player.is_dead do draw_death_overlay()
+}
+
+// Ground-target reticle: a ring + center marker on the ground under the cursor.
+draw_ground_reticle_3d :: proc() {
+	gt := &state.ground_target
+	if !gt.active do return
+	ray := rl.GetScreenToWorldRay(rl.GetMousePosition(), state.player.camera)
+	hit, point := sys.ray_ground_hit(ray, 0.0)
+	if !hit do return
+	rl.DrawCircle3D(point, gt.radius, {0, 1, 0}, 0.0, rl.Color{230, 120, 40, 210})
+	rl.DrawCube(point, 0.5, 0.5, 0.5, rl.Color{230, 120, 40, 230})
+}
+
+// 2D prompt shown while aiming a ground-targeted skill.
+draw_ground_reticle_hint :: proc() {
+	gt := &state.ground_target
+	if !gt.active do return
+	name := string(gt.skill_name[:gt.name_len])
+	msg := fmt.tprintf("Aiming %s — click to cast, Esc to cancel", name)
+	w := sys.measure_text(msg, 18)
+	x := int(rl.GetScreenWidth()) / 2 - w / 2
+	sys.draw_text(msg, x, 110, 18, rl.Color{230, 180, 60, 255})
 }
 
 draw_local_player :: proc() {
@@ -214,16 +238,37 @@ draw_target_window :: proc() {
 }
 
 draw_skill_bar :: proc() {
+	mouse := rl.GetMousePosition()
+	p := state.player
 	for slot in 0 ..< 10 {
 		x := 440 + slot * 44
 		rect := rl.Rectangle{f32(x), 660, 40, 40}
+		name := sys.skill_bar_get(p, slot)
+
 		rl.DrawRectangleRec(rect, rl.Color{30, 30, 40, 220})
 		rl.DrawRectangleLinesEx(rect, 1, rl.BLACK)
-		name := sys.skill_bar_get(state.player, slot)
-		label := fmt.tprintf("%d", (slot + 1) % 10)
-		sys.draw_text(label, x + 4, 660 + 2, 12, rl.GRAY)
+		sys.draw_text(fmt.tprintf("%d", (slot + 1) % 10), x + 4, 660 + 2, 12, rl.GRAY)
+
 		if len(name) > 0 {
-			sys.draw_text(name[:1], x + 16, 660 + 16, 12, rl.WHITE)
+			cd_ms := sys.skill_cooldown_remaining(p, name)
+			if cd_ms > 0 {
+				// On cooldown: darken + show remaining seconds.
+				rl.DrawRectangleRec(rect, rl.Color{0, 0, 0, 170})
+				sys.draw_text(fmt.tprintf("%.0f", math.ceil(cd_ms / 1000.0)), x + 13, 660 + 13, 14, rl.WHITE)
+			} else {
+				tag := name
+				if len(tag) > 3 do tag = tag[:3]
+				sys.draw_text(tag, x + 6, 660 + 22, 11, rl.WHITE)
+			}
+			// Highlight the slot currently casting.
+			if p.casting.active && string(p.casting.skill_name[:p.casting.name_len]) == name {
+				rl.DrawRectangleLinesEx(rect, 2, rl.ORANGE)
+			}
+			// Right-click clears the slot.
+			if rl.CheckCollisionPointRec(mouse, rect) && rl.IsMouseButtonPressed(.RIGHT) {
+				sys.skill_bar_clear(p, slot)
+				sys.save_skill_bar(p)
+			}
 		}
 	}
 }

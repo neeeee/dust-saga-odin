@@ -351,6 +351,10 @@ Outcome :: union {
 
 MAX_SKILL_OUTCOMES :: 4
 
+// Default radius (world units) for ground-targeted skills whose own radius is
+// unset — matches the TS DEFAULT_AOE_RADIUS.
+DEFAULT_AOE_RADIUS :: 5.0
+
 Skill_Kind :: enum u8 {
 	PASSIVE, DAMAGE_PHYSICAL, DAMAGE_MAGICAL, BUFF, DEBUFF, HEAL,
 	PARTY_HEAL, HP_BUFF, MP_RESTORE, REVIVE, FIELD_SPELL, PROVOKE, UTILITY,

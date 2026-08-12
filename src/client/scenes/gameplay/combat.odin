@@ -44,6 +44,10 @@ try_auto_attack :: proc() {
 // ── targeting ─────────────────────────────────────────────────────────────
 
 apply_targeting :: proc(inp: sys.Input_State) {
+	// Aiming a ground-targeted skill — the click is the cast confirm, not a
+	// target-pick / click-to-move. update_ground_target handles it.
+	if state.ground_target.active do return
+
 	// Tab cycle: nearest enemy in view distance.
 	if inp.cycle_target != 0 {
 		cycle_target(inp.cycle_target > 0)
@@ -51,9 +55,9 @@ apply_targeting :: proc(inp: sys.Input_State) {
 
 	// Left-click: ray-pick + double-click interaction.
 	// Skip when orbiting camera (right-mouse held hides cursor).
-	// Live cursor-over-menu test (any_menu_focused uses the .focused flag which
-	// is only set by menu_update next, so it's a frame stale on the click frame).
-	if !inp.mouse_left_pressed || state.chat_focused || cursor_over_any_menu() do return
+	// Live cursor-over-UI test (the .focused flag is set by menu_update next,
+	// so it's a frame stale on the click frame). Covers open menus + the bar.
+	if !inp.mouse_left_pressed || state.chat_focused || cursor_over_ui() do return
 	if rl.IsMouseButtonDown(.RIGHT) do return
 
 	clicked := pick_target_id()

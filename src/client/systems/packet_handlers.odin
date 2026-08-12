@@ -127,6 +127,8 @@ handle_packet :: proc(ctx: ^Game_Context, p: ^Packet, free_after: bool) {
 		handle_error(ctx, p.data)
 	case .COOLDOWN_UPDATE:
 		handle_cooldown(ctx, p.data)
+	case .SKILL_USE:
+		handle_skill_use(ctx, p.data)
 	case .STATUS_EFFECT_UPDATE:
 		handle_status_effect_update(ctx, p.data)
 	case .ENTITY_STATUS_EFFECTS:
@@ -677,6 +679,46 @@ handle_cooldown :: proc(ctx: ^Game_Context, data: ^JSON_Value) {
 			append(&ctx.player.cooldowns, cd)
 		}
 	case:
+	}
+}
+
+// Inbound SKILL_USE only carries an `error` field (the server's rejection
+// reason). Successes produce no SKILL_USE echo — COOLDOWN_UPDATE / DAMAGE / etc.
+// handle the positive feedback. Show rejections as a notification.
+handle_skill_use :: proc(ctx: ^Game_Context, data: ^JSON_Value) {
+	if data == nil do return
+	o := obj_of(data^)
+	if !has_field(o, "error") do return
+	skill := get_string(o, "skillName")
+	err := get_string(o, "error")
+	push_notification(ctx, fmt.tprintf("%s: %s", skill, skill_error_message(err)), "error")
+}
+
+skill_error_message :: proc "contextless" (err: string) -> string {
+	switch err {
+	case "cooldown":                   return "still on cooldown"
+	case "no_mana":                    return "not enough MP"
+	case "dead":                       return "you are dead"
+	case "casting":                    return "already casting"
+	case "gcd":                        return "not ready yet"
+	case "not_found":                  return "unknown skill"
+	case "passive":                    return "passive skill"
+	case "insufficient_level":         return "level too low"
+	case "insufficient_proficiency":   return "proficiency too low"
+	case "silenced":                   return "silenced"
+	case "no_target":                  return "no target"
+	case "wrong_weapon":               return "wrong weapon type"
+	case "no_shield":                  return "requires a shield"
+	case "not_blocking":               return "must be blocking"
+	case "blocking":                   return "can't use while blocking"
+	case "field_blocked":              return "blocked by a field"
+	case "pvp_disabled":               return "PvP is disabled here"
+	case "no_los":                     return "no line of sight"
+	case "no_materials":               return "missing materials"
+	case "party_member":               return "can't target a party member"
+	case "not_in_party":               return "target not in your party"
+	case "target_obelisk":             return "target is Obelisk-protected"
+	case:                              return err
 	}
 }
 

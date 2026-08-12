@@ -39,14 +39,18 @@ Input_State :: struct {
 	mouse_delta:         rl.Vector2,
 }
 
-poll_input :: proc(chat_focused, menu_open: bool, p: ^Local_Player, dt: f32) -> Input_State {
+// Only chat focus suppresses gameplay input. Menus being open does NOT block
+// movement/combat/skills — the player can act with windows open. (Click-to-
+// move is still gated separately in apply_targeting via cursor_over_any_menu,
+// so clicking *on* a menu never walks the character.)
+poll_input :: proc(chat_focused: bool, p: ^Local_Player, dt: f32) -> Input_State {
 	state: Input_State
 	state.skill_slot = -1
 
 	// Chat input takes over the keyboard.
 	if chat_focused {
 		state.chat_focused = true
-		state.chat_submit = rl.IsKeyPressed(.ENTER)
+		state.chat_submit = bind_pressed(.Chat_Toggle)
 		state.chat_cancel = rl.IsKeyPressed(.ESCAPE)
 		state.chat_backspace = rl.IsKeyPressed(.BACKSPACE) || rl.IsKeyPressedRepeat(.BACKSPACE)
 		state.mouse_left_pressed = rl.IsMouseButtonPressed(.LEFT)
@@ -55,28 +59,18 @@ poll_input :: proc(chat_focused, menu_open: bool, p: ^Local_Player, dt: f32) -> 
 		return state
 	}
 
-	// Enter opens the chat.
-	state.chat_toggle = rl.IsKeyPressed(.ENTER)
+	// The chat-toggle key (default Enter) opens the chat.
+	state.chat_toggle = bind_pressed(.Chat_Toggle)
 	if state.chat_toggle {
 		state.chat_focused = true
 		return state
 	}
 
-	// A menu window is open → suppress gameplay keys (movement, skills, Tab,
-	// combat, click-to-move). Mouse is still returned so menu dragging works;
-	// the menus read clicks directly via menu_update.
-	if menu_open {
-		state.mouse_left_pressed = rl.IsMouseButtonPressed(.LEFT)
-		state.mouse_right_pressed = rl.IsMouseButtonPressed(.RIGHT)
-		state.mouse_delta = rl.GetMouseDelta()
-		return state
-	}
-
-	// --- movement ---
-	if rl.IsKeyDown(.W) do state.move_z -= 1.0
-	if rl.IsKeyDown(.S) do state.move_z += 1.0
-	if rl.IsKeyDown(.A) do state.move_x -= 1.0
-	if rl.IsKeyDown(.D) do state.move_x += 1.0
+	// --- movement (read from the rebindable table) ---
+	if bind_down(.Move_Up) do state.move_z -= 1.0
+	if bind_down(.Move_Down) do state.move_z += 1.0
+	if bind_down(.Move_Left) do state.move_x -= 1.0
+	if bind_down(.Move_Right) do state.move_x += 1.0
 
 	len := math.sqrt(state.move_x * state.move_x + state.move_z * state.move_z)
 	if len > 0.0 {
@@ -102,20 +96,20 @@ poll_input :: proc(chat_focused, menu_open: bool, p: ^Local_Player, dt: f32) -> 
 		p.position += rotated_move * GAME.PLAYER_SPEED * dt
 	}
 
-	state.sprint = rl.IsKeyDown(.LEFT_SHIFT) || rl.IsKeyDown(.RIGHT_SHIFT)
+	state.sprint = bind_down(.Sprint)
 
 	// --- combat / interaction ---
-	state.attack = rl.IsKeyDown(.F)
-	state.manual_attack = rl.IsKeyPressed(.SPACE)
-	state.interact = rl.IsKeyPressed(.E)
-	state.toggle_rest = rl.IsKeyPressed(.R)
+	state.attack = bind_down(.Attack)
+	state.manual_attack = bind_pressed(.Manual_Attack)
+	state.interact = bind_pressed(.Interact)
+	state.toggle_rest = bind_pressed(.Toggle_Rest)
 
-	// --- target cycling (Tab = next, Shift+Tab = previous) ---
-	if rl.IsKeyPressed(.TAB) {
+	// --- target cycling (bound key = next, Sprint + bound key = previous) ---
+	if bind_pressed(.Cycle_Target) {
 		if state.sprint {state.cycle_target = -1} else {state.cycle_target = 1}
 	}
 
-	// --- skill bar (1-9, 0) ---
+	// --- skill bar (10 slots, rebindable) ---
 	state.skill_slot = skill_slot_pressed()
 
 	// --- mouse ---
@@ -208,16 +202,9 @@ update_camera :: proc(dt: f32, p: ^Local_Player, block_zoom: bool) {
 }
 
 skill_slot_pressed :: proc() -> int {
-	// Digits 1..9 → slots 0..8, digit 0 → slot 9 (matches the TS skill bar).
-	if rl.IsKeyPressed(.ONE) do return 0
-	if rl.IsKeyPressed(.TWO) do return 1
-	if rl.IsKeyPressed(.THREE) do return 2
-	if rl.IsKeyPressed(.FOUR) do return 3
-	if rl.IsKeyPressed(.FIVE) do return 4
-	if rl.IsKeyPressed(.SIX) do return 5
-	if rl.IsKeyPressed(.SEVEN) do return 6
-	if rl.IsKeyPressed(.EIGHT) do return 7
-	if rl.IsKeyPressed(.NINE) do return 8
-	if rl.IsKeyPressed(.ZERO) do return 9
+	// Returns the index (0..9) of the pressed skill-bar slot, or -1.
+	for i in 0 ..< len(SKILL_SLOT_ACTION) {
+		if bind_pressed(SKILL_SLOT_ACTION[i]) do return i
+	}
 	return -1
 }

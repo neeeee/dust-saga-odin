@@ -27,19 +27,10 @@ bar_btn_rect :: proc(idx: int) -> rl.Rectangle {
 // ── create procs ──────────────────────────────────────────────────────────
 
 create_settings_menu :: proc() {
-	m := &state.settings_menu
-	m^ = ui.menu_create("Settings", 300, 200, 400, 400)
-	ui.menu_add_label(m, "Display")
-	ui.menu_add_slider(m, "Master Volume", 0.8, 0.0, 1.0, 0.05)
-	ui.menu_add_slider(m, "Music Volume", 0.5, 0.0, 1.0, 0.05)
-	ui.menu_add_toggle(m, "Fullscreen", true)
-	ui.menu_add_toggle(m, "Show FPS", false)
-	ui.menu_add_separator(m)
-	ui.menu_add_label(m, "Controls")
-	ui.menu_add_button(m, "Key Bindings")
-	ui.menu_add_separator(m)
-	ui.menu_add_button(m, "Apply")
-	ui.menu_add_button(m, "Close")
+	// Content is rebuilt each frame by refresh_settings_menu (the key list
+	// changes as the user rebinds).
+	state.settings_menu = ui.menu_create("Settings — Keybinds", 300, 80, 420, 560)
+	state.settings_menu.close_on_esc = true
 }
 
 create_skills_menu :: proc() {
@@ -262,6 +253,7 @@ update_menus :: proc() {
 	if state.skills_menu.open do refresh_skills_menu()
 	if state.character_profile_menu.open do refresh_character_menu()
 	if state.debug_menu.open do refresh_debug_menu()
+	if state.settings_menu.open do refresh_settings_menu()
 	update_shop_menu()
 
 	ui.menu_update(&state.inventory_menu)
@@ -280,9 +272,20 @@ update_menus :: proc() {
 	ui.menu_update(&state.system_menu)
 	ui.menu_update(&state.debug_menu)
 
+	// Capture a pending rebind (no-ops when not listening). Only while Settings
+	// is open; closing the window cancels any dangling rebind so it can't
+	// silently grab the next keypress elsewhere.
+	if state.settings_menu.open {
+		sys.poll_rebind()
+	} else if sys.rebind_listening {
+		sys.cancel_rebind()
+	}
+
 	// Action menus: read clicks AFTER menu_update sets them this frame.
 	handle_character_menu_clicks()
 	handle_debug_menu_clicks()
+	handle_settings_menu_clicks()
+	handle_skills_menu_clicks()
 }
 
 draw_menu_bar :: proc() {
@@ -420,9 +423,12 @@ handle_system_menu_clicks :: proc(inp: sys.Input_State) {
 STAT_BTN_BASE  :: 1000
 SKILL_BTN_BASE :: 2000
 
-// Read-only skills browser: lists the player's class-kit skills (level-gated)
-// and the skill trees the job can invest in (with current adeptness / cap and
-// each skill's requirement, marking ones whose requirement is met).
+// Skills browser + bar-assigner. Each skill is a button: click toggles it onto
+// the next free skill-bar slot (or off if already assigned). Lists the job's
+// class-kit skills (level-gated) and the skill trees it can invest in (with
+// current proficiency / cap and each skill's requirement).
+SKILL_ASSIGN_BASE :: 5000 // button id = base + int(skill_id)
+
 refresh_skills_menu :: proc() {
 	m := &state.skills_menu
 	p := state.player
@@ -433,15 +439,17 @@ refresh_skills_menu :: proc() {
 	}
 	job := sys.registry_get(&sys.job_registry, p.job_id)
 	ui.menu_add_label(m, fmt.tprintf("Skill Points: %d", p.unspent_skill_points))
-	ui.menu_add_label(m, fmt.tprintf("Job: %s", job.name))
+	ui.menu_add_label(m, fmt.tprintf("Job: %s   (click a skill to assign/clear)", job.name))
 	ui.menu_add_separator(m)
 
 	ui.menu_add_label(m, "-- Class Skills --")
 	for i in 0 ..< len(job.kit_skill_ids) {
-		sk := sys.registry_get(&sys.skill_registry, job.kit_skill_ids[i])
+		sid := job.kit_skill_ids[i]
+		sk := sys.registry_get(&sys.skill_registry, sid)
+		name := sys.registry_name(&sys.skill_registry, sid)
 		lvl := sys.skill_req_level(sk)
 		tag := sys.skill_req_met(sk, p) ? "OK" : fmt.tprintf("Lv%d", lvl)
-		ui.menu_add_label(m, fmt.tprintf("[%s] %s — %s", tag, sk.name, sk.description))
+		ui.menu_add_button_id(m, fmt.tprintf("[%s] %-18s %s", tag, name, bar_badge(p, name)), SKILL_ASSIGN_BASE + int(sid))
 	}
 	ui.menu_add_separator(m)
 
@@ -456,13 +464,38 @@ refresh_skills_menu :: proc() {
 			fmt.tprintf("%s: prof %.1f / pts %d / max %d", sys.sub_category_name(sc), adepts, alloc, prof.max_potential),
 		)
 		for j in 0 ..< len(sys.tree_skills[sc]) {
-			sk := sys.registry_get(&sys.skill_registry, sys.tree_skills[sc][j])
+			sid := sys.tree_skills[sc][j]
+			sk := sys.registry_get(&sys.skill_registry, sid)
+			name := sys.registry_name(&sys.skill_registry, sid)
 			pts := sys.skill_req_points(sk)
 			tag := sys.skill_req_met(sk, p) ? "OK" : (pts > 0 ? fmt.tprintf("%d", pts) : "x")
-			ui.menu_add_label(m, fmt.tprintf("   [%s] %s", tag, sk.name))
+			ui.menu_add_button_id(m, fmt.tprintf("   [%s] %-18s %s", tag, name, bar_badge(p, name)), SKILL_ASSIGN_BASE + int(sid))
 		}
 	}
 	ui.menu_auto_height(m, 560)
+}
+
+// "<bar N>" if the skill is on the hotbar, else empty.
+bar_badge :: proc(p: ^sys.Local_Player, name: string) -> string {
+	slot := sys.skill_bar_find(p, name)
+	if slot < 0 do return ""
+	return fmt.tprintf("<bar %d>", slot + 1)
+}
+
+// Handle skill-window clicks → toggle the skill on/off the bar + persist.
+handle_skills_menu_clicks :: proc() {
+	m := &state.skills_menu
+	if !m.open do return
+	p := state.player
+	for i in 0 ..< len(m.items) {
+		item := &m.items[i]
+		if item.kind != .BUTTON || !item.clicked do continue
+		idx := item.id - SKILL_ASSIGN_BASE
+		if idx < 0 || idx >= sys.registry_count(&sys.skill_registry) do continue
+		name := sys.registry_name(&sys.skill_registry, sys.Skill_Id(u16(idx)))
+		_ , _ = sys.skill_bar_toggle(p, name)
+		sys.save_skill_bar(p)
+	}
 }
 
 // Character sheet: spend stat points into the 6 attributes and skill points
@@ -606,6 +639,51 @@ handle_debug_menu_clicks :: proc() {
 		idx := item.id - DEBUG_CMD_BASE
 		if idx >= 0 && idx < len(DEBUG_COMMANDS) {
 			sys.send_chat(state.net, DEBUG_COMMANDS[idx].cmd)
+		}
+	}
+}
+
+// ── settings / keybind rebind ──────────────────────────────────────────────
+// Each action is a button "Action Name  KEY". Click → start_rebind → the next
+// key pressed (captured by sys.poll_rebind, called above) becomes the binding
+// and persists to keybinds.json. Esc cancels.
+SETTINGS_ACTION_BASE :: 4000
+SETTINGS_RESET_ID     :: 4999
+
+refresh_settings_menu :: proc() {
+	m := &state.settings_menu
+	ui.menu_clear(m)
+	ui.menu_add_label(m, "Click a binding, then press a key. (Esc cancels.)")
+	ui.menu_add_separator(m)
+	for a in sys.Action {
+		key_str := sys.key_name(sys.keybinds.keys[a])
+		if sys.rebind_listening && sys.rebind_target == a do key_str = "... press a key"
+		ui.menu_add_button_id(
+			m,
+			fmt.tprintf("%-16s %s", sys.action_name(a), key_str),
+			SETTINGS_ACTION_BASE + int(a),
+		)
+	}
+	ui.menu_add_separator(m)
+	ui.menu_add_button_id(m, "Reset to Defaults", SETTINGS_RESET_ID)
+	ui.menu_auto_height(m, 600)
+}
+
+handle_settings_menu_clicks :: proc() {
+	m := &state.settings_menu
+	if !m.open do return
+	for i in 0 ..< len(m.items) {
+		item := &m.items[i]
+		if item.kind != .BUTTON || !item.clicked do continue
+		if item.id == SETTINGS_RESET_ID {
+			sys.keybinds = sys.keybind_defaults()
+			sys.save_keybinds()
+			sys.cancel_rebind()
+			continue
+		}
+		idx := item.id - SETTINGS_ACTION_BASE
+		if idx >= 0 && idx < sys.ACTION_COUNT {
+			sys.start_rebind(sys.Action(idx))
 		}
 	}
 }
