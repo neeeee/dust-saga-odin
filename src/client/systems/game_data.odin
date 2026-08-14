@@ -52,6 +52,39 @@ Sub_Category :: enum u8 {
 }
 SUB_CATEGORY_COUNT :: len(Sub_Category)
 
+// Parent skill categories — each sub-category belongs to one. Category-level
+// skills (Slash, Bash, Backstep, etc.) check the SUM of all sub-categories in
+// their parent category, not a single sub-category.
+Skill_Category :: enum u8 { MELEE, TECHNIQUE, PRAYER, MAGIC, SPECIAL }
+
+sub_category_to_category :: proc "contextless" (sc: Sub_Category) -> Skill_Category {
+	#partial switch sc {
+	case .SLASH, .THRUST, .CLEAVE, .BASH, .DEFEND:
+		return .MELEE
+	case .SHOT, .ALCHEMY, .ASSASSINATION, .TRAP, .DODGE:
+		return .TECHNIQUE
+	case .GRACE, .BLESSING, .EXORCISM, .HYMN:
+		return .PRAYER
+	case .ELEMENTAL, .INVOCATION, .DARKNESS, .CONFUSION:
+		return .MAGIC
+	case .RACIAL, .HORSEMANSHIP:
+		return .SPECIAL
+	case:
+		return .MELEE
+	}
+}
+
+// Sum of allocated skill points across all sub-categories in a parent category.
+category_total :: proc(p: ^Local_Player, cat: Skill_Category) -> i32 {
+	total: i32
+	for sc in Sub_Category {
+		if sub_category_to_category(sc) == cat {
+			total += p.allocated_skill_points[sc]
+		}
+	}
+	return total
+}
+
 // Anything a Stat_Mod can target: the 6 primary attributes + derived combat
 // quantities + defensive chances. Widened so scalar buffs share one variant.
 Stat :: enum u8 {
@@ -380,20 +413,21 @@ Skill_Req :: union {
 }
 
 Skill_Def :: struct {
-	name:          string, // display name (may equal the registry key)
-	source:        Skill_Source,
-	sub_cat:       Sub_Category, // meaningful when source == .TREE
-	kind:          Skill_Kind,
-	description:   string,
-	req:           Skill_Req,
-	cost_mp:       u16,
-	cast_time_s:   f32,
-	cooldown_s:    f32,
-	duration_s:    f32, // self-buff / field duration
-	targeting:     Targeting,
-	requires:      Skill_Requirements,
-	outcomes:      [MAX_SKILL_OUTCOMES]Outcome,
-	outcome_count: u8,
+	name:            string,
+	source:          Skill_Source,
+	sub_cat:         Sub_Category,
+	kind:            Skill_Kind,
+	description:     string,
+	req:             Skill_Req,
+	cost_mp:         u16,
+	cast_time_s:     f32,
+	cooldown_s:      f32,
+	duration_s:      f32,
+	targeting:       Targeting,
+	requires:        Skill_Requirements,
+	outcomes:        [MAX_SKILL_OUTCOMES]Outcome,
+	outcome_count:   u8,
+	category_level:  bool, // true = reqPoints checks parent category total, not single sub-cat
 }
 
 
@@ -492,12 +526,15 @@ skill_req_met :: proc(sk: ^Skill_Def, p: ^Local_Player) -> bool {
 	case Skill_Level_Req:
 		return p.stats.level >= int(v)
 	case Skill_Points_Req:
-		return p.skill_adeptness[sk.sub_cat] >= f32(v)
+		if sk.category_level {
+			return category_total(p, sub_category_to_category(sk.sub_cat)) >= i32(v)
+		}
+		return p.allocated_skill_points[sk.sub_cat] >= i32(v)
 	case [4]Prereq:
 		for i in 0 ..< len(v) {
 			pr := v[i]
-			if pr.points == 0 do continue // unused slot
-			if p.skill_adeptness[pr.sub_cat] < f32(pr.points) do return false
+			if pr.points == 0 do continue
+			if p.allocated_skill_points[pr.sub_cat] < i32(pr.points) do return false
 		}
 		return true
 	case:
@@ -1560,6 +1597,7 @@ resolve_tiered :: proc(t: ^Tiered_Mod, gate_stat_value: f32, proficiency_value: 
 	// ── Dodge tree (technique) — evasion + the Dash/Sprint/Spurt chain ──
 	// Backstep: +100 dodge for 1s.
 	backstep_p, _ := registry_reserve(&skill_registry, "Backstep")
+	backstep_p.category_level = true
 	backstep_p.source = .TREE; backstep_p.sub_cat = .DODGE; backstep_p.kind = .BUFF
 	backstep_p.description = "Step back and increase dodge by 100 for 1 second"
 	backstep_p.req = Skill_Points_Req(3); backstep_p.cost_mp = 5; backstep_p.cooldown_s = 3; backstep_p.duration_s = 1
@@ -2014,18 +2052,22 @@ resolve_tiered :: proc(t: ^Tiered_Mod, gate_stat_value: f32, proficiency_value: 
 	//    sub_cat — the req-threshold semantics is a refinement for when a
 	//    consumer exists) ────────────────────────────────────────────────
 	s = tree_phys("Slash", "Quick combo strike that gives the enemy no chance to evade.", .SLASH, .SLASH, 3, 10, 0, 10, 1, 1)
+	s.category_level = true
 	s = tree_phys("Bash", "A heavy blow that knocks the target back and may stun.", .BASH, .BASH, 35, 18, 0, 10, 2, 1)
+	s.category_level = true
 	s.outcomes[0] = Damage_Params{sub_type = .BASH, base_power = 2, knockback = 2}
 	s.outcomes[1] = Apply_Effect{polarity = .DEBUFF, to_self = false, effect = CC_Effect{kind = .STUN}}
 	s.outcome_count = 2
 	misd_p, _ := registry_reserve(&skill_registry, "Misdirection")
 	misd_p.source = .TREE; misd_p.sub_cat = .SLASH; misd_p.kind = .UTILITY
 	misd_p.description = "Distract nearby foes, removing their target on you."
+	misd_p.category_level = true
 	misd_p.req = Skill_Points_Req(70); misd_p.cost_mp = 10; misd_p.cooldown_s = 60
 	// Unpain: immune to KD/slow/immobilize, but attack halved.
 	unpain_p, _ := registry_reserve(&skill_registry, "Unpain")
 	unpain_p.source = .TREE; unpain_p.sub_cat = .SLASH; unpain_p.kind = .BUFF
 	unpain_p.description = "Become immune to knockdown, slow, and immobilize, but your attack is halved."
+	unpain_p.category_level = true
 	unpain_p.req = Skill_Points_Req(100); unpain_p.cost_mp = 24; unpain_p.cooldown_s = 30; unpain_p.duration_s = 10
 	unpain_p.requires.self_only = true
 	unpain_p.outcomes[0] = Apply_Effect{polarity = .BUFF, to_self = true, duration_s = 10, effect = Status_Flag_Set{.DISABLE_PHYSICAL_ATTACKS}}
@@ -2035,6 +2077,7 @@ resolve_tiered :: proc(t: ^Tiered_Mod, gate_stat_value: f32, proficiency_value: 
 	revid_p, _ := registry_reserve(&skill_registry, "Revidium")
 	revid_p.source = .TREE; revid_p.sub_cat = .BLESSING; revid_p.kind = .UTILITY
 	revid_p.description = "Dispels one harmful magical effect from the target."
+	revid_p.category_level = true
 	revid_p.req = Skill_Points_Req(35); revid_p.cost_mp = 14; revid_p.cast_time_s = 2; revid_p.cooldown_s = 15
 	revid_p.outcomes[0] = Apply_Effect{polarity = .BUFF, to_self = false, effect = Status_Flag_Set{.DISPEL}}
 	revid_p.outcome_count = 1
@@ -2042,10 +2085,12 @@ resolve_tiered :: proc(t: ^Tiered_Mod, gate_stat_value: f32, proficiency_value: 
 	physbar_p, _ := registry_reserve(&skill_registry, "Physical Barrier")
 	physbar_p.source = .TREE; physbar_p.sub_cat = .BLESSING; physbar_p.kind = .BUFF
 	physbar_p.description = "Shield the target with a barrier that fully blocks one physical attack."
+	physbar_p.category_level = true
 	physbar_p.req = Skill_Points_Req(102); physbar_p.cost_mp = 128; physbar_p.cast_time_s = 2; physbar_p.cooldown_s = 10; physbar_p.duration_s = 60
 	magicbar_p, _ := registry_reserve(&skill_registry, "Magic Barrier")
 	magicbar_p.source = .TREE; magicbar_p.sub_cat = .BLESSING; magicbar_p.kind = .BUFF
 	magicbar_p.description = "Shield the target with a barrier that fully blocks one magical attack."
+	magicbar_p.category_level = true
 	magicbar_p.req = Skill_Points_Req(102); magicbar_p.cost_mp = 128; magicbar_p.cast_time_s = 2; magicbar_p.cooldown_s = 10; magicbar_p.duration_s = 60
 
 	// ── Horsemanship tree (special) ─────────────────────────────────────

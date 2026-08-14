@@ -48,7 +48,6 @@ main :: proc() {
 	player: sys.Local_Player
 	sys.local_player_init(&player)
 	defer sys.local_player_destroy(&player)
-	sys.load_skill_bar(&player)
 
 	chat: sys.Chat_Log
 	sys.chat_init(&chat)

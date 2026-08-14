@@ -87,6 +87,10 @@ state: struct {
 	click_path_index:       int,
 	click_move_active:      bool,
 
+	// Skill bar drag state.
+	dragging_bar:           int,  // -1 = not dragging
+	drag_offset:            rl.Vector2,
+
 	// Ground-targeted skill aiming: when active, a reticle follows the cursor
 	// and the next left-click casts at that ground point (Esc cancels).
 	ground_target:          Ground_Target,
@@ -171,7 +175,26 @@ update :: proc(dt: f32) -> (requested: sys.App_State, has_request: bool) {
 		sys.handle_packet(state.ctx, &p, true)
 	}
 
-	// 2. Input.
+	// 2. Death check — BEFORE gameplay input. When dead, no movement/skills/
+	//    menus run. The player chooses to respawn via the overlay button
+	//    (Pandora Saga: you respawn at your homepoint, or stay dead waiting
+	//    for a Priest/Cleric/Enchanter revive). If the player disconnects
+	//    while dead, they reconnect dead in the same place.
+	if state.player.is_dead {
+		p := state.player
+		if !p.respawn_sent {
+			mouse := rl.GetMousePosition()
+			btn := death_respawn_btn_rect()
+			if rl.CheckCollisionPointRec(mouse, btn) && rl.IsMouseButtonPressed(.LEFT) {
+				sys.send(state.net, .RESPAWN_REQUEST)
+				p.respawn_sent = true
+			}
+		}
+		update_timers(dt)
+		return .TITLE, false
+	}
+
+	// 3. Input.
 	inp := sys.poll_input(state.chat_focused, state.player, dt)
 	handle_chat_input(inp)
 
@@ -180,16 +203,6 @@ update :: proc(dt: f32) -> (requested: sys.App_State, has_request: bool) {
 
 	if state.status == .RETURNING {
 		return .CHARACTER_SELECT, true
-	}
-
-	if state.player.is_dead {
-		// Allow only respawn request (rebindable Toggle_Rest, already gated by
-		// chat/menu inside poll_input) while dead.
-		if inp.toggle_rest {
-			sys.send(state.net, .RESPAWN_REQUEST)
-		}
-		update_timers(dt)
-		return .TITLE, false
 	}
 
 	// 3. Movement (input integration happens in poll_input). Send the local
@@ -212,37 +225,10 @@ update :: proc(dt: f32) -> (requested: sys.App_State, has_request: bool) {
 	// 5b. Ground-targeted skill aiming: confirm/cancel an armed reticle.
 	update_ground_target(inp)
 
-	// 6. Skill bar. Ground-targeted skills arm the reticle instead of firing
-	//    immediately — the cast goes out on the confirm click (update_ground_target).
-	//    TARGET_CENTERED AOE skills (Arrow Rain/Storm) send aoePosition computed
-	//    from the current target's ground position so the server runs its AOE
-	//    handler (the server needs aoePosition for skills in
-	//    GROUND_TARGETED_AOE_SKILLS, even when the client targets an entity).
-	if inp.skill_slot >= 0 {
-		// A new skill press supersedes any armed reticle.
-		state.ground_target.active = false
-		name := sys.skill_bar_get(state.player, inp.skill_slot)
-		if len(name) > 0 {
-			sk := sys.get_skill(name)
-			if sk != nil && sk.targeting.aoe_mode == .GROUND_TARGETED {
-				gt := &state.ground_target
-				gt.active = true
-				sys.copy_string_to_buffer(gt.skill_name[:], &gt.name_len, name)
-				gt.radius = sk.targeting.aoe_radius > 0 ? sk.targeting.aoe_radius : sys.DEFAULT_AOE_RADIUS
-			} else if sk != nil && sk.targeting.aoe_mode == .TARGET_CENTERED && sk.targeting.aoe_radius > 0 {
-				// Target-centered AOE: send the target's ground position as
-				// aoePosition so the server's ground-AOE handler fires.
-				idx := sys.find_index(state.scene, state.player.target_id)
-				if idx >= 0 {
-					pos := state.scene.transforms[idx].position
-					sys.send_skill_use_ground(state.net, name, pos.x, pos.y, pos.z)
-				}
-				// No target → silently skip (player needs a target for centered AOE).
-			} else {
-				sys.send_skill_use(state.net, name, target_string_id())
-			}
-		}
-	}
+	// 6. Skill bar — keyboard (digits 1-0 → bar 0) + mouse click on any bar.
+	//    Ground-targeted skills arm the reticle; TARGET_CENTERED AOE sends
+	//    aoePosition from the target's ground position.
+	handle_skill_bar_input(inp)
 
 	// 7. Interaction is handled via double-click in apply_targeting.
 	if inp.toggle_rest {
@@ -608,6 +594,9 @@ any_menu_focused :: proc() -> bool {
 cursor_over_ui :: proc() -> bool {
 	mouse := rl.GetMousePosition()
 
+	// Skill bars (draggable hotbars).
+	if cursor_over_skill_bar() do return true
+
 	// Menu bar (top-left button strip) — always interactable.
 	if len(state.bar_buttons) > 0 {
 		bar_w := f32(len(state.bar_buttons) * (BAR_BTN_SIZE + BAR_BTN_GAP) - BAR_BTN_GAP)
@@ -639,6 +628,118 @@ cursor_over_ui :: proc() -> bool {
 // settings keybind table (so e.g. inventory on I, J, or whatever the user set).
 menu_keybind :: proc(m: ^ui.Menu, action: sys.Action) {
 	if !state.chat_focused && sys.bind_pressed(action) do ui.menu_toggle(m)
+}
+
+// Centered rect for the "Respawn at Homepoint" button on the death overlay.
+death_respawn_btn_rect :: proc() -> rl.Rectangle {
+	sw := f32(rl.GetScreenWidth())
+	sh := f32(rl.GetScreenHeight())
+	return {sw / 2 - 130, sh / 2 + 30, 260, 40}
+}
+
+// ── skill bar layout + input ───────────────────────────────────────────────
+SKILL_SLOT_SIZE :: 36
+SKILL_SLOT_GAP  :: 4
+
+skill_slot_rect :: proc "contextless" (bar, slot: int) -> rl.Rectangle {
+	pos := state.player.skill_bar_pos[bar]
+	return {
+		pos.x + f32(slot * (SKILL_SLOT_SIZE + SKILL_SLOT_GAP)),
+		pos.y,
+		f32(SKILL_SLOT_SIZE),
+		f32(SKILL_SLOT_SIZE),
+	}
+}
+
+skill_bar_bg_rect :: proc "contextless" (bar: int) -> rl.Rectangle {
+	pos := state.player.skill_bar_pos[bar]
+	w := f32(sys.SLOTS_PER_BAR * (SKILL_SLOT_SIZE + SKILL_SLOT_GAP) - SKILL_SLOT_GAP)
+	return {pos.x - 4, pos.y - 4, w + 8, f32(SKILL_SLOT_SIZE) + 8}
+}
+
+// Returns true if the cursor is over any visible skill bar (so click-to-move
+// and camera zoom don't fire when clicking bars).
+cursor_over_skill_bar :: proc() -> bool {
+	mouse := rl.GetMousePosition()
+	for bar in 0 ..< sys.SKILL_BAR_COUNT {
+		if bar > 0 && !sys.skill_bar_has_skills(state.player, bar) do continue
+		if rl.CheckCollisionPointRec(mouse, skill_bar_bg_rect(bar)) do return true
+	}
+	return false
+}
+
+// Handles keyboard (digits 1-0 → bar 0) + mouse click activation + dragging.
+handle_skill_bar_input :: proc(inp: sys.Input_State) {
+	mouse := rl.GetMousePosition()
+	p := state.player
+
+	// --- Dragging (move a bar by its background) ---
+	if state.dragging_bar >= 0 {
+		if rl.IsMouseButtonDown(.LEFT) {
+			p.skill_bar_pos[state.dragging_bar] = mouse - state.drag_offset
+		} else {
+			state.dragging_bar = -1
+			sys.save_skill_bar(p)
+		}
+		return
+	}
+
+	// --- Determine which skill to activate ---
+	name := ""
+
+	if inp.skill_slot >= 0 {
+		state.ground_target.active = false
+		name = sys.skill_bar_get(p, 0, inp.skill_slot)
+	}
+
+	if inp.mouse_left_pressed && cursor_over_skill_bar() {
+		for bar in 0 ..< sys.SKILL_BAR_COUNT {
+			if bar > 0 && !sys.skill_bar_has_skills(p, bar) do continue
+			for slot in 0 ..< sys.SLOTS_PER_BAR {
+				if p.skill_bar_lens[bar][slot] == 0 do continue
+				if rl.CheckCollisionPointRec(mouse, skill_slot_rect(bar, slot)) {
+					name = sys.skill_bar_get(p, bar, slot)
+					state.ground_target.active = false
+					break
+				}
+			}
+			if len(name) > 0 do break
+		}
+		// Click on bar background (not a slot) → start dragging.
+		if len(name) == 0 {
+			for bar in 0 ..< sys.SKILL_BAR_COUNT {
+				if bar > 0 && !sys.skill_bar_has_skills(p, bar) do continue
+				if rl.CheckCollisionPointRec(mouse, skill_bar_bg_rect(bar)) {
+					state.dragging_bar = bar
+					state.drag_offset = mouse - p.skill_bar_pos[bar]
+					return
+				}
+			}
+		}
+	}
+
+	if len(name) == 0 do return
+
+	// --- Activate ---
+	sk := sys.get_skill(name)
+	if sk == nil {
+		sys.send_skill_use(state.net, name, target_string_id())
+		return
+	}
+	if sk.targeting.aoe_mode == .GROUND_TARGETED {
+		gt := &state.ground_target
+		gt.active = true
+		sys.copy_string_to_buffer(gt.skill_name[:], &gt.name_len, name)
+		gt.radius = sk.targeting.aoe_radius > 0 ? sk.targeting.aoe_radius : sys.DEFAULT_AOE_RADIUS
+	} else if sk.targeting.aoe_mode == .TARGET_CENTERED && sk.targeting.aoe_radius > 0 {
+		idx := sys.find_index(state.scene, p.target_id)
+		if idx >= 0 {
+			pos := state.scene.transforms[idx].position
+			sys.send_skill_use_ground(state.net, name, pos.x, pos.y, pos.z)
+		}
+	} else {
+		sys.send_skill_use(state.net, name, target_string_id())
+	}
 }
 
 // ── camera ────────────────────────────────────────────────────────────────

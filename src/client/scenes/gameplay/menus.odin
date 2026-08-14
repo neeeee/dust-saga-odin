@@ -70,10 +70,11 @@ create_quest_list_menu :: proc() {
 	ui.menu_add_button(m, "Gather Herbs   (5/10)")
 }
 
-// Button-id bases: equip a backpack item (6000 + inv index) / unequip a slot
-// (7000 + slot index).
+// Button-id bases: equip a backpack item (6000 + inv index), use a consumable
+// (8000 + inv index), unequip a slot (7000 + slot index).
 INV_EQUIP_BASE   :: 6000
 INV_UNEQUIP_BASE :: 7000
+INV_USE_BASE     :: 8000
 
 refresh_inventory_menu :: proc() {
 	m := &state.inventory_menu
@@ -94,13 +95,15 @@ refresh_inventory_menu :: proc() {
 	if !any_eq do ui.menu_add_label(m, "(nothing equipped)")
 
 	ui.menu_add_separator(m)
-	ui.menu_add_label(m, "— Backpack (click to equip) —")
+	ui.menu_add_label(m, "— Backpack —")
 	for i in 0 ..< len(inv.items) {
 		it := &inv.items[i]
 		id := sys.item_id_string(it)
 		name := sys.item_name(id)
 		if sys.item_is_equippable(id) {
 			ui.menu_add_button_id(m, fmt.tprintf("%s x%d  [equip]", name, it.quantity), INV_EQUIP_BASE + i)
+		} else if def, ok := sys.item_def(id); ok && def.type == .CONSUMABLE {
+			ui.menu_add_button_id(m, fmt.tprintf("%s x%d  [use]", name, it.quantity), INV_USE_BASE + i)
 		} else {
 			ui.menu_add_label(m, fmt.tprintf("%s x%d", name, it.quantity))
 		}
@@ -118,7 +121,12 @@ handle_inventory_menu_clicks :: proc() {
 		if item.id >= INV_UNEQUIP_BASE && item.id < INV_UNEQUIP_BASE + sys.EQUIP_SLOT_COUNT {
 			slot := sys.EQUIP_SLOT(item.id - INV_UNEQUIP_BASE)
 			sys.send_unequip_item(state.net, sys.EQUIP_SLOT_NAMES[int(slot)])
-		} else if item.id >= INV_EQUIP_BASE {
+		} else if item.id >= INV_USE_BASE {
+			idx := item.id - INV_USE_BASE
+			if idx >= 0 && idx < len(inv.items) {
+				sys.send_item_use(state.net, sys.item_id_string(&inv.items[idx]))
+			}
+		} else if item.id >= INV_EQUIP_BASE && item.id < INV_UNEQUIP_BASE {
 			idx := item.id - INV_EQUIP_BASE
 			if idx >= 0 && idx < len(inv.items) {
 				sys.send_equip_item(state.net, sys.item_id_string(&inv.items[idx]))
@@ -462,6 +470,7 @@ refresh_skills_menu :: proc() {
 		return
 	}
 	job := sys.registry_get(&sys.job_registry, p.job_id)
+	has_weapon := p.inventory.equipment[0].item_id_len > 0
 	ui.menu_add_label(m, fmt.tprintf("Skill Points: %d", p.unspent_skill_points))
 	ui.menu_add_label(m, fmt.tprintf("Job: %s   (click a skill to assign/clear)", job.name))
 	ui.menu_add_separator(m)
@@ -472,8 +481,43 @@ refresh_skills_menu :: proc() {
 		sk := sys.registry_get(&sys.skill_registry, sid)
 		name := sys.registry_name(&sys.skill_registry, sid)
 		lvl := sys.skill_req_level(sk)
-		tag := sys.skill_req_met(sk, p) ? "OK" : fmt.tprintf("Lv%d", lvl)
-		ui.menu_add_button_id(m, fmt.tprintf("[%s] %-18s %s", tag, name, bar_badge(p, name)), SKILL_ASSIGN_BASE + int(sid))
+		can_assign := sk.kind != .PASSIVE && sys.skill_req_met(sk, p)
+		if sk.requires.weapon_count > 0 && !has_weapon do can_assign = false
+		tag := can_assign ? "OK" : (sk.kind == .PASSIVE ? "passive" : fmt.tprintf("Lv%d", lvl))
+		if sk.requires.weapon_count > 0 && !has_weapon do tag = "no wpn"
+		if can_assign {
+			ui.menu_add_button_id(m, fmt.tprintf("[%s] %-18s %s", tag, name, bar_badge(p, name)), SKILL_ASSIGN_BASE + int(sid))
+		} else {
+			ui.menu_add_label(m, fmt.tprintf("[%s] %s", tag, name))
+		}
+	}
+	ui.menu_add_separator(m)
+
+	ui.menu_add_label(m, "-- Skill Trees --")
+	for sc in sys.Sub_Category {
+		prof := job.proficiency[sc]
+		if prof.max_potential == 0 do continue
+		adepts := p.skill_adeptness[sc]
+		alloc := p.allocated_skill_points[sc]
+		ui.menu_add_label(
+			m,
+			fmt.tprintf("%s: prof %.1f / pts %d / max %d", sys.sub_category_name(sc), adepts, alloc, prof.max_potential),
+		)
+		for j in 0 ..< len(sys.tree_skills[sc]) {
+			sid := sys.tree_skills[sc][j]
+			sk := sys.registry_get(&sys.skill_registry, sid)
+			name := sys.registry_name(&sys.skill_registry, sid)
+			pts := sys.skill_req_points(sk)
+			can_assign := sk.kind != .PASSIVE && sys.skill_req_met(sk, p)
+			if sk.requires.weapon_count > 0 && !has_weapon do can_assign = false
+			tag := can_assign ? "OK" : (sk.kind == .PASSIVE ? "passive" : (pts > 0 ? fmt.tprintf("%d", pts) : "x"))
+			if sk.requires.weapon_count > 0 && !has_weapon do tag = "no wpn"
+			if can_assign {
+				ui.menu_add_button_id(m, fmt.tprintf("   [%s] %-18s %s", tag, name, bar_badge(p, name)), SKILL_ASSIGN_BASE + int(sid))
+			} else {
+				ui.menu_add_label(m, fmt.tprintf("   [%s] %s", tag, name))
+			}
+		}
 	}
 	ui.menu_add_separator(m)
 
@@ -493,17 +537,18 @@ refresh_skills_menu :: proc() {
 			name := sys.registry_name(&sys.skill_registry, sid)
 			pts := sys.skill_req_points(sk)
 			tag := sys.skill_req_met(sk, p) ? "OK" : (pts > 0 ? fmt.tprintf("%d", pts) : "x")
+			if sk.requires.weapon_count > 0 && !has_weapon do tag = "no wpn"
 			ui.menu_add_button_id(m, fmt.tprintf("   [%s] %-18s %s", tag, name, bar_badge(p, name)), SKILL_ASSIGN_BASE + int(sid))
 		}
 	}
 	ui.menu_auto_height(m, 560)
 }
 
-// "<bar N>" if the skill is on the hotbar, else empty.
+// "<bar N slot M>" if the skill is on a hotbar, else empty.
 bar_badge :: proc(p: ^sys.Local_Player, name: string) -> string {
-	slot := sys.skill_bar_find(p, name)
-	if slot < 0 do return ""
-	return fmt.tprintf("<bar %d>", slot + 1)
+	bar, slot := sys.skill_bar_find(p, name)
+	if bar < 0 do return ""
+	return fmt.tprintf("<%d-%d>", bar + 1, slot + 1)
 }
 
 // Handle skill-window clicks → toggle the skill on/off the bar + persist.
@@ -517,7 +562,7 @@ handle_skills_menu_clicks :: proc() {
 		idx := item.id - SKILL_ASSIGN_BASE
 		if idx < 0 || idx >= sys.registry_count(&sys.skill_registry) do continue
 		name := sys.registry_name(&sys.skill_registry, sys.Skill_Id(u16(idx)))
-		_ , _ = sys.skill_bar_toggle(p, name)
+		_ , _ , _ = sys.skill_bar_toggle(p, name)
 		sys.save_skill_bar(p)
 	}
 }

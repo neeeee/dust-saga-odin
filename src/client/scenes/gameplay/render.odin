@@ -240,34 +240,40 @@ draw_target_window :: proc() {
 draw_skill_bar :: proc() {
 	mouse := rl.GetMousePosition()
 	p := state.player
-	for slot in 0 ..< 10 {
-		x := 440 + slot * 44
-		rect := rl.Rectangle{f32(x), 660, 40, 40}
-		name := sys.skill_bar_get(p, slot)
 
-		rl.DrawRectangleRec(rect, rl.Color{30, 30, 40, 220})
-		rl.DrawRectangleLinesEx(rect, 1, rl.BLACK)
-		sys.draw_text(fmt.tprintf("%d", (slot + 1) % 10), x + 4, 660 + 2, 12, rl.GRAY)
+	for bar in 0 ..< sys.SKILL_BAR_COUNT {
+		if bar > 0 && !sys.skill_bar_has_skills(p, bar) do continue
+		pos := p.skill_bar_pos[bar]
+		bar_w := f32(sys.SLOTS_PER_BAR * (SKILL_SLOT_SIZE + SKILL_SLOT_GAP) - SKILL_SLOT_GAP)
+		bg := rl.Rectangle{pos.x - 4, pos.y - 4, bar_w + 8, f32(SKILL_SLOT_SIZE) + 8}
+		being_dragged := state.dragging_bar == bar
+		rl.DrawRectangleRec(bg, being_dragged ? rl.Color{50, 60, 80, 240} : rl.Color{20, 20, 30, 200})
 
-		if len(name) > 0 {
-			cd_ms := sys.skill_cooldown_remaining(p, name)
-			if cd_ms > 0 {
-				// On cooldown: darken + show remaining seconds.
-				rl.DrawRectangleRec(rect, rl.Color{0, 0, 0, 170})
-				sys.draw_text(fmt.tprintf("%.0f", math.ceil(cd_ms / 1000.0)), x + 13, 660 + 13, 14, rl.WHITE)
-			} else {
-				tag := name
-				if len(tag) > 3 do tag = tag[:3]
-				sys.draw_text(tag, x + 6, 660 + 22, 11, rl.WHITE)
+		for slot in 0 ..< sys.SLOTS_PER_BAR {
+			rect := skill_slot_rect(bar, slot)
+			name := sys.skill_bar_get(p, bar, slot)
+			rl.DrawRectangleRec(rect, rl.Color{30, 30, 40, 220})
+			rl.DrawRectangleLinesEx(rect, 1, rl.BLACK)
+			if bar == 0 {
+				sys.draw_text(fmt.tprintf("%d", (slot + 1) % 10), int(rect.x + 3), int(rect.y + 1), 10, rl.Color{150, 150, 150, 200})
 			}
-			// Highlight the slot currently casting.
-			if p.casting.active && string(p.casting.skill_name[:p.casting.name_len]) == name {
-				rl.DrawRectangleLinesEx(rect, 2, rl.ORANGE)
-			}
-			// Right-click clears the slot.
-			if rl.CheckCollisionPointRec(mouse, rect) && rl.IsMouseButtonPressed(.RIGHT) {
-				sys.skill_bar_clear(p, slot)
-				sys.save_skill_bar(p)
+			if len(name) > 0 {
+				cd_ms := sys.skill_cooldown_remaining(p, name)
+				if cd_ms > 0 {
+					rl.DrawRectangleRec(rect, rl.Color{0, 0, 0, 170})
+					sys.draw_text(fmt.tprintf("%.0f", math.ceil(cd_ms / 1000.0)), int(rect.x + 10), int(rect.y + 10), 14, rl.WHITE)
+				} else {
+					tag := name
+					if len(tag) > 3 do tag = tag[:3]
+					sys.draw_text(tag, int(rect.x + 5), int(rect.y + 16), 11, rl.WHITE)
+				}
+				if p.casting.active && string(p.casting.skill_name[:p.casting.name_len]) == name {
+					rl.DrawRectangleLinesEx(rect, 2, rl.ORANGE)
+				}
+				if rl.CheckCollisionPointRec(mouse, rect) && rl.IsMouseButtonPressed(.RIGHT) {
+					sys.skill_bar_clear(p, bar, slot)
+					sys.save_skill_bar(p)
+				}
 			}
 		}
 	}
@@ -339,9 +345,28 @@ draw_notifications :: proc() {
 
 draw_death_overlay :: proc() {
 	rl.DrawRectangle(0, 0, rl.GetScreenWidth(), rl.GetScreenHeight(), rl.Color{80, 0, 0, 140})
-	msg := "You died — press R to respawn"
+	p := state.player
+
+	// "You died" centered.
+	msg := "You died"
 	w := sys.measure_text(msg, 28)
-	half_w := int(rl.GetScreenWidth()) / 2 - w / 2
-	half_h := int(rl.GetScreenHeight()) / 2
-	sys.draw_text(msg, half_w, half_h, 28, rl.WHITE)
+	sys.draw_text(msg, int(rl.GetScreenWidth()) / 2 - w / 2, int(rl.GetScreenHeight()) / 2 - 20, 28, rl.WHITE)
+
+	if p.respawn_sent {
+		msg2 := "Respawning…"
+		w2 := sys.measure_text(msg2, 18)
+		sys.draw_text(msg2, int(rl.GetScreenWidth()) / 2 - w2 / 2, int(rl.GetScreenHeight()) / 2 + 40, 18, rl.Color{200, 200, 200, 255})
+		return
+	}
+
+	// Respawn button (click to respawn at homepoint; or stay dead for revive).
+	btn := death_respawn_btn_rect()
+	mouse := rl.GetMousePosition()
+	hov := rl.CheckCollisionPointRec(mouse, btn)
+	col := hov ? rl.Color{70, 130, 210, 255} : rl.Color{55, 60, 75, 230}
+	rl.DrawRectangleRec(btn, col)
+	rl.DrawRectangleLinesEx(btn, 2, rl.WHITE)
+	btn_msg := "Respawn at Homepoint"
+	bw := sys.measure_text(btn_msg, 16)
+	sys.draw_text(btn_msg, int(btn.x + btn.width / 2 - f32(bw) / 2), int(btn.y + 12), 16, rl.WHITE)
 }

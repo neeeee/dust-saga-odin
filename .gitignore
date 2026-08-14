@@ -6,6 +6,7 @@ dust_saga
 # runtime user config (regenerated with defaults on first run)
 src/client/keybinds.json
 src/client/skillbar.json
+src/client/skillbar_*.json
 
 # conversation screenshots
 2026-08-*.png

@@ -548,6 +548,14 @@ send_unequip_item :: proc(nc: ^Network_Client, slot_key: string) {
 	send_object(nc, .UNEQUIP_ITEM, fields[:])
 }
 
+// Use a consumable item (health potion, etc.) by id.
+send_item_use :: proc(nc: ^Network_Client, item_id: string) {
+	fields := make([dynamic]JSON_Field, 0, 1)
+	defer delete(fields)
+	append(&fields, JSON_Field{"itemId", json_str(item_id)})
+	send_object(nc, .ITEM_USE, fields[:])
+}
+
 // Stat-point allocation: add one point to `stat` ("STA"/"STR"/…).
 // Assumed payload shape: { stat: "STR" }.
 send_stat_allocate :: proc(nc: ^Network_Client, stat: string) {

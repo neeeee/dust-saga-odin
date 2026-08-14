@@ -111,6 +111,8 @@ handle_packet :: proc(ctx: ^Game_Context, p: ^Packet, free_after: bool) {
 		handle_heal(ctx, p.data)
 	case .DEATH:
 		handle_death(ctx, p.data)
+	case .PLAYER_REVIVED:
+		handle_player_revived(ctx, p.data)
 	case .STATS_UPDATE:
 		handle_stats_update(ctx, p.data)
 	case .EXPERIENCE_GAIN:
@@ -432,6 +434,8 @@ handle_death :: proc(ctx: ^Game_Context, data: ^JSON_Value) {
 
 	if entity_id == character_id_string(ctx.player) {
 		ctx.player.is_dead = get_bool(o, "isDead", true)
+		ctx.player.death_start_ms = 0
+		ctx.player.respawn_sent = false
 		return
 	}
 	id := string_to_entity_id(entity_id)
@@ -441,6 +445,29 @@ handle_death :: proc(ctx: ^Game_Context, data: ^JSON_Value) {
 		ctx.scene.ui[idx].health_ratio = 0
 		set_entity_state(ctx.scene, idx, "dead")
 	}
+}
+
+// Server respawns the player at their homepoint → clears the death state,
+// updates position + HP/MP so gameplay can resume immediately.
+handle_player_revived :: proc(ctx: ^Game_Context, data: ^JSON_Value) {
+	if data == nil do return
+	o := obj_of(data^)
+	p := ctx.player
+	p.is_dead = false
+	p.is_resting = false
+	p.death_start_ms = 0
+	p.respawn_sent = false
+	// Update position (respawn point).
+	pos := get_object(o, "position")
+	if !is_null(json.Value(pos)) {
+		p.position.x = get_f32(pos, "x", p.position.x)
+		p.position.y = get_f32(pos, "y", p.position.y)
+		p.position.z = get_f32(pos, "z", p.position.z)
+	}
+	// Full HP/MP.
+	s := &p.stats
+	s.health = get_f32(o, "health", s.max_health)
+	s.max_health = get_f32(o, "maxHealth", s.max_health)
 }
 
 // Parse the player's per-attribute allocations and per-sub-category skill
@@ -745,6 +772,8 @@ handle_character_select :: proc(ctx: ^Game_Context, data: ^JSON_Value) {
 	p := ctx.player
 	copy_string_to_buffer(p.character_id_buf[:], &p.character_id_len, get_string(o, "characterId"))
 	copy_string_to_buffer(p.name[:], &p.name_len, get_string(o, "characterName"))
+	// Load this character's skill bar (per-character file).
+	load_skill_bar(p)
 	// job_id / base_class are interned at the packet boundary (views are safe —
 	// consumed before free_packet). base_class is kept as a typed enum even
 	// though it's derivable from the job, since the server sends it explicitly.
@@ -785,6 +814,14 @@ handle_character_select :: proc(ctx: ^Game_Context, data: ^JSON_Value) {
 		s.level = get_int(stats, "level")
 		s.experience = i64(get_f64(stats, "experience"))
 		s.experience_to_next = i64(get_f64(stats, "experienceToNext"))
+	}
+
+	// If the character was saved while dead (health <= 0), restore the dead
+	// state so the death overlay shows and they can choose to respawn.
+	if p.stats.health <= 0 && p.stats.max_health > 0 {
+		p.is_dead = true
+		p.death_start_ms = 0
+		p.respawn_sent = false
 	}
 
 	if has_field(o, "unspentStatPoints") {

@@ -294,6 +294,8 @@ Local_Player :: struct {
 	// target
 	target_id:             Entity_Id,
 	is_dead:               bool,
+	death_start_ms:        u64, // 0 = not counting; set on death, cleared on revive
+	respawn_sent:          bool, // RESPAWN_REQUEST sent, waiting for PLAYER_REVIVED
 	is_resting:            bool,
 
 	// combat timers (client-side cooldown gating; server is authoritative)
@@ -304,8 +306,9 @@ Local_Player :: struct {
 	// cast / skills
 	casting:               Cast_State,
 	cooldowns:             [dynamic]Skill_Cooldown,
-	skill_bar:             [10][64]u8, // 10 hotbar slots, skill name each
-	skill_bar_lens:        [10]int,
+	skill_bars:            [8][10][64]u8, // 8 bars × 10 slots × skill name
+	skill_bar_lens:        [8][10]int,
+	skill_bar_pos:         [8]rl.Vector2, // screen position per bar
 }
 
 local_player_init :: proc(p: ^Local_Player) {
@@ -314,6 +317,10 @@ local_player_init :: proc(p: ^Local_Player) {
 	p.job_id = INVALID_JOB_ID
 	inventory_init(&p.inventory)
 	p.cooldowns = make([dynamic]Skill_Cooldown)
+	// Default bar positions: bar 0 at bottom-center, others stacked upward.
+	for i in 0 ..< 8 {
+		p.skill_bar_pos[i] = {440, f32(660 - i * 44)}
+	}
 }
 
 local_player_destroy :: proc(p: ^Local_Player) {
@@ -322,17 +329,6 @@ local_player_destroy :: proc(p: ^Local_Player) {
 }
 
 // skill bar helpers
-skill_bar_set :: proc(p: ^Local_Player, slot: int, name: string) {
-	if slot < 0 || slot >= len(p.skill_bar) do return
-	p.skill_bar_lens[slot] = min(len(name), len(p.skill_bar[slot]))
-	copy(p.skill_bar[slot][:p.skill_bar_lens[slot]], transmute([]u8)name)
-}
-
-skill_bar_get :: proc(p: ^Local_Player, slot: int) -> string {
-	if slot < 0 || slot >= len(p.skill_bar) do return ""
-	return string(p.skill_bar[slot][:p.skill_bar_lens[slot]])
-}
-
 // Remaining cooldown (ms) for a skill by name, or 0 if not on cooldown.
 skill_cooldown_remaining :: proc(p: ^Local_Player, name: string) -> f64 {
 	for i in 0 ..< len(p.cooldowns) {
