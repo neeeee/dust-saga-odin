@@ -317,9 +317,12 @@ local_player_init :: proc(p: ^Local_Player) {
 	p.job_id = INVALID_JOB_ID
 	inventory_init(&p.inventory)
 	p.cooldowns = make([dynamic]Skill_Cooldown)
-	// Default bar positions: bar 0 at bottom-center, others stacked upward.
+	// Default bar positions: bottom-right (Pandora Saga layout), stacked
+	// upward. Saved positions from skillbar.json override these on load.
+	bottom := f32(rl.GetScreenHeight()) - f32(SKILL_SLOT_SIZE + SKILL_SLOT_GAP) - 16
+	right := f32(rl.GetScreenWidth()) - f32(SLOTS_PER_BAR*(SKILL_SLOT_SIZE+SKILL_SLOT_GAP) - SKILL_SLOT_GAP) - 16
 	for i in 0 ..< 8 {
-		p.skill_bar_pos[i] = {440, f32(660 - i * 44)}
+		p.skill_bar_pos[i] = {right, bottom - f32(i * (SKILL_SLOT_SIZE + SKILL_SLOT_GAP + 4))}
 	}
 }
 

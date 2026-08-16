@@ -9,6 +9,8 @@ import "core:os"
 
 SKILL_BAR_COUNT :: 8
 SLOTS_PER_BAR :: 10
+SKILL_SLOT_SIZE :: 36
+SKILL_SLOT_GAP :: 4
 
 // ── per-slot helpers ───────────────────────────────────────────────────────
 

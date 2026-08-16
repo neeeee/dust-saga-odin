@@ -1,0 +1,25 @@
+{
+  "id": "kill_quest",
+  "title": "Kill the Slimes",
+  "description": "Kill the slimes",
+  "type": "kill",
+  "requiredLevel": 1,
+  "npcId": "elder_miriam",
+  "objectives": [
+    {
+      "id": "kill_slimes",
+      "type": "kill",
+      "targetId": "green_slime",
+      "targetName": "Green Slime",
+      "requiredCount": 5
+    }
+  ],
+  "rewards": {
+    "experience": 400,
+    "gold": 15,
+    "items": [{ "itemId": "health_potion", "quantity": 1 }]
+  },
+  "offerDialog": [{ "speaker": "Elder Miriam", "text": "Kill the damn slimes." }],
+  "inProgressDialog": [{ "text": "Kill them all." }],
+  "turnInDialog": [{ "text": "Thanks man, really helps me out." }]
+}

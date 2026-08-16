@@ -24,7 +24,11 @@ export const GROUND_TARGETED_AOE_SKILLS = new Set([
   "Pestilence",
   "Dark Frenzy",
   "Arrow Rain",
+  "Arrow Storm",
   "Banish",
+  "Silent Void",
+  "Psychic Blades",
+  "Summon Sandman",
   "Summon Wall",
   "Summon Plant",
   "Summon Wyvern",
@@ -2611,17 +2615,19 @@ export const CLASS_SKILL_DATA: Record<
             damageSubType: MagicalDamageSubType.DARK,
             description: "Slice enemy with weapon",
             basePower: 1,
+            baseHits: 3,
           },
           "Bind Criminal": {
             name: "Bind Criminal",
             reqPoints: 81,
             mpCost: 30,
-            castTime: 0,
+            castTime: 10,
             cooldown: 90,
             duration: 0,
             description:
               "Bind targets in large AOE, preventing them from moving",
             isAOE: true,
+            aoeRadius: 8,
             debuffEffectTable: {
               moveSpeedDown: 0.1,
             },
@@ -2782,11 +2788,14 @@ export const CLASS_SKILL_DATA: Record<
             mpCost: 69,
             castTime: 2,
             cooldown: 20,
-            duration: 0,
+            duration: 60,
             description: "Curse target, preventing resurrection",
             damageSubType: MagicalDamageSubType.DARK,
-            basePower: 3,
+            basePower: 1,
             preventResurrect: true,
+            debuffEffectTable: {
+                curse: true,
+            }
           },
           Hallucination: {
             name: "Hallucination",
@@ -2913,7 +2922,8 @@ export const CATEGORY_LEVEL_SKILLS: Record<SkillCategoryId, Record<string, Skill
       description: "Become immune to knockdown, slow, and immobilize, but your attack is halved.",
       isBuff: true,
       selfBuffOnly: true,
-      buffEffectTable: {},
+      buffEffectTable: {
+      },
     },
   },
   [SkillCategoryId.TECHNIQUE]: {

@@ -1,0 +1,22 @@
+import { PlayerSession } from '../types/player';
+export declare function applyRacialCritChance(passiveId: string | undefined, baseCritChance: number): number;
+export declare function applyRacialDodgeChance(passiveId: string | undefined): number;
+export declare function applyRacialIncomingDamage(passiveId: string | undefined, damage: number, damageType: 'physical' | 'magical'): number;
+export declare function applyRacialOutgoingDamage(passiveId: string | undefined, damage: number, weaponType?: string): number;
+export declare function applyRacialPotionHealing(passiveId: string | undefined, baseHeal: number): number;
+export declare function applyRacialMpCost(passiveId: string | undefined, baseMpCost: number): number;
+export declare function applyRacialAilmentDuration(passiveId: string | undefined, baseDurationMs: number): number;
+export declare function checkSurviveFatal(passiveId: string | undefined): boolean;
+export declare function checkDamageToMpConversion(passiveId: string | undefined): boolean;
+export declare function checkFatalDamageForParty(passiveId: string | undefined): boolean;
+export declare function processRacialOnDamage(target: PlayerSession, incomingDamage: number, damageType: 'physical' | 'magical'): {
+    finalDamage: number;
+    survivedFatal: boolean;
+    mpConverted: number;
+};
+export declare function getRangedRangeBonus(passiveId: string | undefined): number;
+export declare function getCharmResist(passiveId: string | undefined): number;
+export declare function getMpRegenBonus(passiveId: string | undefined): number;
+export declare function getMeleeSkillBonus(passiveId: string | undefined): number;
+export declare function hasLapinSupport(passiveId: string | undefined): boolean;
+export declare function hasEnkiduSupport(passiveId: string | undefined): boolean;

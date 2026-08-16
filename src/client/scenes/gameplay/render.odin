@@ -73,13 +73,22 @@ draw_local_player :: proc() {
 }
 
 draw_hud :: proc() {
-	// Health + mana bars bottom-left.
+	// Player plate top-left (Pandora Saga layout): buffs (not yet implemented)
+	// go above, then name/level, then HP and MP bars.
 	s := &state.player.stats
 	hp_ratio := s.max_health > 0 ? s.health / s.max_health : 0
 	mp_ratio := s.max_mana > 0 ? s.mana / s.max_mana : 0
+
+	sys.draw_text(
+		fmt.tprintf("Lv %d  %s", s.level, string(state.player.name[:state.player.name_len])),
+		22,
+		34,
+		18,
+		rl.WHITE,
+	)
 	draw_bar(
 		20,
-		20,
+		56,
 		240,
 		18,
 		hp_ratio,
@@ -88,21 +97,12 @@ draw_hud :: proc() {
 	)
 	draw_bar(
 		20,
-		43,
+		78,
 		240,
 		14,
 		mp_ratio,
 		rl.BLUE,
 		fmt.tprintf("MP %d/%d", i32(s.mana), i32(s.max_mana)),
-	)
-
-	// Level + zone top-left.
-	sys.draw_text(
-		fmt.tprintf("Lv %d  %s", s.level, string(state.player.name[:state.player.name_len])),
-		20,
-		12,
-		20,
-		rl.WHITE,
 	)
 
 	// Skill bar bottom-center.

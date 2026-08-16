@@ -8,8 +8,12 @@ import rl "vendor:raylib"
 
 BAR_BTN_SIZE :: 36
 BAR_BTN_GAP :: 4
-BAR_Y :: 70
-BAR_X :: 20
+BAR_X :: 16
+
+// Menu-bar Y: bottom-left, just under the chat input box (Pandora Saga layout).
+menu_bar_y :: proc() -> i32 {
+	return rl.GetScreenHeight() - 72
+}
 
 SHOP_CAT_ALL_ID :: 1
 SHOP_CAT_WEAPONS_ID :: 2
@@ -21,7 +25,7 @@ SHOP_ITEM_BASE_ID :: 100
 
 bar_btn_rect :: proc(idx: int) -> rl.Rectangle {
 	x := f32(BAR_X + idx * (BAR_BTN_SIZE + BAR_BTN_GAP))
-	return {x, BAR_Y, BAR_BTN_SIZE, BAR_BTN_SIZE}
+	return {x, f32(menu_bar_y()), BAR_BTN_SIZE, BAR_BTN_SIZE}
 }
 
 // ── create procs ──────────────────────────────────────────────────────────
@@ -53,12 +57,114 @@ create_friends_menu :: proc() {
 }
 
 create_party_menu :: proc() {
+	// Content is custom-drawn (Pandora Saga PT panel, top-right); the ui.Menu
+	// only carries the open/focused flags and the panel rect for hit-testing.
 	m := &state.party_menu
-	m^ = ui.menu_create("Party", 300, 250, 350, 300)
-	ui.menu_add_label(m, "Members: 1/4")
-	ui.menu_add_separator(m)
-	ui.menu_add_button(m, "Invite Player")
-	ui.menu_add_button(m, "Leave Party")
+	m^ = ui.menu_create("PT MEMBER", 0, 0, PARTY_PANEL_W, PARTY_PANEL_H)
+}
+
+// ── party panel (Pandora Saga style, top-right under the minimap area) ────
+
+PARTY_PANEL_W :: 240
+PARTY_PANEL_H :: 250
+PARTY_HEADER_H :: 24
+PARTY_ROW_H :: 52
+PARTY_FOOTER_H :: 28
+
+// Member rows shown in the panel. Until PARTY_UPDATE is wired up client-side,
+// the local player is the sole row (party leader).
+party_panel_rect :: proc() -> rl.Rectangle {
+	sw := f32(rl.GetScreenWidth())
+	return {sw - PARTY_PANEL_W - 12, 64, PARTY_PANEL_W, PARTY_PANEL_H}
+}
+
+party_row_rect :: proc(panel: rl.Rectangle, i: int) -> rl.Rectangle {
+	return {panel.x + 6, panel.y + PARTY_HEADER_H + 6 + f32(i * PARTY_ROW_H), panel.width - 12, f32(PARTY_ROW_H - 4)}
+}
+
+party_footer_btn_rect :: proc(panel: rl.Rectangle, i: int) -> rl.Rectangle {
+	bw := (panel.width - 24) / 2 - 3
+	return {
+		panel.x + 8 + f32(i) * (bw + 8),
+		panel.y + panel.height - PARTY_FOOTER_H,
+		bw,
+		f32(PARTY_FOOTER_H - 6),
+	}
+}
+
+update_party_panel :: proc() {
+	m := &state.party_menu
+	if !m.open do return
+
+	// Anchored top-right; rect + focused are refreshed every frame (the panel
+	// is custom-drawn, so ui.menu_update is not used for it).
+	m.rect = party_panel_rect()
+	m.focused = rl.CheckCollisionPointRec(rl.GetMousePosition(), m.rect)
+
+	mouse := rl.GetMousePosition()
+	if !state.chat_focused && rl.IsMouseButtonPressed(.LEFT) {
+		if rl.CheckCollisionPointRec(mouse, party_footer_btn_rect(m.rect, 0)) {
+			// Invite — TODO: target picker once party invites are wired.
+		} else if rl.CheckCollisionPointRec(mouse, party_footer_btn_rect(m.rect, 1)) {
+			sys.send(state.net, .PARTY_LEAVE)
+		}
+	}
+}
+
+draw_party_panel :: proc() {
+	m := &state.party_menu
+	if !m.open do return
+	p := state.player
+
+	rl.DrawRectangleRec(m.rect, rl.Color{15, 16, 22, 210})
+	rl.DrawRectangleLinesEx(m.rect, 1, rl.Color{90, 90, 110, 220})
+
+	// Header.
+	sys.draw_text(fmt.tprintf("PT MEMBER  (%d/4)", 1), int(m.rect.x) + 8, int(m.rect.y) + 5, 14, rl.Color{220, 220, 235, 255})
+	rl.DrawLine(
+		i32(m.rect.x),
+		i32(m.rect.y + PARTY_HEADER_H),
+		i32(m.rect.x + m.rect.width),
+		i32(m.rect.y + PARTY_HEADER_H),
+		rl.Color{90, 90, 110, 220},
+	)
+
+	// Member rows: name + level, HP and MP bars.
+	s := &p.stats
+	row := party_row_rect(m.rect, 0)
+	name := string(p.name[:p.name_len])
+	sys.draw_text(fmt.tprintf("Lv%d", s.level), int(row.x) + 4, int(row.y), 12, rl.GRAY)
+	sys.draw_text(name, int(row.x) + 36, int(row.y), 12, rl.Color{130, 180, 255, 255})
+	bar_w := row.width - 8
+	hp_ratio := s.max_health > 0 ? s.health / s.max_health : 0
+	mp_ratio := s.max_mana > 0 ? s.mana / s.max_mana : 0
+	draw_party_bar(row.x + 4, row.y + 18, bar_w, 10, hp_ratio, rl.Color{200, 40, 40, 255},
+		fmt.tprintf("%d/%d", i32(s.health), i32(s.max_health)))
+	draw_party_bar(row.x + 4, row.y + 32, bar_w, 8, mp_ratio, rl.Color{60, 110, 220, 255}, "")
+
+	// Footer buttons.
+	mouse := rl.GetMousePosition()
+	labels := [2]string{"Invite", "Leave"}
+	for i in 0 ..< 2 {
+		btn := party_footer_btn_rect(m.rect, i)
+		hov := rl.CheckCollisionPointRec(mouse, btn)
+		col := hov ? rl.Color{75, 85, 115, 230} : rl.Color{55, 60, 75, 230}
+		rl.DrawRectangleRec(btn, col)
+		rl.DrawRectangleLinesEx(btn, 1, rl.Color{140, 140, 160, 255})
+		tw := sys.measure_text(labels[i], 13)
+		sys.draw_text(labels[i], int(btn.x + btn.width/2 - f32(tw)/2), int(btn.y) + 6, 13, rl.Color{220, 220, 235, 255})
+	}
+}
+
+draw_party_bar :: proc(x, y, w, h: f32, ratio: f32, color: rl.Color, label: string) {
+	r := math.clamp(ratio, 0, 1)
+	rl.DrawRectangleRec({x, y, w, h}, rl.Color{30, 30, 30, 220})
+	rl.DrawRectangleRec({x, y, w * r, h}, color)
+	rl.DrawRectangleLinesEx({x, y, w, h}, 1, rl.BLACK)
+	if len(label) > 0 {
+		tw := f32(sys.measure_text(label, 10))
+		sys.draw_text(label, int(x + w/2 - tw/2), int(y + h/2 - 5), 10, rl.WHITE)
+	}
 }
 
 create_quest_list_menu :: proc() {
@@ -308,12 +414,12 @@ update_menus :: proc() {
 	if state.debug_menu.open do refresh_debug_menu()
 	if state.settings_menu.open do refresh_settings_menu()
 	update_shop_menu()
+	update_party_panel()
 
 	ui.menu_update(&state.inventory_menu)
 	ui.menu_update(&state.settings_menu)
 	ui.menu_update(&state.skills_menu)
 	ui.menu_update(&state.friends_menu)
-	ui.menu_update(&state.party_menu)
 	ui.menu_update(&state.quest_list_menu)
 	ui.menu_update(&state.accept_deny_menu)
 	ui.menu_update(&state.blacksmith_menu)
@@ -347,7 +453,7 @@ draw_menu_bar :: proc() {
 	mouse := rl.GetMousePosition()
 	bar_w := f32(len(state.bar_buttons) * (BAR_BTN_SIZE + BAR_BTN_GAP) - BAR_BTN_GAP)
 	rl.DrawRectangleRec(
-		{f32(BAR_X) - 4, BAR_Y - 4, bar_w + 8, BAR_BTN_SIZE + 8},
+		{f32(BAR_X) - 4, f32(menu_bar_y()) - 4, bar_w + 8, BAR_BTN_SIZE + 8},
 		rl.Color{15, 16, 20, 200},
 	)
 
@@ -366,8 +472,8 @@ draw_menu_bar :: proc() {
 
 		tw := sys.measure_text(entry.label, 16)
 		tx := int(r.x) + (BAR_BTN_SIZE - tw) / 2
-		ty := BAR_Y + (BAR_BTN_SIZE - 16) / 2
-		sys.draw_text(entry.label, tx, ty, 16, rl.Color{220, 220, 235, 255})
+		ty := menu_bar_y() + (BAR_BTN_SIZE - 16) / 2
+		sys.draw_text(entry.label, tx, int(ty), 16, rl.Color{220, 220, 235, 255})
 	}
 }
 
@@ -376,7 +482,7 @@ draw_menu_bar :: proc() {
 	ui.menu_draw(&state.settings_menu)
 	ui.menu_draw(&state.skills_menu)
 	ui.menu_draw(&state.friends_menu)
-	ui.menu_draw(&state.party_menu)
+	draw_party_panel()
 	ui.menu_draw(&state.quest_list_menu)
 	ui.menu_draw(&state.accept_deny_menu)
 	ui.menu_draw(&state.blacksmith_menu)
@@ -392,11 +498,12 @@ draw_system_menu :: proc() {
 	m := &state.system_menu
 	if !m.open do return
 
-	screen_w := rl.GetScreenWidth()
-	m.rect.x = f32(screen_w) / 2.0 - m.rect.width / 2.0
-	m.rect.y = 200.0
-
+	// Centered on the window (like Pandora Saga and most MMOs).
 	refresh_system_menu()
+	ui.menu_auto_height(m, 1000)
+	m.rect.x = f32(rl.GetScreenWidth())/2.0 - m.rect.width/2.0
+	m.rect.y = f32(rl.GetScreenHeight())/2.0 - m.rect.height/2.0
+
 	ui.menu_draw(m)
 }
 

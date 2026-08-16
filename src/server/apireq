@@ -1,0 +1,5 @@
+#!/bin/sh
+
+curl -H "Authorization: Bearer 7eeac3226121dcfe16887c1f961a5df93e94f62cdaf2b33c44d6d1614abb37f3" \
+  -H "Content-Type: application/json" \
+  "http://localhost:3001/api/$@"

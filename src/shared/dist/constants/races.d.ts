@@ -1,0 +1,11 @@
+import { Race, RaceData } from '../types/races';
+export declare const RACE_DATA: Record<Race, RaceData>;
+export declare function getRaceData(race: Race): RaceData;
+export declare const LEVEL_UP_BONUSES: Record<number, [number, number, number]>;
+export declare function getLevelUpBonuses(level: number): [number, number, number];
+export declare const STAT_POINT_COSTS: Record<number, [number, number]>;
+export declare function getStatPointCost(currentValue: number): [number, number];
+export declare const MAX_LEVEL = 60;
+export declare const MAX_STAT_VALUE = 99;
+export declare const JOB_BASE_STAT_MODIFIERS: Record<number, Record<string, number>>;
+export declare function getJobBaseStatModifier(baseClass: number): Record<string, number>;

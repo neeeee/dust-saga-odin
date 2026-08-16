@@ -963,23 +963,28 @@ push_notification :: proc(ctx: ^Game_Context, message, kind: string) {
 
 push_floating :: proc(
 	ctx: ^Game_Context,
-	id: Entity_Id,
+	id:    Entity_Id,
 	world_pos: rl.Vector3,
-	amount: int,
+	amount:    int,
 	is_miss, is_heal, is_crit: bool,
-	color: rl.Color,
+	color:     rl.Color,
 ) {
+	stack := 0
+	for f in ctx.floating {
+		if f.entity_id == id do stack += 1
+	}
+	offset_y := f32(stack * 14)
 	append(
 		&ctx.floating,
 		Floating_Text {
 			entity_id = id,
-			world_pos = world_pos,
-			amount = amount,
-			color = color,
-			life = 1.0,
-			is_miss = is_miss,
-			is_heal = is_heal,
-			is_crit = is_crit,
+			world_pos = {world_pos.x, world_pos.y + offset_y, world_pos.z},
+			amount    = amount,
+			color     = color,
+			life      = 1.0,
+			is_miss   = is_miss,
+			is_heal   = is_heal,
+			is_crit   = is_crit,
 		},
 	)
 }

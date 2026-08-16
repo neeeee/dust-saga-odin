@@ -1,0 +1,89 @@
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.calculateWeaponElementalDamage = calculateWeaponElementalDamage;
+exports.getMagicEnhancementElement = getMagicEnhancementElement;
+exports.getMagicEnhancementBoost = getMagicEnhancementBoost;
+exports.computeElementalDamageLine = computeElementalDamageLine;
+const status_1 = require("../types/status");
+const ELEMENT_RESIST_KEYS = {
+    fire: 'fireResist',
+    ice: 'iceResist',
+    lightning: 'lightningResist',
+    dark: 'darkResist',
+    holy: 'holyResist',
+    poison: 'poisonResist',
+};
+/**
+ * Caller resolves the weapon's base element/power from the item definition
+ * (via ItemSystem) and passes it in directly, so this util stays free of any
+ * data-source dependency and works equally for static or DB-backed items.
+ */
+function calculateWeaponElementalDamage(weaponElement, weaponElementPower, statusEffects, attackerSPI, attackerINT, attackerLevel, targetResists, enhancementElement, enhancementLevel, auraDamageMultiplier) {
+    const lines = [];
+    const resolvedElement = enhancementElement || null;
+    const isMagicEnhancement = resolvedElement?.startsWith('magic_') || false;
+    const hasBaseElement = weaponElement && weaponElementPower;
+    if (hasBaseElement && !isMagicEnhancement) {
+        const el = weaponElement;
+        const basePower = weaponElementPower;
+        let damage = Math.floor(basePower * (attackerSPI * 0.3 + attackerINT * 0.2 + attackerLevel * 0.2));
+        damage = applyResistance(damage, el, targetResists);
+        damage = Math.max(1, Math.floor(damage * (0.9 + Math.random() * 0.2)));
+        if (damage > 0) {
+            lines.push({ element: el, damage });
+        }
+    }
+    if (resolvedElement && !isMagicEnhancement && (enhancementLevel || 0) > 0) {
+        const basePower = 1 + (enhancementLevel || 0) * 0.5;
+        let damage = Math.floor(basePower * (attackerSPI * 0.3 + attackerINT * 0.2 + attackerLevel * 0.2));
+        damage = applyResistance(damage, resolvedElement, targetResists);
+        damage = Math.max(1, Math.floor(damage * (0.9 + Math.random() * 0.2)));
+        if (damage > 0) {
+            lines.push({ element: resolvedElement, damage });
+        }
+    }
+    const auraMultiplier = auraDamageMultiplier ?? 1;
+    for (const effect of statusEffects) {
+        if (effect.type === status_1.StatusEffectType.WEAPON_AURA && effect.buffData?.weaponAura) {
+            const { element, minDamage, maxDamage } = effect.buffData.weaponAura;
+            let damage = Math.floor(minDamage * auraMultiplier) + Math.floor(Math.random() * (Math.floor(maxDamage * auraMultiplier) - Math.floor(minDamage * auraMultiplier) + 1));
+            damage = applyResistance(damage, element, targetResists);
+            if (damage > 0) {
+                lines.push({ element, damage });
+            }
+        }
+    }
+    return lines;
+}
+function getMagicEnhancementElement(enhancementElement) {
+    if (!enhancementElement?.startsWith('magic_'))
+        return null;
+    return enhancementElement.slice(6);
+}
+function getMagicEnhancementBoost(enhancementElement, enhancementLevel, spellElement) {
+    if (!enhancementElement?.startsWith('magic_'))
+        return 0;
+    const enhElement = enhancementElement.slice(6);
+    if (spellElement && enhElement === spellElement) {
+        return 1 + (enhancementLevel || 0) * 0.08;
+    }
+    return 0;
+}
+function computeElementalDamageLine(basePower, attackerSPI, attackerINT, attackerLevel, element, targetResists) {
+    let damage = Math.floor(basePower * (attackerSPI * 0.3 + attackerINT * 0.2 + attackerLevel * 0.2));
+    damage = applyResistance(damage, element, targetResists);
+    damage = Math.max(1, Math.floor(damage * (0.9 + Math.random() * 0.2)));
+    return { element, damage };
+}
+function applyResistance(damage, element, targetResists) {
+    const resistKey = ELEMENT_RESIST_KEYS[element];
+    if (!resistKey)
+        return damage;
+    const resist = targetResists[resistKey] || 0;
+    if (resist === 0)
+        return damage;
+    const multiplier = resist > 0
+        ? 1 - Math.min(0.75, resist / 100)
+        : 1 + Math.min(1.0, Math.abs(resist) / 100);
+    return Math.floor(damage * multiplier);
+}

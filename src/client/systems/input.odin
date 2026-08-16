@@ -133,14 +133,14 @@ MmoCamera :: struct {
 }
 
 cam_control := MmoCamera {
-	distance     = 10.0,
-	pitch        = 0.4,
+	distance     = 8.0,
+	pitch        = 0.5,
 	yaw          = 0.0,
 	sensitivity  = 0.003,
-	min_pitch    = -0.1,
+	min_pitch    = 0.1,
 	max_pitch    = 1.4,
 	min_distance = 3.0,
-	max_distance = 20.0,
+	max_distance = 24.0,
 	zoom_step    = 1.0,
 }
 

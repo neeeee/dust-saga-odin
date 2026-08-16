@@ -600,7 +600,7 @@ cursor_over_ui :: proc() -> bool {
 	// Menu bar (top-left button strip) — always interactable.
 	if len(state.bar_buttons) > 0 {
 		bar_w := f32(len(state.bar_buttons) * (BAR_BTN_SIZE + BAR_BTN_GAP) - BAR_BTN_GAP)
-		bar_rect := rl.Rectangle{f32(BAR_X) - 4, f32(BAR_Y) - 4, bar_w + 8, BAR_BTN_SIZE + 8}
+		bar_rect := rl.Rectangle{f32(BAR_X) - 4, f32(menu_bar_y()) - 4, bar_w + 8, BAR_BTN_SIZE + 8}
 		if rl.CheckCollisionPointRec(mouse, bar_rect) do return true
 	}
 

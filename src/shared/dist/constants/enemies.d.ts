@@ -1,0 +1,34 @@
+import { LootTable } from '../types/items';
+export interface EnemyDefinition {
+    id: string;
+    name: string;
+    modelFile: string;
+    level: number;
+    health: number;
+    attack: number;
+    defense: number;
+    speed: number;
+    experience: number;
+    aggroRange: number;
+    attackRange: number;
+    leashRange: number;
+    respawnTime: number;
+    lootTable: LootTable;
+    patrolSpeed: number;
+    fireResist?: number;
+    iceResist?: number;
+    lightningResist?: number;
+    darkResist?: number;
+    holyResist?: number;
+    poisonResist?: number;
+    magicAttack?: number;
+    attackCooldown?: number;
+    aggroStrategy?: 'first' | 'closest' | 'lowestHp';
+    patrolStrategy?: 'random' | 'sequential';
+    skills?: Array<string>;
+    immunities?: string[];
+    knockbackImmune?: boolean;
+    magicDefense?: number;
+}
+export declare const ENEMY_DATABASE: Record<string, EnemyDefinition>;
+export declare function getEnemyDefinition(id: string): EnemyDefinition | undefined;
