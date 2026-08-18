@@ -48,11 +48,17 @@ apply_targeting :: proc(inp: sys.Input_State) {
 	// target-pick / click-to-move. update_ground_target handles it.
 	if state.ground_target.active do return
 
-	// E: talk to the targeted NPC (same interaction as double-click).
+	// E: talk to the targeted NPC / open a targeted loot bag (same
+	// interactions as double-click).
 	if inp.interact && state.player.target_id != sys.INVALID_ENTITY {
 		idx := sys.find_index(state.scene, state.player.target_id)
-		if idx >= 0 && state.scene.metas[idx].kind == .NPC {
-			try_talk_to(idx)
+		if idx >= 0 {
+			kind := state.scene.metas[idx].kind
+			if kind == .NPC {
+				try_talk_to(idx)
+			} else if kind == .LOOT {
+				try_loot(idx)
+			}
 		}
 	}
 
@@ -105,6 +111,8 @@ apply_targeting :: proc(inp: sys.Input_State) {
 				try_talk_to(idx)
 			} else if kind == .ENEMY {
 				try_auto_attack()
+			} else if kind == .LOOT {
+				try_loot(idx)
 			}
 		}
 		state.last_click_time_ms = 0
@@ -126,6 +134,19 @@ try_talk_to :: proc(idx: int) {
 		return
 	}
 	sys.send_npc_interact(state.net, target_string_id())
+}
+
+// Open the loot window for a targeted bag (double-click / E). Same range gate
+// as the server's pickup check so the window can't open where pickups fail.
+try_loot :: proc(idx: int) {
+	t := state.scene.transforms[idx]
+	dx := state.player.position.x - t.position.x
+	dz := state.player.position.z - t.position.z
+	if math.sqrt(dx * dx + dz * dz) > 4.5 {
+		sys.push_notification(state.ctx, "Move closer to loot.", "info")
+		return
+	}
+	open_loot_menu(state.scene.entity_ids[idx])
 }
 
 cycle_target :: proc(forward: bool) {
@@ -183,6 +204,12 @@ pick_target_id :: proc() -> sys.Entity_Id {
 		t := &s.transforms[i]
 		r := s.renderables[i].radius + 0.5
 		center := rl.Vector3{t.position.x, t.position.y + 1.0, t.position.z}
+		// Loot bags are short boxes sitting on the ground — pick against a
+		// lower, roomier sphere so clicking the visible box connects.
+		if s.metas[i].kind == .LOOT {
+			center = rl.Vector3{t.position.x, t.position.y + 0.35, t.position.z}
+			r = 0.85
+		}
 		hit, dist := ray_sphere_distance(ray, center, r)
 		if hit && dist < closest_t {
 			closest_t = dist

@@ -538,6 +538,24 @@ send_npc_dialog_close :: proc(nc: ^Network_Client) {
 	send(nc, .NPC_DIALOG_CLOSE)
 }
 
+// LOOT_PICKUP take-all: omitting itemId makes the server take the whole bag.
+send_loot_pickup_all :: proc(nc: ^Network_Client, loot_id: string) {
+	fields := make([dynamic]JSON_Field, 0, 1)
+	defer delete(fields)
+	append(&fields, JSON_Field{"lootId", json_str(loot_id)})
+	send_object(nc, .LOOT_PICKUP, fields[:])
+}
+
+// LOOT_PICKUP single entry: `itemId` must be the per-entry id ("li_...")
+// from LOOT_SPAWN's items[].id (the server matches bag entries by it).
+send_loot_pickup_item :: proc(nc: ^Network_Client, loot_id: string, entry_id: string) {
+	fields := make([dynamic]JSON_Field, 0, 2)
+	defer delete(fields)
+	append(&fields, JSON_Field{"lootId", json_str(loot_id)})
+	append(&fields, JSON_Field{"itemId", json_str(entry_id)})
+	send_object(nc, .LOOT_PICKUP, fields[:])
+}
+
 send_npc_shop_buy :: proc(nc: ^Network_Client, item_id: string, quantity: int = 1) {
 	fields := make([dynamic]JSON_Field, 0, 2)
 	defer delete(fields)

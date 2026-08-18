@@ -1999,6 +1999,18 @@ export class NetworkServer implements NetworkContext {
       },
     }));
 
+    // Ground loot bags still in flight (same shape each LOOT_SPAWN carries,
+    // so late joiners rebuild them identically).
+    const lootBags = this.loot.bagsInZone(zoneId).map(bag => ({
+      lootId: bag.id,
+      position: bag.position,
+      sourceName: bag.sourceName,
+      itemCount: bag.items.length,
+      items: bag.items.map(i => ({ id: i.id, itemId: i.itemId, quantity: i.quantity, rarity: i.rarity })),
+      assignedTo: bag.assignedTo,
+      assignmentExpiresAt: bag.assignmentExpiresAt,
+    }));
+
     this.sendToSocket(socket.id, {
       type: PacketType.WORLD_STATE,
       timestamp: Date.now(),
@@ -2009,6 +2021,7 @@ export class NetworkServer implements NetworkContext {
         npcs: npcData,
         players: otherPlayers,
         summons: summonData,
+        lootBags,
       }
     });
   }

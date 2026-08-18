@@ -37,6 +37,38 @@ Entity_Kind :: enum u8 {
 	AOE,
 }
 
+// ── ground loot bags (mirrors server LootInstance / LOOT_SPAWN payload) ───
+
+MAX_LOOT_BAG_ITEMS :: 16
+
+Loot_Item_Entry :: struct {
+	// Server-side per-entry id ("li_..."); sent back as `itemId` in a
+	// single-item LOOT_PICKUP (the server matches bag entries by this id).
+	entry_id:   [64]u8,
+	entry_len:  int,
+	item_id:    [64]u8, // item definition id (name/rarity lookups)
+	item_len:   int,
+	quantity:   int,
+}
+
+Loot_Bag :: struct {
+	loot_id:        [64]u8, // server bag id ("loot_...")
+	loot_len:       int,
+	entity_id:      Entity_Id,
+	source:         [48]u8, // enemy name the bag dropped from
+	source_len:     int,
+	// Round-robin assignment: non-empty and != local character id means the
+	// server will reject our pickup attempts until it expires.
+	assigned_to:    [64]u8,
+	assigned_len:   int,
+	items:          [MAX_LOOT_BAG_ITEMS]Loot_Item_Entry,
+	item_count:     int,
+}
+
+loot_bag_id_string :: proc "contextless" (bag: ^Loot_Bag) -> string {
+	return string(bag.loot_id[:bag.loot_len])
+}
+
 // ── stats (mirrors PlayerStats) ───────────────────────────────────────────
 
 Player_Stats :: struct {

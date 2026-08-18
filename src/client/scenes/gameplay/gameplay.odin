@@ -80,6 +80,8 @@ state: struct {
 	soul_extraction_menu:   ui.Menu,
 	character_profile_menu: ui.Menu,	loot_drop_menu:         ui.Menu,
 	loot_party_menu:        ui.Menu,
+	// Entity id of the bag whose contents the loot window shows.
+	loot_bag_entity:        sys.Entity_Id,
 	shop_menu:              ui.Menu,
 	system_menu:            ui.Menu,
 	debug_menu:             ui.Menu,

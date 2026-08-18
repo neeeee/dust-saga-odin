@@ -665,6 +665,167 @@ draw_blacksmith_menu :: proc() {
 	)
 }
 
+// ── loot window (ground bags opened via double-click / E) ─────────────────
+
+LOOT_WIN_W :: 340
+LOOT_WIN_H :: 320
+LOOT_ROW_H :: 30
+LOOT_HDR_H :: 30
+LOOT_FOOT_H :: 44
+
+loot_window_rect :: proc() -> rl.Rectangle {
+	sw := f32(rl.GetScreenWidth())
+	sh := f32(rl.GetScreenHeight())
+	return {sw / 2 - f32(LOOT_WIN_W) / 2, sh / 2 - f32(LOOT_WIN_H) / 2, f32(LOOT_WIN_W), f32(LOOT_WIN_H)}
+}
+
+loot_close_rect :: proc(win: rl.Rectangle) -> rl.Rectangle {
+	return {win.x + win.width - 26, win.y + 5, 20, 20}
+}
+
+loot_row_rect :: proc(win: rl.Rectangle, i: int) -> rl.Rectangle {
+	return {win.x + 8, win.y + f32(LOOT_HDR_H + 8 + i * LOOT_ROW_H), win.width - 16, f32(LOOT_ROW_H - 4)}
+}
+
+loot_take_all_rect :: proc(win: rl.Rectangle) -> rl.Rectangle {
+	return {win.x + 8, win.y + win.height - f32(LOOT_FOOT_H), win.width - 16, f32(LOOT_FOOT_H - 10)}
+}
+
+// The bag record the window is currently showing, or nil if it vanished
+// (picked clean, expired, despawned, or we changed zones).
+current_loot_bag :: proc() -> ^sys.Loot_Bag {
+	if state.loot_bag_entity == sys.INVALID_ENTITY do return nil
+	return sys.loot_find_bag(state.ctx, state.loot_bag_entity)
+}
+
+open_loot_menu :: proc(entity_id: sys.Entity_Id) {
+	if sys.loot_find_bag(state.ctx, entity_id) == nil do return
+	state.loot_bag_entity = entity_id
+	ui.menu_open(&state.loot_drop_menu)
+}
+
+update_loot_menu :: proc() {
+	m := &state.loot_drop_menu
+	if !m.open do return
+
+	bag := current_loot_bag()
+	if bag == nil {
+		ui.menu_close(m)
+		state.loot_bag_entity = sys.INVALID_ENTITY
+		return
+	}
+
+	m.rect = loot_window_rect()
+	m.focused = rl.CheckCollisionPointRec(rl.GetMousePosition(), m.rect)
+
+	// Walking away closes the window (server drops pickups beyond 5 units).
+	idx := sys.find_index(state.scene, bag.entity_id)
+	if idx < 0 {
+		ui.menu_close(m)
+		state.loot_bag_entity = sys.INVALID_ENTITY
+		return
+	}
+	t := state.scene.transforms[idx]
+	dx := state.player.position.x - t.position.x
+	dz := state.player.position.z - t.position.z
+	if math.sqrt(dx * dx + dz * dz) > 5.5 {
+		ui.menu_close(m)
+		state.loot_bag_entity = sys.INVALID_ENTITY
+		push_notification_local("Too far from the loot.", "info")
+		return
+	}
+
+	if state.chat_focused do return
+	if !rl.IsMouseButtonPressed(.LEFT) do return
+	mouse := rl.GetMousePosition()
+
+	if rl.CheckCollisionPointRec(mouse, loot_close_rect(m.rect)) {
+		ui.menu_close(m)
+		return
+	}
+
+	// Item row: single-entry pickup (the server matches by the entry id).
+	for i in 0 ..< bag.item_count {
+		if rl.CheckCollisionPointRec(mouse, loot_row_rect(m.rect, i)) {
+			sys.send_loot_pickup_item(
+				state.net,
+				sys.loot_bag_id_string(bag),
+				string(bag.items[i].entry_id[:bag.items[i].entry_len]),
+			)
+			return
+		}
+	}
+
+	if bag.item_count > 0 && rl.CheckCollisionPointRec(mouse, loot_take_all_rect(m.rect)) {
+		sys.send_loot_pickup_all(state.net, sys.loot_bag_id_string(bag))
+	}
+}
+
+push_notification_local :: proc(message, kind: string) {
+	sys.push_notification(state.ctx, message, kind)
+}
+
+draw_loot_menu :: proc() {
+	m := &state.loot_drop_menu
+	if !m.open do return
+	bag := current_loot_bag()
+	if bag == nil do return
+
+	win := m.rect
+	mouse := rl.GetMousePosition()
+
+	rl.DrawRectangleRec(win, rl.Color{18, 20, 28, 242})
+	rl.DrawRectangleLinesEx(win, 2, rl.Color{140, 140, 160, 255})
+	title := rl.Rectangle{win.x, win.y, win.width, f32(LOOT_HDR_H)}
+	rl.DrawRectangleRec(title, rl.Color{40, 44, 56, 250})
+	sys.draw_text("Loot", int(win.x + 10), int(win.y + 7), 16, rl.Color{230, 190, 70, 255})
+
+	cr := loot_close_rect(win)
+	hov := rl.CheckCollisionPointRec(mouse, cr)
+	rl.DrawRectangleRec(cr, hov ? rl.Color{180, 60, 60, 255} : rl.Color{100, 100, 110, 200})
+	sys.draw_text("X", int(cr.x + 5), int(cr.y + 3), 12, rl.WHITE)
+
+	// Assigned-to hint (round-robin): can't loot until it expires.
+	if bag.assigned_len > 0 {
+		who := string(bag.assigned_to[:bag.assigned_len])
+		if who != sys.character_id_string(state.player) {
+			note := fmt.tprintf("Assigned to %s", who)
+			sys.draw_text(note, int(win.x + 60), int(win.y + 8), 13, ENH_COL_RED)
+		}
+	}
+
+	// Item rows.
+	for i in 0 ..< bag.item_count {
+		entry := &bag.items[i]
+		row := loot_row_rect(win, i)
+		id := string(entry.item_id[:entry.item_len])
+		name_col, _ := sys.item_rarity_color(id)
+		rl.DrawRectangleRec(row, rl.CheckCollisionPointRec(mouse, row) ? ENH_COL_BTN_HOV : ENH_COL_BTN)
+		label := fmt.tprintf("%s  x%d", sys.item_name(id), entry.quantity)
+		sys.draw_text(label, int(row.x + 6), int(row.y + 6), 14, name_col)
+	}
+
+	if bag.item_count == 0 {
+		sys.draw_text("Empty.", int(win.x + 10), int(win.y + f32(LOOT_HDR_H + 12)), 14, ENH_COL_DIM)
+	}
+
+	// Take All button.
+	btn := loot_take_all_rect(win)
+	if bag.item_count > 0 {
+		bcol := rl.CheckCollisionPointRec(mouse, btn) ? ENH_COL_BTN_HOV : rl.Color{60, 120, 70, 255}
+		rl.DrawRectangleRec(btn, bcol)
+		rl.DrawRectangleLinesEx(btn, 1, rl.Color{140, 140, 160, 255})
+		blabel := "Take All"
+		bw := sys.measure_text(blabel, 15)
+		sys.draw_text(
+			blabel,
+			int(btn.x + (btn.width - f32(bw)) / 2),
+			int(btn.y + (btn.height - 15) / 2),
+			15, rl.WHITE,
+		)
+	}
+}
+
 // ── shop menu ────────────────────────────────────────────────────────────
 
 create_shop_menu :: proc() {
@@ -797,6 +958,12 @@ init_menus :: proc() {
 
 	state.click_path = make([dynamic]rl.Vector3)
 	state.quest_log_abandon_idx = -1
+	state.loot_bag_entity = sys.INVALID_ENTITY
+
+	// Loot window: custom-drawn (like Enhancement); the ui.Menu carries only
+	// the open flag + panel rect for hit-testing / ESC-close.
+	state.loot_drop_menu = ui.menu_create("Loot", 0, 0, 340, 320)
+	state.loot_drop_menu.close_on_esc = true
 
 	state.system_menu = ui.menu_create("System", 0, 0, 240, 220)
 	state.system_menu.close_on_esc = false
@@ -844,6 +1011,7 @@ update_menus :: proc() {
 	update_shop_menu()
 	update_party_panel()
 	update_blacksmith_menu()
+	update_loot_menu()
 
 	ui.menu_update(&state.inventory_menu)
 	ui.menu_update(&state.settings_menu)
@@ -853,7 +1021,6 @@ update_menus :: proc() {
 	ui.menu_update(&state.accept_deny_menu)
 	ui.menu_update(&state.soul_extraction_menu)
 	ui.menu_update(&state.character_profile_menu)
-	ui.menu_update(&state.loot_drop_menu)
 	ui.menu_update(&state.loot_party_menu)
 	ui.menu_update(&state.shop_menu)
 	ui.menu_update(&state.system_menu)
@@ -917,7 +1084,7 @@ draw_menu_bar :: proc() {
 	draw_blacksmith_menu()
 	ui.menu_draw(&state.soul_extraction_menu)
 	ui.menu_draw(&state.character_profile_menu)
-	ui.menu_draw(&state.loot_drop_menu)
+	draw_loot_menu()
 	ui.menu_draw(&state.loot_party_menu)
 	ui.menu_draw(&state.debug_menu)
 	draw_system_menu()

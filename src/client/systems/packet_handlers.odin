@@ -30,8 +30,12 @@ Game_Context :: struct {
 	zone_loaded:         bool,
 	engine_ready:        bool,
 	notifications:       [dynamic]Notification,
-	floating:            [dynamic]Floating_Text,
-	dialog:              Dialog_State,
+	floating:           [dynamic]Floating_Text,
+	dialog:             Dialog_State,
+
+	// Ground loot bags (mirrors the server's activeLoot; keyed alongside the
+	// scene entity that renders each bag).
+	loot_bags:          [dynamic]Loot_Bag,
 
 	// Overhead chat bubble for the local player (scene players keep theirs in
 	// Scene.bubbles; the local player isn't part of the scene SoA).
@@ -61,6 +65,7 @@ game_context_init :: proc(
 	ctx.chat = chat
 	ctx.notifications = make([dynamic]Notification)
 	ctx.floating = make([dynamic]Floating_Text)
+	ctx.loot_bags = make([dynamic]Loot_Bag)
 	ctx.pending_spawns = make([dynamic]JSON_Value)
 	return ctx
 }
@@ -68,6 +73,7 @@ game_context_init :: proc(
 game_context_destroy :: proc(ctx: ^Game_Context) {
 	delete(ctx.notifications)
 	delete(ctx.floating)
+	delete(ctx.loot_bags)
 	delete(ctx.pending_spawns)
 	free(ctx)
 }
@@ -164,6 +170,12 @@ handle_packet :: proc(ctx: ^Game_Context, p: ^Packet, free_after: bool) {
 		handle_quest_abandon(ctx, p.data)
 	case .ENHANCEMENT_RESULT:
 		handle_enhancement_result(ctx, p.data)
+	case .LOOT_SPAWN:
+		handle_loot_spawn(ctx, p.data)
+	case .LOOT_DESPAWN:
+		handle_loot_despawn(ctx, p.data)
+	case .LOOT_PICKUP:
+		handle_loot_pickup(ctx, p.data)
 	case:
 	}
 
@@ -197,6 +209,13 @@ handle_world_state :: proc(ctx: ^Game_Context, data: ^JSON_Value) {
 	spawn_entities_from_array(ctx, get_array(root, "npcs"), .NPC)
 	spawn_entities_from_array(ctx, get_array(root, "players"), .PLAYER)
 	spawn_entities_from_array(ctx, get_array(root, "summons"), .SUMMON)
+
+	// Bags already on the ground when we joined (same shape as LOOT_SPAWN).
+	clear(&ctx.loot_bags)
+	bags := as_dyn(get_array(root, "lootBags"))
+	for i in 0 ..< len(bags) {
+		loot_spawn_bag(ctx, obj_of(bags[i]))
+	}
 
 	// Only reset position to spawn on first character select (position will
 	// be 0,0,0). On reconnect, CHARACTER_SELECT already restored the saved
@@ -388,6 +407,130 @@ handle_entity_despawn :: proc(ctx: ^Game_Context, data: ^JSON_Value) {
 	id_str := get_string(o, "entityId")
 	if len(id_str) == 0 do return
 	remove_entity(ctx.scene, string_to_entity_id(id_str))
+}
+
+// ── ground loot bags ───────────────────────────────────────────────────────
+
+// Spawn (or refresh) a loot bag entity from a LOOT_SPAWN / WORLD_STATE bag
+// payload: {lootId, position, sourceName, items[{id,itemId,quantity,rarity}],
+// assignedTo, assignmentExpiresAt}.
+loot_spawn_bag :: proc(ctx: ^Game_Context, o: JSON_Object) {
+	loot_id := get_string(o, "lootId")
+	if len(loot_id) == 0 do return
+	entity_id := string_to_entity_id(loot_id)
+
+	// Replace any stale record for the same bag id.
+	loot_remove_bag(ctx, entity_id)
+
+	idx := add_entity(ctx.scene, entity_id)
+	if idx < 0 do return
+	set_entity_string_id(ctx.scene, idx, loot_id)
+
+	pos := vec3_from(o, "position")
+	ctx.scene.transforms[idx].position = {pos[0], pos[1], pos[2]}
+
+	r := &ctx.scene.renderables[idx]
+	r.shape = .BOX
+	r.color = {230, 190, 70, 255}
+	r.height = 0.9
+	r.radius = 0.32
+	ctx.scene.metas[idx].kind = .LOOT
+	set_entity_name(ctx.scene, idx, get_string(o, "sourceName"))
+
+	bag := Loot_Bag{entity_id = entity_id}
+	copy_string_to_buffer(bag.loot_id[:], &bag.loot_len, loot_id)
+	copy_string_to_buffer(bag.source[:], &bag.source_len, get_string(o, "sourceName"))
+	copy_string_to_buffer(bag.assigned_to[:], &bag.assigned_len, get_string(o, "assignedTo"))
+
+	items := as_dyn(get_array(o, "items"))
+	n := min(len(items), MAX_LOOT_BAG_ITEMS)
+	for i in 0 ..< n {
+		it := obj_of(items[i])
+		entry := &bag.items[i]
+		copy_string_to_buffer(entry.entry_id[:], &entry.entry_len, get_string(it, "id"))
+		copy_string_to_buffer(entry.item_id[:], &entry.item_len, get_string(it, "itemId"))
+		entry.quantity = get_int(it, "quantity", 1)
+	}
+	bag.item_count = n
+	append(&ctx.loot_bags, bag)
+}
+
+// Remove the scene entity + record for a bag (despawn / picked clean).
+loot_remove_bag :: proc(ctx: ^Game_Context, entity_id: Entity_Id) {
+	for i := 0; i < len(ctx.loot_bags); i += 1 {
+		if ctx.loot_bags[i].entity_id == entity_id {
+			for j := i; j < len(ctx.loot_bags) - 1; j += 1 {
+				ctx.loot_bags[j] = ctx.loot_bags[j + 1]
+			}
+			resize(&ctx.loot_bags, len(ctx.loot_bags) - 1)
+			break
+		}
+	}
+	remove_entity(ctx.scene, entity_id)
+}
+
+loot_find_bag :: proc(ctx: ^Game_Context, entity_id: Entity_Id) -> ^Loot_Bag {
+	for i in 0 ..< len(ctx.loot_bags) {
+		if ctx.loot_bags[i].entity_id == entity_id do return &ctx.loot_bags[i]
+	}
+	return nil
+}
+
+handle_loot_spawn :: proc(ctx: ^Game_Context, data: ^JSON_Value) {
+	if data == nil do return
+	if is_null(data^) do return
+	loot_spawn_bag(ctx, obj_of(data^))
+}
+
+handle_loot_despawn :: proc(ctx: ^Game_Context, data: ^JSON_Value) {
+	if data == nil do return
+	o := obj_of(data^)
+	loot_id := get_string(o, "lootId")
+	if len(loot_id) == 0 do return
+	loot_remove_bag(ctx, string_to_entity_id(loot_id))
+}
+
+// LOOT_PICKUP arrives two ways: as the picker's ack {lootId, taken, rejected}
+// and as the zone broadcast {lootId, by, taken}. In both, remove the taken
+// quantities from the local bag copy; drop the bag when it runs empty (the
+// picker's INVENTORY_UPDATE arrives as a separate packet).
+handle_loot_pickup :: proc(ctx: ^Game_Context, data: ^JSON_Value) {
+	if data == nil do return
+	o := obj_of(data^)
+	loot_id := get_string(o, "lootId")
+	if len(loot_id) == 0 do return
+	bag := loot_find_bag(ctx, string_to_entity_id(loot_id))
+	if bag == nil do return
+
+	taken := as_dyn(get_array(o, "taken"))
+	for i in 0 ..< len(taken) {
+		t := obj_of(taken[i])
+		item_id := get_string(t, "itemId")
+		q := get_int(t, "quantity", 1)
+
+		// Remove q units matching the item definition id (a stack may span
+		// multiple entries; compaction keeps the array dense).
+		e := 0
+		for e < bag.item_count {
+			if q <= 0 do break
+			entry := &bag.items[e]
+			if string(entry.item_id[:entry.item_len]) == item_id {
+				take := min(entry.quantity, q)
+				entry.quantity -= take
+				q -= take
+				if entry.quantity <= 0 {
+					for j := e; j < bag.item_count - 1; j += 1 {
+						bag.items[j] = bag.items[j + 1]
+					}
+					bag.item_count -= 1
+					continue
+				}
+			}
+			e += 1
+		}
+	}
+
+	if bag.item_count == 0 do loot_remove_bag(ctx, bag.entity_id)
 }
 
 // Per-element floater colors (covers plain and magic_ prefixed types).

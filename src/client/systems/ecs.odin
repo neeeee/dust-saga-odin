@@ -300,8 +300,15 @@ render_entity_ui_2d :: proc(s: ^Scene, camera: rl.Camera3D) {
 			rl.DrawText(mark_c, ix - mark_w / 2, iy - 38, mark_sz, rl.YELLOW)
 		}
 
-		// Nameplate with level.
-		if ui.show_name && ui.name_len > 0 {
+		// Loot bags: gold label with the drop source, no level prefix.
+		if meta.kind == .LOOT && ui.show_name && ui.name_len > 0 {
+			name_c := strings.clone_to_cstring(
+				string(ui.name_str[:ui.name_len]),
+				context.temp_allocator,
+			)
+			text_w := rl.MeasureText(name_c, font_sz)
+			rl.DrawText(name_c, ix - text_w / 2, iy - 20, font_sz, rl.Color{230, 190, 70, 255})
+		} else if ui.show_name && ui.name_len > 0 {
 			name_c := strings.clone_to_cstring(
 				fmt.tprintf("Lv%d %s", meta.level, string(ui.name_str[:ui.name_len])),
 				context.temp_allocator,
