@@ -217,6 +217,33 @@ chat_push :: proc(log: ^Chat_Log, channel: Chat_Channel, sender, message: string
 	}
 }
 
+// ── overhead chat bubbles ─────────────────────────────────────────────────
+
+// Bubble text is capped (long messages are unreadable floating over a head);
+// the stored copy is already truncated with "..." so draw code never re-slices.
+CHAT_BUBBLE_MAX_CHARS :: 60
+CHAT_BUBBLE_DURATION_MS :: 4000
+
+Chat_Bubble :: struct {
+	message:    [CHAT_BUBBLE_MAX_CHARS]u8,
+	msg_len:    int,
+	expires_at: u64, // now_ms_local() timestamp when the bubble disappears; 0 = none
+}
+
+chat_bubble_set :: proc(b: ^Chat_Bubble, message: string) {
+	n := min(len(message), CHAT_BUBBLE_MAX_CHARS)
+	copy(b.message[:n], transmute([]u8)(message[:n]))
+	if len(message) > CHAT_BUBBLE_MAX_CHARS {
+		copy(b.message[n-3:n], "...")
+	}
+	b.msg_len = n
+	b.expires_at = now_ms_local() + CHAT_BUBBLE_DURATION_MS
+}
+
+chat_bubble_active :: proc "contextless" (b: ^Chat_Bubble) -> bool {
+	return b.expires_at > 0 && now_ms_local() < b.expires_at
+}
+
 // ── cooldown / cast state ─────────────────────────────────────────────────
 
 Cast_State :: struct {
@@ -244,6 +271,10 @@ Floating_Text :: struct {
 	is_miss:   bool,
 	is_heal:   bool,
 	is_crit:   bool,
+	// Screen-space line index: each concurrent floater on the same entity
+	// renders on its own row (applied at draw time, NOT as a world-space
+	// offset — 14 world units would push it out of the camera frustum).
+	stack_idx: int,
 }
 
 // ── the local player ──────────────────────────────────────────────────────
@@ -291,6 +322,9 @@ Local_Player :: struct {
 	// inventory
 	inventory:             Inventory,
 
+	// quest log (server-authoritative; replaced by QUEST_* packets)
+	quests:                [dynamic]Active_Quest,
+
 	// target
 	target_id:             Entity_Id,
 	is_dead:               bool,
@@ -316,6 +350,7 @@ local_player_init :: proc(p: ^Local_Player) {
 	p.race = INVALID_RACE_ID
 	p.job_id = INVALID_JOB_ID
 	inventory_init(&p.inventory)
+	p.quests = make([dynamic]Active_Quest)
 	p.cooldowns = make([dynamic]Skill_Cooldown)
 	// Default bar positions: bottom-right (Pandora Saga layout), stacked
 	// upward. Saved positions from skillbar.json override these on load.
@@ -328,6 +363,8 @@ local_player_init :: proc(p: ^Local_Player) {
 
 local_player_destroy :: proc(p: ^Local_Player) {
 	inventory_destroy(&p.inventory)
+	clear_quest_list(&p.quests)
+	delete(p.quests)
 	delete(p.cooldowns)
 }
 

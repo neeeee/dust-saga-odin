@@ -31,6 +31,11 @@ Game_Context :: struct {
 	engine_ready:        bool,
 	notifications:       [dynamic]Notification,
 	floating:            [dynamic]Floating_Text,
+	dialog:              Dialog_State,
+
+	// Overhead chat bubble for the local player (scene players keep theirs in
+	// Scene.bubbles; the local player isn't part of the scene SoA).
+	player_bubble:       Chat_Bubble,
 
 	// Pending ENTITY_SPAWN packets that arrived before WORLD_STATE finished
 	// loading (mirrors the TS client's pendingSpawns).
@@ -147,6 +152,18 @@ handle_packet :: proc(ctx: ^Game_Context, p: ^Packet, free_after: bool) {
 	// handled by the login scene directly
 	case .BATCH_COMBAT:
 		handle_batch_combat(ctx, p.data)
+	case .NPC_DIALOG:
+		handle_npc_dialog(ctx, p.data)
+	case .QUEST_ACCEPT:
+		handle_quest_accept(ctx, p.data)
+	case .QUEST_PROGRESS:
+		handle_quest_progress(ctx, p.data)
+	case .QUEST_COMPLETE:
+		handle_quest_complete(ctx, p.data)
+	case .QUEST_ABANDON:
+		handle_quest_abandon(ctx, p.data)
+	case .ENHANCEMENT_RESULT:
+		handle_enhancement_result(ctx, p.data)
 	case:
 	}
 
@@ -373,6 +390,21 @@ handle_entity_despawn :: proc(ctx: ^Game_Context, data: ^JSON_Value) {
 	remove_entity(ctx.scene, string_to_entity_id(id_str))
 }
 
+// Per-element floater colors (covers plain and magic_ prefixed types).
+element_color :: proc(element: string) -> rl.Color {
+	e := element
+	if strings.has_prefix(e, "magic_") do e = e[len("magic_"):]
+	switch e {
+	case "fire":      return {255, 130, 40, 255}
+	case "ice":       return {120, 200, 255, 255}
+	case "lightning": return {255, 240, 90, 255}
+	case "holy":      return {255, 250, 210, 255}
+	case "dark":      return {190, 110, 255, 255}
+	case "poison":    return {150, 240, 90, 255}
+	case:             return {200, 150, 255, 255}
+	}
+}
+
 handle_damage :: proc(ctx: ^Game_Context, data: ^JSON_Value) {
 	if data == nil do return
 	o := obj_of(data^)
@@ -404,6 +436,22 @@ handle_damage :: proc(ctx: ^Game_Context, data: ^JSON_Value) {
 	col := rl.Color{255, 80, 80, 255}
 	if is_crit do col = rl.YELLOW
 	push_floating(ctx, id, world_pos, amount, missed, false, is_crit, col)
+
+	// Elemental bonus damage: the server sends it as a separate array on the
+	// same DAMAGE packet — one additional floater line per element.
+	if !missed {
+		els := as_dyn(get_array(o, "elementalDamage"))
+		for i in 0 ..< len(els) {
+			el := obj_of(els[i])
+			el_amount := get_int(el, "damage")
+			if el_amount <= 0 do continue
+			el_name := get_string(el, "element")
+			push_floating(
+				ctx, id, world_pos, el_amount,
+				false, false, false, element_color(el_name),
+			)
+		}
+	}
 }
 
 handle_heal :: proc(ctx: ^Game_Context, data: ^JSON_Value) {
@@ -651,12 +699,41 @@ EQUIP_SLOT_NAMES: [EQUIP_SLOT_COUNT]string = {
 handle_chat :: proc(ctx: ^Game_Context, data: ^JSON_Value) {
 	if data == nil do return
 	o := obj_of(data^)
-	chat_push(
-		ctx.chat,
-		chat_channel_from_string(get_string(o, "channel", "zone")),
-		get_string(o, "sender", ""),
-		get_string(o, "message", ""),
-	)
+	sender := get_string(o, "sender", "")
+	message := get_string(o, "message", "")
+	channel := chat_channel_from_string(get_string(o, "channel", "zone"))
+	chat_push(ctx.chat, channel, sender, message)
+	attach_chat_bubble(ctx, sender, message, channel)
+}
+
+// Show the message over the speaker's head: the local player or a scene
+// player whose entity name matches the sender. System messages get no bubble.
+attach_chat_bubble :: proc(ctx: ^Game_Context, sender, message: string, channel: Chat_Channel) {
+	if channel == .SYSTEM || len(sender) == 0 do return
+
+	// The server prefixes GM/admin senders ("[GM] Alice"); entity names don't
+	// carry the prefix, so strip it before matching.
+	name := sender
+	if strings.has_prefix(name, "[ADMIN] ") {
+		name = name[len("[ADMIN] "):]
+	} else if strings.has_prefix(name, "[GM] ") {
+		name = name[len("[GM] "):]
+	}
+
+	if name == string(ctx.player.name[:ctx.player.name_len]) {
+		chat_bubble_set(&ctx.player_bubble, message)
+		return
+	}
+
+	s := ctx.scene
+	for i in 0..<s.count {
+		if s.metas[i].kind != .PLAYER do continue
+		if s.ui[i].name_len == len(name) &&
+		   string(s.ui[i].name_str[:s.ui[i].name_len]) == name {
+			set_entity_chat_bubble(s, i, message)
+			return
+		}
+	}
 }
 
 handle_notification :: proc(ctx: ^Game_Context, data: ^JSON_Value) {
@@ -837,6 +914,13 @@ handle_character_select :: proc(ctx: ^Game_Context, data: ^JSON_Value) {
 		p.inventory.gold = i64(get_f64(o, "gold"))
 	}
 
+	// Quest log hydration (the payload carries the same `quests` array shape
+	// the QUEST_* packets use).
+	clear_quest_list(&p.quests)
+	if has_field(o, "quests") {
+		parse_quest_array(get_array(o, "quests"), &p.quests)
+	}
+
 	// Inventory + equipment: the CHARACTER_SELECT payload has `inventory` and
 	// `equipment` at the top level, the same shape INVENTORY_UPDATE expects.
 	// Reuse that handler but pass the *packet's own* data node — do NOT build a
@@ -937,6 +1021,98 @@ handle_status_effect_update :: proc(ctx: ^Game_Context, data: ^JSON_Value) {
 	}
 }
 
+// ── NPC dialog + quests ────────────────────────────────────────────────────
+
+handle_npc_dialog :: proc(ctx: ^Game_Context, data: ^JSON_Value) {
+	if data == nil do return
+	o := obj_of(data^)
+	dialog_load_from_packet(&ctx.dialog, o)
+}
+
+// Hide the dialog and tell the server the conversation is over (clears the
+// session's busy flag, which gates ATTACK/SKILL_USE server-side).
+dialog_close_and_notify :: proc(ctx: ^Game_Context) {
+	ctx.dialog.open = false
+	send_npc_dialog_close(ctx.net)
+}
+
+handle_quest_accept :: proc(ctx: ^Game_Context, data: ^JSON_Value) {
+	if data == nil do return
+	o := obj_of(data^)
+	if has_field(o, "quests") {
+		parse_quest_array(get_array(o, "quests"), &ctx.player.quests)
+	}
+	q := quest_find(ctx.player, get_string(o, "questId"))
+	if q != nil {
+		push_notification(ctx, fmt.tprintf("Quest accepted: %s", quest_title_string(q)), "success")
+	} else {
+		push_notification(ctx, "Quest accepted.", "success")
+	}
+	dialog_close_and_notify(ctx)
+}
+
+handle_quest_progress :: proc(ctx: ^Game_Context, data: ^JSON_Value) {
+	if data == nil do return
+	o := obj_of(data^)
+	if has_field(o, "quests") {
+		parse_quest_array(get_array(o, "quests"), &ctx.player.quests)
+	}
+	msg := get_string(o, "message")
+	if len(msg) > 0 {
+		push_notification(ctx, msg, "info")
+	}
+}
+
+handle_quest_complete :: proc(ctx: ^Game_Context, data: ^JSON_Value) {
+	if data == nil do return
+	o := obj_of(data^)
+	rew := get_object(o, "rewards")
+	xp := get_int(rew, "experience")
+	gold := get_int(rew, "gold")
+	line := fmt.tprintf("Quest complete! +%d XP", xp)
+	if gold > 0 {
+		line = fmt.tprintf("%s, +%d gold", line, gold)
+	}
+	items := as_dyn(get_array(rew, "items"))
+	for i in 0 ..< len(items) {
+		it := obj_of(items[i])
+		qty := get_int(it, "quantity")
+		name := item_name(get_string(it, "itemId"))
+		if qty > 1 {
+			line = fmt.tprintf("%s, %s x%d", line, name, qty)
+		} else {
+			line = fmt.tprintf("%s, %s", line, name)
+		}
+	}
+	push_notification(ctx, line, "success")
+	dialog_close_and_notify(ctx)
+}
+
+handle_quest_abandon :: proc(ctx: ^Game_Context, data: ^JSON_Value) {
+	if data == nil do return
+	o := obj_of(data^)
+	if has_field(o, "quests") {
+		parse_quest_array(get_array(o, "quests"), &ctx.player.quests)
+	}
+	push_notification(ctx, "Quest abandoned.", "info")
+	dialog_close_and_notify(ctx)
+}
+
+// Enhancement outcome. Failures also produce a server NOTIFICATION (shown by
+// handle_notification), so only successes raise one here.
+handle_enhancement_result :: proc(ctx: ^Game_Context, data: ^JSON_Value) {
+	if data == nil do return
+	o := obj_of(data^)
+	if !get_bool(o, "success") do return
+	level := get_int(o, "enhancementLevel")
+	elem := get_string(o, "enhancementElement")
+	line := fmt.tprintf("Enhancement succeeded! +%d", level)
+	if len(elem) > 0 {
+		line = fmt.tprintf("%s (%s)", line, elem)
+	}
+	push_notification(ctx, line, "success")
+}
+
 // ── helpers ───────────────────────────────────────────────────────────────
 
 matches_name :: proc "contextless" (buf: []u8, buf_len: int, s: string) -> bool {
@@ -973,18 +1149,18 @@ push_floating :: proc(
 	for f in ctx.floating {
 		if f.entity_id == id do stack += 1
 	}
-	offset_y := f32(stack * 14)
 	append(
 		&ctx.floating,
 		Floating_Text {
 			entity_id = id,
-			world_pos = {world_pos.x, world_pos.y + offset_y, world_pos.z},
+			world_pos = world_pos,
 			amount    = amount,
 			color     = color,
 			life      = 1.0,
 			is_miss   = is_miss,
 			is_heal   = is_heal,
 			is_crit   = is_crit,
+			stack_idx = stack,
 		},
 	)
 }

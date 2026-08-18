@@ -4,6 +4,7 @@ import sys "../../systems"
 import ui "../../ui/"
 import "core:fmt"
 import "core:math"
+import "core:strings"
 import rl "vendor:raylib"
 
 BAR_BTN_SIZE :: 36
@@ -170,10 +171,69 @@ draw_party_bar :: proc(x, y, w, h: f32, ratio: f32, color: rl.Color, label: stri
 create_quest_list_menu :: proc() {
 	m := &state.quest_list_menu
 	m^ = ui.menu_create("Quests", 400, 150, 400, 450)
-	ui.menu_add_label(m, "Active Quests")
-	ui.menu_add_separator(m)
-	ui.menu_add_button(m, "The Lost Sword  (0/3)")
-	ui.menu_add_button(m, "Gather Herbs   (5/10)")
+	m.close_on_esc = true
+}
+
+// Quest log: live view of the server-authoritative quest list. Abandon is a
+// two-click action (first click arms the button, second confirms).
+QUEST_LOG_BASE :: 9000
+
+refresh_quest_list_menu :: proc() {
+	m := &state.quest_list_menu
+	ui.menu_clear(m)
+
+	if len(state.player.quests) == 0 {
+		ui.menu_add_label(m, "No quests yet.")
+		ui.menu_add_label(m, "Talk to an NPC with a ! marker to find work.")
+		ui.menu_auto_height(m, 560)
+		return
+	}
+
+	shown := 0
+	for i in 0 ..< len(state.player.quests) {
+		q := &state.player.quests[i]
+		if q.status == .TURNED_IN do continue
+		shown += 1
+		suffix := q.status == .COMPLETED ? "  — ready to turn in" : ""
+		ui.menu_add_label(m, fmt.tprintf("%s%s", sys.quest_title_string(q), suffix))
+		if q.status != .COMPLETED {
+			for j in 0 ..< len(q.objectives) {
+				o := &q.objectives[j]
+				mark := o.current >= o.required ? "[x]" : "[ ]"
+				ui.menu_add_label(
+					m,
+					fmt.tprintf("  %s %s %d/%d", mark, sys.objective_name_string(o), o.current, o.required),
+				)
+			}
+		}
+		if state.quest_log_abandon_idx == i {
+			ui.menu_add_button_id(m, "Abandon? (click again)", QUEST_LOG_BASE + i)
+		} else {
+			ui.menu_add_button_id(m, "Abandon", QUEST_LOG_BASE + i)
+		}
+		ui.menu_add_separator(m)
+	}
+	if shown == 0 {
+		ui.menu_add_label(m, "No active quests.")
+	}
+	ui.menu_auto_height(m, 560)
+}
+
+handle_quest_list_menu_clicks :: proc() {
+	m := &state.quest_list_menu
+	if !m.open do return
+	for i in 0 ..< len(m.items) {
+		item := &m.items[i]
+		if item.kind != .BUTTON || !item.clicked do continue
+		idx := item.id - QUEST_LOG_BASE
+		if idx < 0 || idx >= len(state.player.quests) do continue
+		if state.quest_log_abandon_idx == idx {
+			sys.send_quest_abandon(state.net, sys.quest_id_string(&state.player.quests[idx]))
+			state.quest_log_abandon_idx = -1
+		} else {
+			state.quest_log_abandon_idx = idx
+		}
+	}
 }
 
 // Button-id bases: equip a backpack item (6000 + inv index), use a consumable
@@ -181,6 +241,16 @@ create_quest_list_menu :: proc() {
 INV_EQUIP_BASE   :: 6000
 INV_UNEQUIP_BASE :: 7000
 INV_USE_BASE     :: 8000
+
+// "+N [Element]" suffix for an enhanced item, or "".
+enh_suffix :: proc(it: ^sys.Inventory_Item) -> string {
+	if it.enhancement_level <= 0 do return ""
+	elem := string(it.enhancement_element[:it.enhancement_elem_len])
+	if len(elem) > 0 {
+		return fmt.tprintf(" +%d %s", it.enhancement_level, enhance_element_display(elem))
+	}
+	return fmt.tprintf(" +%d", it.enhancement_level)
+}
 
 refresh_inventory_menu :: proc() {
 	m := &state.inventory_menu
@@ -195,7 +265,7 @@ refresh_inventory_menu :: proc() {
 		es := &inv.equipment[int(slot)]
 		if es.item_id_len == 0 do continue
 		any_eq = true
-		label := fmt.tprintf("%-9s %s  [remove]", sys.EQUIP_SLOT_NAMES[int(slot)], sys.item_name(sys.item_id_string(es)))
+		label := fmt.tprintf("%-9s %s%s  [remove]", sys.EQUIP_SLOT_NAMES[int(slot)], sys.item_name(sys.item_id_string(es)), enh_suffix(es))
 		ui.menu_add_button_id(m, label, INV_UNEQUIP_BASE + int(slot))
 	}
 	if !any_eq do ui.menu_add_label(m, "(nothing equipped)")
@@ -207,11 +277,11 @@ refresh_inventory_menu :: proc() {
 		id := sys.item_id_string(it)
 		name := sys.item_name(id)
 		if sys.item_is_equippable(id) {
-			ui.menu_add_button_id(m, fmt.tprintf("%s x%d  [equip]", name, it.quantity), INV_EQUIP_BASE + i)
+			ui.menu_add_button_id(m, fmt.tprintf("%s%s x%d  [equip]", name, enh_suffix(it), it.quantity), INV_EQUIP_BASE + i)
 		} else if def, ok := sys.item_def(id); ok && def.type == .CONSUMABLE {
 			ui.menu_add_button_id(m, fmt.tprintf("%s x%d  [use]", name, it.quantity), INV_USE_BASE + i)
 		} else {
-			ui.menu_add_label(m, fmt.tprintf("%s x%d", name, it.quantity))
+			ui.menu_add_label(m, fmt.tprintf("%s%s x%d", name, enh_suffix(it), it.quantity))
 		}
 	}
 	ui.menu_auto_height(m, 560)
@@ -239,6 +309,360 @@ handle_inventory_menu_clicks :: proc() {
 			}
 		}
 	}
+}
+
+// ── weapon/gear enhancement window (Blacksmith Garn: "Enhance weapon") ────
+// Two-column picker: enhancable equipment (left) and element gems (right),
+// with the live success chance from the server's fail table. Selections are
+// stored as item ids and re-resolved to inventory indices each frame, so the
+// INVENTORY_UPDATE that follows an attempt (gem consumed) can't desync them.
+
+ENH_WIN_W     :: 600
+ENH_WIN_H     :: 420
+ENH_ROW_H     :: 26
+ENH_HDR_H     :: 22
+
+// Fail % by current enhancement level (mirrors enhancementHandlers.ts).
+ENHANCE_FAIL_PCT: [10]int = {0, 0, 5, 15, 25, 35, 50, 65, 80, 90}
+
+ENH_COL_BTN     :: rl.Color{55, 60, 75, 255}
+ENH_COL_BTN_HOV :: rl.Color{75, 85, 115, 255}
+ENH_COL_SEL     :: rl.Color{45, 80, 55, 255}
+ENH_COL_GOLD    :: rl.Color{255, 210, 90, 255}
+ENH_COL_GREEN   :: rl.Color{120, 230, 120, 255}
+ENH_COL_RED     :: rl.Color{235, 100, 100, 255}
+ENH_COL_DIM     :: rl.Color{160, 160, 170, 255}
+
+enh_window_rect :: proc() -> rl.Rectangle {
+	sw := f32(rl.GetScreenWidth())
+	sh := f32(rl.GetScreenHeight())
+	return {sw / 2 - ENH_WIN_W / 2, sh / 2 - ENH_WIN_H / 2, f32(ENH_WIN_W), f32(ENH_WIN_H)}
+}
+
+enh_close_rect :: proc "contextless" (win: rl.Rectangle) -> rl.Rectangle {
+	sz := f32(18.0)
+	return {win.x + win.width - 12 - sz, win.y + (BAR_BTN_SIZE - sz) / 2 + 6, sz, sz}
+}
+
+enh_weapon_list_rect :: proc "contextless" (win: rl.Rectangle) -> rl.Rectangle {
+	return {win.x + 10, win.y + 64, win.width / 2 - 15, win.height - 168}
+}
+
+enh_gem_list_rect :: proc "contextless" (win: rl.Rectangle) -> rl.Rectangle {
+	return {win.x + win.width / 2 + 5, win.y + 64, win.width / 2 - 15, win.height - 168}
+}
+
+enh_row_rect :: proc "contextless" (list: rl.Rectangle, row: int) -> rl.Rectangle {
+	return {list.x, list.y + f32(row * ENH_ROW_H), list.width, f32(ENH_ROW_H - 2)}
+}
+
+enh_enhance_btn_rect :: proc "contextless" (win: rl.Rectangle) -> rl.Rectangle {
+	return {win.x + win.width - 162, win.y + win.height - 46, 150, 34}
+}
+
+enhance_weapon_id_string :: proc() -> string {
+	return string(state.enhance_weapon_id[:state.enhance_weapon_id_len])
+}
+
+enhance_gem_id_string :: proc() -> string {
+	return string(state.enhance_gem_id[:state.enhance_gem_id_len])
+}
+
+// Gem item id → element key the server assigns (GEM_ELEMENT_MAP).
+enhance_gem_element :: proc "contextless" (gem_id: string) -> string {
+	switch gem_id {
+	case "fire_gem":              return "fire"
+	case "ice_gem":               return "ice"
+	case "lightning_gem":         return "lightning"
+	case "holy_gem":              return "holy"
+	case "dark_gem":              return "dark"
+	case "poison_gem":            return "poison"
+	case "fire_magic_gem":        return "magic_fire"
+	case "ice_magic_gem":         return "magic_ice"
+	case "lightning_magic_gem":   return "magic_lightning"
+	case "holy_magic_gem":        return "magic_holy"
+	case "dark_magic_gem":        return "magic_dark"
+	case "poison_magic_gem":      return "magic_poison"
+	case:                         return ""
+	}
+}
+
+enhance_element_display :: proc "contextless" (elem: string) -> string {
+	switch elem {
+	case "fire":             return "Fire"
+	case "ice":              return "Ice"
+	case "lightning":        return "Lightning"
+	case "holy":             return "Holy"
+	case "dark":             return "Dark"
+	case "poison":           return "Poison"
+	case "magic_fire":       return "Magic Fire"
+	case "magic_ice":        return "Magic Ice"
+	case "magic_lightning":  return "Magic Lightning"
+	case "magic_holy":       return "Magic Holy"
+	case "magic_dark":       return "Magic Dark"
+	case "magic_poison":     return "Magic Poison"
+	case:                   return elem
+	}
+}
+
+// Inventory indices of rows to show: equippable items (left) / gems (right).
+collect_enh_rows :: proc(gems: bool) -> []int {
+	rows := make([dynamic]int)
+	inv := &state.player.inventory
+	for i in 0 ..< len(inv.items) {
+		id := sys.item_id_string(&inv.items[i])
+		if gems {
+			if strings.has_suffix(id, "_gem") do append(&rows, i)
+		} else {
+			if sys.item_is_equippable(id) do append(&rows, i)
+		}
+	}
+	return rows[:]
+}
+
+// Current inventory index for a selected item id, or -1 if no longer held.
+resolve_inv_index :: proc(id: string) -> int {
+	if len(id) == 0 do return -1
+	inv := &state.player.inventory
+	for i in 0 ..< len(inv.items) {
+		if sys.item_id_string(&inv.items[i]) == id do return i
+	}
+	return -1
+}
+
+resolve_enh_weapon_index :: proc() -> int {
+	return resolve_inv_index(enhance_weapon_id_string())
+}
+
+resolve_enh_gem_index :: proc() -> int {
+	return resolve_inv_index(enhance_gem_id_string())
+}
+
+// Mirror of the server's gate: item held, below +10, and gem element matches
+// the item's existing element (empty = unelemented, anything goes).
+enh_can_attempt :: proc(wi, gi: int) -> bool {
+	inv := &state.player.inventory
+	if wi < 0 || gi < 0 || wi >= len(inv.items) || gi >= len(inv.items) do return false
+	w := &inv.items[wi]
+	if w.enhancement_level >= 10 do return false
+	welem := string(w.enhancement_element[:w.enhancement_elem_len])
+	gelem := enhance_gem_element(sys.item_id_string(&inv.items[gi]))
+	if len(gelem) == 0 do return false
+	if len(welem) > 0 && welem != gelem do return false
+	return true
+}
+
+open_enhancement_window :: proc() {
+	ui.menu_open(&state.blacksmith_menu)
+	state.enhance_weapon_id_len = 0
+	state.enhance_gem_id_len = 0
+}
+
+update_blacksmith_menu :: proc() {
+	m := &state.blacksmith_menu
+	if !m.open do return
+	m.rect = enh_window_rect()
+	mouse := rl.GetMousePosition()
+	m.focused = rl.CheckCollisionPointRec(mouse, m.rect)
+	if state.chat_focused do return
+
+	if !rl.IsMouseButtonPressed(.LEFT) do return
+
+	if rl.CheckCollisionPointRec(mouse, enh_close_rect(m.rect)) {
+		ui.menu_close(m)
+		return
+	}
+
+	inv := &state.player.inventory
+
+	wr := enh_weapon_list_rect(m.rect)
+	for r, i in collect_enh_rows(false) {
+		if rl.CheckCollisionPointRec(mouse, enh_row_rect(wr, i)) {
+			sys.copy_string_to_buffer(
+				state.enhance_weapon_id[:], &state.enhance_weapon_id_len,
+				sys.item_id_string(&inv.items[r]),
+			)
+			return
+		}
+	}
+
+	gr := enh_gem_list_rect(m.rect)
+	for r, i in collect_enh_rows(true) {
+		if rl.CheckCollisionPointRec(mouse, enh_row_rect(gr, i)) {
+			sys.copy_string_to_buffer(
+				state.enhance_gem_id[:], &state.enhance_gem_id_len,
+				sys.item_id_string(&inv.items[r]),
+			)
+			return
+		}
+	}
+
+	wi := resolve_enh_weapon_index()
+	gi := resolve_enh_gem_index()
+	if enh_can_attempt(wi, gi) && rl.CheckCollisionPointRec(mouse, enh_enhance_btn_rect(m.rect)) {
+		sys.send_weapon_enhance(state.net, wi, []int{gi})
+	}
+}
+
+draw_blacksmith_menu :: proc() {
+	m := &state.blacksmith_menu
+	if !m.open do return
+	win := m.rect
+	mouse := rl.GetMousePosition()
+	inv := &state.player.inventory
+
+	rl.DrawRectangleRec(win, rl.Color{18, 20, 28, 242})
+	rl.DrawRectangleLinesEx(win, 2, rl.Color{140, 140, 160, 255})
+	title := rl.Rectangle{win.x, win.y, win.width, 30}
+	rl.DrawRectangleRec(title, rl.Color{40, 44, 56, 250})
+	sys.draw_text("Enhancement", int(win.x + 10), int(win.y + 6), 16, rl.Color{220, 220, 235, 255})
+
+	cr := enh_close_rect(win)
+	hov := rl.CheckCollisionPointRec(mouse, cr)
+	rl.DrawRectangleRec(cr, hov ? rl.Color{180, 60, 60, 255} : rl.Color{100, 100, 110, 200})
+	sys.draw_text("X", int(cr.x + 5), int(cr.y + 3), 12, rl.WHITE)
+
+	wr := enh_weapon_list_rect(win)
+	gr := enh_gem_list_rect(win)
+	sys.draw_text("Equipment", int(wr.x), int(wr.y - ENH_HDR_H), 14, ENH_COL_GOLD)
+	sys.draw_text("Element Gems", int(gr.x), int(gr.y - ENH_HDR_H), 14, ENH_COL_GOLD)
+
+	sel_w := enhance_weapon_id_string()
+	sel_g := enhance_gem_id_string()
+
+	wrows := collect_enh_rows(false)
+	max_rows := int(wr.height / f32(ENH_ROW_H))
+	for r, i in wrows {
+		if i >= max_rows do break
+		it := &inv.items[r]
+		id := sys.item_id_string(it)
+		name := sys.item_name(id)
+		if it.enhancement_level > 0 {
+			elem := string(it.enhancement_element[:it.enhancement_elem_len])
+			name = fmt.tprintf("%s +%d", name, it.enhancement_level)
+			if len(elem) > 0 {
+				name = fmt.tprintf("%s %s", name, enhance_element_display(elem))
+			}
+		}
+		row := enh_row_rect(wr, i)
+		if id == sel_w {
+			rl.DrawRectangleRec(row, ENH_COL_SEL)
+		} else if rl.CheckCollisionPointRec(mouse, row) {
+			rl.DrawRectangleRec(row, ENH_COL_BTN_HOV)
+		} else {
+			rl.DrawRectangleRec(row, ENH_COL_BTN)
+		}
+		sys.draw_text(name, int(row.x + 6), int(row.y + 5), 14, rl.Color{220, 220, 235, 255})
+	}
+	if len(wrows) == 0 {
+		sys.draw_text("No enhancable equipment.", int(wr.x + 4), int(wr.y + 4), 13, ENH_COL_DIM)
+	}
+
+	grows := collect_enh_rows(true)
+	max_rows = int(gr.height / f32(ENH_ROW_H))
+	for r, i in grows {
+		if i >= max_rows do break
+		it := &inv.items[r]
+		id := sys.item_id_string(it)
+		row := enh_row_rect(gr, i)
+		if id == sel_g {
+			rl.DrawRectangleRec(row, ENH_COL_SEL)
+		} else if rl.CheckCollisionPointRec(mouse, row) {
+			rl.DrawRectangleRec(row, ENH_COL_BTN_HOV)
+		} else {
+			rl.DrawRectangleRec(row, ENH_COL_BTN)
+		}
+		label := fmt.tprintf("%s x%d", sys.item_name(id), it.quantity)
+		sys.draw_text(label, int(row.x + 6), int(row.y + 5), 14, rl.Color{220, 220, 235, 255})
+		elem := enhance_gem_element(id)
+		if len(elem) > 0 {
+			ew := sys.measure_text(elem, 12)
+			sys.draw_text(elem, int(row.x + row.width - f32(ew) - 6), int(row.y + 6), 12, ENH_COL_DIM)
+		}
+	}
+	if len(grows) == 0 {
+		sys.draw_text("No element gems in bag.", int(gr.x + 4), int(gr.y + 4), 13, ENH_COL_DIM)
+	}
+
+	// Bottom status panel.
+	panel := rl.Rectangle{win.x + 10, win.y + win.height - 108, win.width - 20, 96}
+	rl.DrawRectangleRec(panel, rl.Color{28, 30, 40, 255})
+	rl.DrawRectangleLinesEx(panel, 1, rl.Color{80, 80, 100, 200})
+
+	info_y := int(panel.y + 8)
+	wi := resolve_enh_weapon_index()
+	gi := resolve_enh_gem_index()
+
+	line1 := "Select equipment to enhance."
+	line1_col := ENH_COL_DIM
+	if wi >= 0 {
+		w := &inv.items[wi]
+		elem := string(w.enhancement_element[:w.enhancement_elem_len])
+		if w.enhancement_level >= 10 {
+			line1 = fmt.tprintf(
+				"%s +%d %s — maximum level",
+				sys.item_name(sys.item_id_string(w)), w.enhancement_level, enhance_element_display(elem),
+			)
+			line1_col = ENH_COL_GOLD
+		} else {
+			fail := ENHANCE_FAIL_PCT[w.enhancement_level]
+			line1 = fmt.tprintf(
+				"%s +%d %s → +%d   success %d%%",
+				sys.item_name(sys.item_id_string(w)), w.enhancement_level,
+				len(elem) > 0 ? enhance_element_display(elem) : "—",
+				w.enhancement_level + 1, 100 - fail,
+			)
+			line1_col = rl.Color{220, 220, 235, 255}
+		}
+	}
+	sys.draw_text(line1, int(panel.x + 8), info_y, 14, line1_col)
+	info_y += 20
+
+	line2 := "Select an element gem."
+	line2_col := ENH_COL_DIM
+	if wi >= 0 && gi >= 0 {
+		if enh_can_attempt(wi, gi) {
+			line2 = fmt.tprintf("Gem: %s", sys.item_name(enhance_gem_id_string()))
+			line2_col = ENH_COL_GREEN
+		} else {
+			w := &inv.items[wi]
+			welem := string(w.enhancement_element[:w.enhancement_elem_len])
+			if len(welem) > 0 {
+				line2 = fmt.tprintf(
+					"Element mismatch — this gear is %s.", enhance_element_display(welem),
+				)
+			} else {
+				line2 = "This gem cannot be used."
+			}
+			line2_col = ENH_COL_RED
+		}
+	}
+	sys.draw_text(line2, int(panel.x + 8), info_y, 14, line2_col)
+
+	sys.draw_text("One gem is consumed per attempt,", int(panel.x + 8), info_y + 22, 12, ENH_COL_DIM)
+	sys.draw_text("success or failure.", int(panel.x + 8), info_y + 36, 12, ENH_COL_DIM)
+
+	btn := enh_enhance_btn_rect(win)
+	enabled := enh_can_attempt(wi, gi)
+	btn_col: rl.Color
+	if !enabled {
+		btn_col = rl.Color{45, 45, 55, 255}
+	} else if rl.CheckCollisionPointRec(mouse, btn) {
+		btn_col = ENH_COL_BTN_HOV
+	} else {
+		btn_col = rl.Color{60, 120, 70, 255}
+	}
+	rl.DrawRectangleRec(btn, btn_col)
+	rl.DrawRectangleLinesEx(btn, 1, rl.Color{140, 140, 160, enabled ? 255 : 120})
+	blabel := "Enhance"
+	bw := sys.measure_text(blabel, 16)
+	sys.draw_text(
+		blabel,
+		int(btn.x + (btn.width - f32(bw)) / 2),
+		int(btn.y + (btn.height - 16) / 2),
+		16,
+		enabled ? rl.WHITE : ENH_COL_DIM,
+	)
 }
 
 // ── shop menu ────────────────────────────────────────────────────────────
@@ -346,8 +770,7 @@ update_shop_menu :: proc() {
 			if vis_idx < len(state.shop_visible_indices) {
 				entry_idx := state.shop_visible_indices[vis_idx]
 				e := &state.shop_cache.entries[entry_idx]
-				name := string(e.name[:e.name_len])
-				sys.net_log(fmt.tprintf("Buy: %s for %dg", name, e.price))
+				sys.send_npc_shop_buy(state.net, string(e.id[:e.id_len]))
 			}
 		}
 	}
@@ -363,6 +786,9 @@ init_menus :: proc() {
 	create_quest_list_menu()
 	create_shop_menu()
 
+	state.blacksmith_menu = ui.menu_create("Enhancement", 0, 0, f32(ENH_WIN_W), f32(ENH_WIN_H))
+	state.blacksmith_menu.close_on_esc = true
+
 	state.inventory_menu = ui.menu_create("Inventory", 800, 100, 460, 400)
 	state.inventory_menu.close_on_esc = true
 
@@ -370,6 +796,7 @@ init_menus :: proc() {
 	state.shop_visible_indices = make([dynamic]int)
 
 	state.click_path = make([dynamic]rl.Vector3)
+	state.quest_log_abandon_idx = -1
 
 	state.system_menu = ui.menu_create("System", 0, 0, 240, 220)
 	state.system_menu.close_on_esc = false
@@ -409,12 +836,14 @@ update_menus :: proc() {
 
 	if state.inventory_menu.open do refresh_inventory_menu()
 	if state.shop_menu.open do refresh_shop_menu()
+	if state.quest_list_menu.open do refresh_quest_list_menu()
 	if state.skills_menu.open do refresh_skills_menu()
 	if state.character_profile_menu.open do refresh_character_menu()
 	if state.debug_menu.open do refresh_debug_menu()
 	if state.settings_menu.open do refresh_settings_menu()
 	update_shop_menu()
 	update_party_panel()
+	update_blacksmith_menu()
 
 	ui.menu_update(&state.inventory_menu)
 	ui.menu_update(&state.settings_menu)
@@ -422,7 +851,6 @@ update_menus :: proc() {
 	ui.menu_update(&state.friends_menu)
 	ui.menu_update(&state.quest_list_menu)
 	ui.menu_update(&state.accept_deny_menu)
-	ui.menu_update(&state.blacksmith_menu)
 	ui.menu_update(&state.soul_extraction_menu)
 	ui.menu_update(&state.character_profile_menu)
 	ui.menu_update(&state.loot_drop_menu)
@@ -447,6 +875,7 @@ update_menus :: proc() {
 	handle_debug_menu_clicks()
 	handle_settings_menu_clicks()
 	handle_skills_menu_clicks()
+	handle_quest_list_menu_clicks()
 }
 
 draw_menu_bar :: proc() {
@@ -485,7 +914,7 @@ draw_menu_bar :: proc() {
 	draw_party_panel()
 	ui.menu_draw(&state.quest_list_menu)
 	ui.menu_draw(&state.accept_deny_menu)
-	ui.menu_draw(&state.blacksmith_menu)
+	draw_blacksmith_menu()
 	ui.menu_draw(&state.soul_extraction_menu)
 	ui.menu_draw(&state.character_profile_menu)
 	ui.menu_draw(&state.loot_drop_menu)

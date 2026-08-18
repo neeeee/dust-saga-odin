@@ -27,16 +27,19 @@ render :: proc() {
 
 	// 2D entity nameplates / health bars / target indicators.
 	sys.render_entity_ui_2d(state.scene, state.player.camera)
+	draw_local_player_bubble()
 
 	// 2D HUD.
 	draw_hud()
 	draw_target_window()
+	draw_quest_tracker()
 	draw_floating_text()
 	draw_chat()
 	draw_notifications()
 	draw_ground_reticle_hint()
 	draw_menu_bar()
 	draw_menus()
+	draw_dialog()
 	if state.player.is_dead do draw_death_overlay()
 }
 
@@ -70,6 +73,23 @@ draw_local_player :: proc() {
 	if state.player.is_resting do col = {120, 120, 180, 255}
 	if state.player.is_dead do col = {120, 120, 120, 255}
 	rl.DrawModelEx(state.scene.model_capsule, pos, axis, angle, {1, 1, 1}, col)
+}
+
+// Overhead chat bubble over the local player's head (same anchor — y+2.5 —
+// and style as the scene-entity bubbles drawn in ecs.odin).
+draw_local_player_bubble :: proc() {
+	if state.ctx == nil do return
+	bubble := &state.ctx.player_bubble
+	if !sys.chat_bubble_active(bubble) do return
+
+	cam := state.player.camera
+	p := state.player.position
+	world := rl.Vector3{p.x, p.y + 2.5, p.z}
+	forward := rl.Vector3Normalize(cam.target - cam.position)
+	if rl.Vector3DotProduct(forward, world - cam.position) <= 0.0 do return
+
+	sp := rl.GetWorldToScreen(world, cam)
+	sys.draw_chat_bubble_at(bubble, i32(sp.x), i32(sp.y), 1.0)
 }
 
 draw_hud :: proc() {
@@ -299,7 +319,10 @@ draw_floating_text :: proc() {
 		}
 		size := f.is_crit ? 22 : 16
 		rise := int((1.0 - f.life) * 30)
-		sys.draw_text(text, int(sp.x) - 8, int(sp.y) - 30 - rise, size, col)
+		// Each concurrent floater on this entity gets its own screen row
+		// (multi-hit hits + elemental lines stack downward).
+		stack_off := f.stack_idx * 18
+		sys.draw_text(text, int(sp.x) - 8, int(sp.y) - 30 - rise - stack_off, size, col)
 	}
 }
 
@@ -340,6 +363,35 @@ draw_notifications :: proc() {
 		msg := string(n.message[:n.msg_len])
 		sys.draw_text(msg, 540, y, 18, col)
 		y += 24
+	}
+}
+
+// Active-quest tracker, top-right under the connection status.
+draw_quest_tracker :: proc() {
+	x := int(rl.GetScreenWidth()) - 330
+	y := 44
+	for i in 0 ..< len(state.player.quests) {
+		q := &state.player.quests[i]
+		if q.status == .TURNED_IN || q.status == .AVAILABLE do continue
+		sys.draw_text(sys.quest_title_string(q), x, y, 14, rl.Color{255, 210, 90, 255})
+		y += 18
+		if q.status == .COMPLETED {
+			sys.draw_text("  Return to the quest giver", x, y, 12, rl.Color{120, 230, 120, 255})
+			y += 16
+		} else {
+			for j in 0 ..< len(q.objectives) {
+				o := &q.objectives[j]
+				done := o.current >= o.required
+				col := done ? rl.Color{120, 230, 120, 255} : rl.Color{200, 200, 200, 255}
+				sys.draw_text(
+					fmt.tprintf("  %s %d/%d", sys.objective_name_string(o), o.current, o.required),
+					x, y, 12, col,
+				)
+				y += 16
+			}
+		}
+		y += 8
+		if y > 300 do break
 	}
 }
 

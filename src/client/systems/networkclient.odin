@@ -524,11 +524,76 @@ send_enter_zone :: proc(nc: ^Network_Client, zone_id: string) {
 	send_object(nc, .ENTER_ZONE, fields[:])
 }
 
-send_npc_interact :: proc(nc: ^Network_Client, npc_id: string) {
-	fields := make([dynamic]JSON_Field, 0, 1)
+send_npc_interact :: proc(nc: ^Network_Client, npc_id: string, dialog_id: string = "") {
+	fields := make([dynamic]JSON_Field, 0, 2)
 	defer delete(fields)
 	append(&fields, JSON_Field{"npcId", json_str(npc_id)})
+	if len(dialog_id) > 0 {
+		append(&fields, JSON_Field{"dialogId", json_str(dialog_id)})
+	}
 	send_object(nc, .NPC_INTERACT, fields[:])
+}
+
+send_npc_dialog_close :: proc(nc: ^Network_Client) {
+	send(nc, .NPC_DIALOG_CLOSE)
+}
+
+send_npc_shop_buy :: proc(nc: ^Network_Client, item_id: string, quantity: int = 1) {
+	fields := make([dynamic]JSON_Field, 0, 2)
+	defer delete(fields)
+	append(&fields, JSON_Field{"itemId", json_str(item_id)})
+	append(&fields, JSON_Field{"quantity", json.Integer(quantity)})
+	send_object(nc, .NPC_SHOP_BUY, fields[:])
+}
+
+send_quest_accept :: proc(nc: ^Network_Client, quest_id: string) {
+	fields := make([dynamic]JSON_Field, 0, 1)
+	defer delete(fields)
+	append(&fields, JSON_Field{"questId", json_str(quest_id)})
+	send_object(nc, .QUEST_ACCEPT, fields[:])
+}
+
+send_quest_complete :: proc(nc: ^Network_Client, quest_id: string) {
+	fields := make([dynamic]JSON_Field, 0, 1)
+	defer delete(fields)
+	append(&fields, JSON_Field{"questId", json_str(quest_id)})
+	send_object(nc, .QUEST_COMPLETE, fields[:])
+}
+
+send_quest_abandon :: proc(nc: ^Network_Client, quest_id: string) {
+	fields := make([dynamic]JSON_Field, 0, 1)
+	defer delete(fields)
+	append(&fields, JSON_Field{"questId", json_str(quest_id)})
+	send_object(nc, .QUEST_ABANDON, fields[:])
+}
+
+// WEAPON_ENHANCE: weaponSlot.slotIndex is the inventory array index of the
+// item to enhance; materialSlots[] are gem inventory indices (server consumes
+// one gem per slot on success AND failure, all must share an element).
+// NOTE: the [dynamic]/map containers embedded in the field values are freed by
+// send_object's free_value — only the ^JSON_Value shell nodes are freed here.
+send_weapon_enhance :: proc(nc: ^Network_Client, weapon_slot_index: int, material_slot_indices: []int) {
+	wfields := make([dynamic]JSON_Field, 1)
+	defer delete(wfields)
+	wfields[0] = JSON_Field{"slotIndex", json.Integer(weapon_slot_index)}
+	wobj := build_object(wfields[:])
+	defer free(wobj)
+
+	mats := make([dynamic]JSON_Value, len(material_slot_indices))
+	for idx, i in material_slot_indices {
+		mfields := make([dynamic]JSON_Field, 1)
+		defer delete(mfields)
+		mfields[0] = JSON_Field{"slotIndex", json.Integer(idx)}
+		mobj := build_object(mfields[:])
+		mats[i] = mobj^
+		free(mobj)
+	}
+
+	fields := make([dynamic]JSON_Field, 2)
+	defer delete(fields)
+	fields[0] = JSON_Field{"weaponSlot", wobj^}
+	fields[1] = JSON_Field{"materialSlots", json.Array(JSON_Array(mats))}
+	send_object(nc, .WEAPON_ENHANCE, fields[:])
 }
 
 // Equip an item from inventory by id. Server derives the slot from the item's

@@ -29,6 +29,9 @@ function handleQuestAccept(ctx: NetworkContext, socket: Socket, data: any): void
   }
 
   if (ctx.questSys.acceptQuest(session, questId)) {
+    // Accepting ends the conversation — clear the busy flag so combat resumes
+    // even if the client's NPC_DIALOG_CLOSE packet is lost.
+    session.currentNpcId = null;
     session.lastQuestCell = null;
     ctx.checkQuestCellEntry(session);
     ctx.sendToPlayer(characterId, {
@@ -64,6 +67,9 @@ function handleQuestComplete(ctx: NetworkContext, socket: Socket, data: any): vo
     ctx.sendToPlayer(characterId, { type: PacketType.ERROR, timestamp: Date.now(), data: { message: 'Cannot turn in that quest (not ready or missing required items).' } });
     return;
   }
+
+  // Turning in ends the conversation — clear the busy flag.
+  session.currentNpcId = null;
 
   for (const item of result.consumeItems) {
     ctx.playerSys.removeItemFromInventory(session, item.itemId, item.quantity);
@@ -134,6 +140,8 @@ function handleQuestAbandon(ctx: NetworkContext, socket: Socket, data: any): voi
   }
 
   if (ctx.questSys.abandonQuest(session, questId)) {
+    // Abandoning ends the conversation — clear the busy flag.
+    session.currentNpcId = null;
     ctx.sendToPlayer(characterId, {
       type: PacketType.QUEST_ABANDON,
       timestamp: Date.now(),

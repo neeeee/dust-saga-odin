@@ -93,6 +93,7 @@ Scene :: struct {
 	ui:                [MAX_ENTITIES]Entity_UI,
 	interp_bufs:       [MAX_ENTITIES]Interp_Buffer,
 	effects:           [MAX_ENTITIES]Entity_Effects,
+	bubbles:           [MAX_ENTITIES]Chat_Bubble,
 
 	is_frozen:         [MAX_ENTITIES]bool,
 	casts_shadow:      [MAX_ENTITIES]bool,
@@ -166,6 +167,7 @@ add_entity :: proc(s: ^Scene, id: Entity_Id) -> int {
 	s.metas[idx] = {}
 	s.ui[idx] = {}
 	s.interp_bufs[idx] = {}
+	s.bubbles[idx] = {}
 	s.is_frozen[idx] = false
 	s.casts_shadow[idx] = false
 	s.count += 1
@@ -187,6 +189,7 @@ remove_entity :: proc(s: ^Scene, id: Entity_Id) {
 		s.metas[idx] = s.metas[last_idx]
 		s.ui[idx] = s.ui[last_idx]
 		s.interp_bufs[idx] = s.interp_bufs[last_idx]
+		s.bubbles[idx] = s.bubbles[last_idx]
 		s.is_frozen[idx] = s.is_frozen[last_idx]
 		s.casts_shadow[idx] = s.casts_shadow[last_idx]
 	}
@@ -224,6 +227,12 @@ set_entity_string_id :: proc(s: ^Scene, idx: int, id: string) {
 	copy(s.string_ids[idx][:n], transmute([]u8)id)
 }
 
+// Show `message` over the entity's head for the next CHAT_BUBBLE_DURATION_MS.
+set_entity_chat_bubble :: proc(s: ^Scene, idx: int, message: string) {
+	if idx < 0 || idx >= s.count do return
+	chat_bubble_set(&s.bubbles[idx], message)
+}
+
 // Get the string id for an entity index, or "" if unset.
 get_entity_string_id :: proc(s: ^Scene, idx: int) -> string {
 	if idx < 0 || idx >= s.count do return ""
@@ -246,7 +255,9 @@ render_entity_ui_2d :: proc(s: ^Scene, camera: rl.Camera3D) {
 		meta := &s.metas[i]
 
 		if s.is_frozen[i] do continue
-		if !ui.show_name && ui.health_ratio <= 0 && meta.kind != .NPC do continue
+		if !ui.show_name && ui.health_ratio <= 0 && meta.kind != .NPC && !chat_bubble_active(&s.bubbles[i]) {
+			continue
+		}
 
 		// Behind-camera cull: keep only entities in the camera's forward
 		// hemisphere. GetWorldToScreen does not clip points behind the camera,
@@ -325,7 +336,58 @@ render_entity_ui_2d :: proc(s: ^Scene, camera: rl.Camera3D) {
 				rl.YELLOW,
 			)
 		}
+
+		// Overhead chat bubble (above the nameplate).
+		draw_chat_bubble_at(&s.bubbles[i], ix, iy, ui_scale)
 	}
+}
+
+// Draws a chat bubble anchored at (ix, iy) — the projected nameplate anchor —
+// with a tail pointing down at the speaker's head. Slightly transparent, and
+// fades out over the final half-second of its life.
+draw_chat_bubble_at :: proc(bubble: ^Chat_Bubble, ix, iy: i32, scale: f32) {
+	if bubble.msg_len == 0 || !chat_bubble_active(bubble) do return
+
+	s := math.clamp(scale, 0.5, 1.0)
+	text := string(bubble.message[:bubble.msg_len])
+	font_sz := i32(14 * s)
+	text_w := i32(measure_text(text, int(font_sz)))
+	pad_x := i32(8 * s)
+	pad_y := i32(4 * s)
+	bw := text_w + pad_x * 2
+	bh := font_sz + pad_y * 2
+
+	fade := f32(1.0)
+	remaining := bubble.expires_at - now_ms_local()
+	if remaining < 500 do fade = math.clamp(f32(remaining) / 500.0, 0, 1)
+
+	rec := rl.Rectangle{
+		x      = f32(ix - bw / 2),
+		y      = f32(iy - 44) - f32(bh),
+		width  = f32(bw),
+		height = f32(bh),
+	}
+	bg := rl.Color{250, 250, 250, u8(205 * fade)}
+	rl.DrawRectangleRounded(rec, 0.4, 6, bg)
+	rl.DrawRectangleRoundedLines(rec, 0.4, 6, rl.Color{70, 70, 90, u8(220 * fade)})
+
+	// Speech-tail triangle pointing down at the head.
+	cxf := f32(ix)
+	ty := rec.y + rec.height - 0.5
+	rl.DrawTriangle(
+		{cxf + 5 * s, ty},
+		{cxf - 5 * s, ty},
+		{cxf, ty + 7 * s},
+		bg,
+	)
+
+	draw_text(
+		text,
+		int(ix - text_w / 2),
+		int(rec.y) + int(pad_y),
+		int(font_sz),
+		rl.Color{30, 30, 40, u8(235 * fade)},
+	)
 }
 
 // Update: cull, then drive interpolation for non-player entities from their

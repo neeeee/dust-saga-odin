@@ -68,6 +68,13 @@ state: struct {
 	friends_menu:           ui.Menu,
 	party_menu:             ui.Menu,
 	quest_list_menu:        ui.Menu,
+	quest_log_abandon_idx:  int,
+	// enhancement window selections (inventory item ids — re-resolved to
+	// indices every frame so INVENTORY_UPDATE shifts can't desync them)
+	enhance_weapon_id:      [64]u8,
+	enhance_weapon_id_len:  int,
+	enhance_gem_id:         [64]u8,
+	enhance_gem_id_len:     int,
 	accept_deny_menu:       ui.Menu,
 	blacksmith_menu:        ui.Menu,
 	soul_extraction_menu:   ui.Menu,
@@ -259,6 +266,9 @@ update :: proc(dt: f32) -> (requested: sys.App_State, has_request: bool) {
 	// 12. Menus.
 	update_menus()
 
+	// 12b. NPC dialog window (click handling; drawn in render).
+	update_dialog()
+
 	// 13. Logout/exit countdowns. When they elapse, perform the actual
 	//     handoff (previously this only switched scenes and never told the
 	//     server, so the character stayed online until ping-timeout).
@@ -338,6 +348,12 @@ apply_escape :: proc() {
 	// Cancel a ground-target reticle first (before the menu/escape chain).
 	if state.ground_target.active {
 		state.ground_target.active = false
+		return
+	}
+
+	// Close the NPC dialog before any menu/chat/target handling.
+	if state.ctx.dialog.open {
+		close_dialog()
 		return
 	}
 
@@ -593,6 +609,9 @@ any_menu_focused :: proc() -> bool {
 // character when clicking on the bar / a window.
 cursor_over_ui :: proc() -> bool {
 	mouse := rl.GetMousePosition()
+
+	// NPC dialog window.
+	if state.ctx.dialog.open && rl.CheckCollisionPointRec(mouse, state.ctx.dialog.rect) do return true
 
 	// Skill bars (draggable hotbars).
 	if cursor_over_skill_bar() do return true

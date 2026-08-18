@@ -48,6 +48,14 @@ apply_targeting :: proc(inp: sys.Input_State) {
 	// target-pick / click-to-move. update_ground_target handles it.
 	if state.ground_target.active do return
 
+	// E: talk to the targeted NPC (same interaction as double-click).
+	if inp.interact && state.player.target_id != sys.INVALID_ENTITY {
+		idx := sys.find_index(state.scene, state.player.target_id)
+		if idx >= 0 && state.scene.metas[idx].kind == .NPC {
+			try_talk_to(idx)
+		}
+	}
+
 	// Tab cycle: nearest enemy in view distance.
 	if inp.cycle_target != 0 {
 		cycle_target(inp.cycle_target > 0)
@@ -94,7 +102,7 @@ apply_targeting :: proc(inp: sys.Input_State) {
 		if idx >= 0 {
 			kind := state.scene.metas[idx].kind
 			if kind == .NPC {
-				sys.send_npc_interact(state.net, target_string_id())
+				try_talk_to(idx)
 			} else if kind == .ENEMY {
 				try_auto_attack()
 			}
@@ -104,6 +112,20 @@ apply_targeting :: proc(inp: sys.Input_State) {
 		state.last_click_time_ms = now
 		state.last_click_target = clicked
 	}
+}
+
+// Send NPC_INTERACT for a targeted NPC, gated by an interaction range slightly
+// tighter than the server's 5-unit check (fails locally with feedback instead
+// of the packet being dropped silently).
+try_talk_to :: proc(idx: int) {
+	t := state.scene.transforms[idx]
+	dx := state.player.position.x - t.position.x
+	dz := state.player.position.z - t.position.z
+	if math.sqrt(dx * dx + dz * dz) > 4.5 {
+		sys.push_notification(state.ctx, "Move closer to talk.", "info")
+		return
+	}
+	sys.send_npc_interact(state.net, target_string_id())
 }
 
 cycle_target :: proc(forward: bool) {
