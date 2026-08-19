@@ -65,7 +65,7 @@ draw_ground_reticle_3d :: proc() {
 	ray := rl.GetScreenToWorldRay(rl.GetMousePosition(), state.player.camera)
 	hit, point := sys.ray_ground_hit(ray, 0.0)
 	if !hit do return
-	rl.DrawCircle3D(point, gt.radius, {1, 0, 0}, 90.0, rl.Color{230, 120, 40, 210})
+	draw_ground_ring({point.x, GROUND_Y, point.z}, gt.radius, rl.Color{230, 120, 40, 210}, RIM_SEGMENTS)
 	rl.DrawCube(point, 0.5, 0.5, 0.5, rl.Color{230, 120, 40, 230})
 }
 
@@ -74,7 +74,39 @@ draw_ground_reticle_3d :: proc() {
 AOE_PULSE_HZ :: 1.4
 SONG_PULSE_HZ :: 0.9
 SONG_AURA_RADIUS :: 1.6
+GROUND_Y :: 0.05 // world ground plane is flat at y=0; lift discs a hair off it
+RING_LIFT :: 0.03 // ring sits strictly above the fill so their depths never fight
+DISC_SEGMENTS :: 32
 RIM_SEGMENTS :: 40
+
+// Filled disc laid explicitly on the XZ plane. (DrawCircle3D's internal fan
+// orientation + axis/rotation convention is easy to get wrong; manual
+// triangles leave no ambiguity.)
+draw_ground_disc :: proc(center: rl.Vector3, radius: f32, col: rl.Color, segments: int) {
+	for i in 0..<segments {
+		a0 := f32(i) / f32(segments) * 2.0 * math.PI
+		a1 := f32(i + 1) / f32(segments) * 2.0 * math.PI
+		rl.DrawTriangle3D(
+			{center.x, center.y, center.z},
+			{center.x + math.cos(a0) * radius, center.y, center.z + math.sin(a0) * radius},
+			{center.x + math.cos(a1) * radius, center.y, center.z + math.sin(a1) * radius},
+			col,
+		)
+	}
+}
+
+// Ring outline laid explicitly on the XZ plane.
+draw_ground_ring :: proc(center: rl.Vector3, radius: f32, col: rl.Color, segments: int) {
+	for i in 0..<segments {
+		a0 := f32(i) / f32(segments) * 2.0 * math.PI
+		a1 := f32(i + 1) / f32(segments) * 2.0 * math.PI
+		rl.DrawLine3D(
+			{center.x + math.cos(a0) * radius, center.y, center.z + math.sin(a0) * radius},
+			{center.x + math.cos(a1) * radius, center.y, center.z + math.sin(a1) * radius},
+			col,
+		)
+	}
+}
 
 // A flat disc + rim ring on the ground whose brightness and rim radius breathe
 // at `hz`. `fade` scales the alpha (used to fade zones out at expiry).
@@ -83,22 +115,16 @@ draw_pulsing_disc :: proc(center: rl.Vector3, radius: f32, col: rl.Color, hz: f6
 	pulse := 0.5 + 0.5 * math.sin(t * f32(hz) * 2.0 * math.PI)
 	f := math.clamp(fade, 0, 1)
 
-	disc := rl.Color{col.r, col.g, col.b, u8((26 + 40 * pulse) * f)}
-	// DrawCircle3D lays the disc in the XY plane; rotate 90° about X to lay it
-	// flat on the XZ ground plane.
-	rl.DrawCircle3D(center, radius, {1, 0, 0}, 90.0, disc)
+	disc := rl.Color{col.r, col.g, col.b, u8((40 + 50 * pulse) * f)}
+	draw_ground_disc(center, radius, disc, DISC_SEGMENTS)
 
+	// The ring rides the disc's outer edge; lift it RING_LIFT above the fill —
+	// coplanar lines z-fight the triangles they sit on and lose irregularly
+	// (the far half of the ring vanished).
 	rim_r := radius * (0.92 + 0.08 * pulse)
 	rim := rl.Color{col.r, col.g, col.b, u8((150 + 90 * pulse) * f)}
-	for i in 0..<RIM_SEGMENTS {
-		a0 := f32(i) / f32(RIM_SEGMENTS) * 2.0 * math.PI
-		a1 := f32(i + 1) / f32(RIM_SEGMENTS) * 2.0 * math.PI
-		rl.DrawLine3D(
-			{center.x + math.cos(a0) * rim_r, center.y, center.z + math.sin(a0) * rim_r},
-			{center.x + math.cos(a1) * rim_r, center.y, center.z + math.sin(a1) * rim_r},
-			rim,
-		)
-	}
+	ring_center := rl.Vector3{center.x, center.y + RING_LIFT, center.z}
+	draw_ground_ring(ring_center, rim_r, rim, RIM_SEGMENTS)
 }
 
 // Element-ish tint for a ground AOE zone from its skill name. "Arrow" is
@@ -148,7 +174,9 @@ draw_aoe_zones :: proc() {
 	for &z in ctx.aoe_zones {
 		if t >= z.expire_at_s do continue
 		fade := f32(min(z.expire_at_s - t, 0.4) / 0.4)
-		center := rl.Vector3{z.position.x, z.position.y + 0.05, z.position.z}
+		// Server y for TARGET_CENTERED zones can arrive at body-center
+		// height; the ground plane is flat at y=0, so pin the disc to it.
+		center := rl.Vector3{z.position.x, GROUND_Y, z.position.z}
 		draw_pulsing_disc(
 			center,
 			z.radius,
@@ -177,7 +205,7 @@ draw_song_auras :: proc() {
 			if !strings.has_prefix(type_str, "song_") do continue
 			p := s.transforms[i].position
 			draw_pulsing_disc(
-				{p.x, p.y + 0.05, p.z},
+				{p.x, GROUND_Y, p.z},
 				SONG_AURA_RADIUS,
 				song_color(type_str),
 				SONG_PULSE_HZ,
@@ -191,7 +219,7 @@ draw_song_auras :: proc() {
 	if song.active && now < song.expires_at {
 		p := state.player.position
 		draw_pulsing_disc(
-			{p.x, p.y + 0.05, p.z},
+			{p.x, GROUND_Y, p.z},
 			SONG_AURA_RADIUS,
 			song_color(string(song.type_str[:song.type_len])),
 			SONG_PULSE_HZ,

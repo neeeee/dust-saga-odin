@@ -415,9 +415,12 @@ update :: proc(s: ^Scene, dt: f32, current_time: f64, player_pos: [3]f32, curren
 	}
 }
 
+// Draws all scene entities. MUST be called from inside the caller's
+// BeginMode3D block — this proc deliberately does NOT open its own Mode3D:
+// nested BeginMode3D/EndMode3D pairs corrupt the matrix state in this raylib,
+// and everything drawn after the nested EndMode3D (ground AOE zones, song
+// auras, arrow tracers, the aim reticle) renders with a wrong projection.
 render :: proc(s: ^Scene, camera: rl.Camera3D) {
-	rl.BeginMode3D(camera)
-
 	for i in 0..<s.count {
 		if s.is_frozen[i] do continue
 		r := &s.renderables[i]
@@ -443,8 +446,6 @@ render :: proc(s: ^Scene, camera: rl.Camera3D) {
 		case:
 		}
 	}
-
-	rl.EndMode3D()
 }
 
 is_status_buff :: proc(type_str: string) -> bool {
