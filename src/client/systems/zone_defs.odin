@@ -92,14 +92,39 @@ zone_init :: proc() -> ^Zone_Definition {
 	return z
 }
 
-// Free the zone. Only the containers we make()'d are freed; the string fields
-// (id/name/label/model/...) are non-owning views into either json.parse buffers
-// (freed separately) or string literals, so we never delete them.
+// Free a non-empty string owned by this module. Zone strings are produced by
+// get_string_owned / strings.clone (heap) or left as "" — never literals — so
+// anything with length is safe to delete.
+zone_str_free :: proc(s: string) {
+	if len(s) > 0 do delete(s)
+}
+
+// Free the zone. String fields are heap clones made at load time (see
+// load_zone_map); zone_str_free releases them. Containers made in zone_init /
+// filled during parse are deleted directly.
 zone_destroy :: proc(z: ^Zone_Definition) {
 	if z == nil do return
+	zone_str_free(z.id)
+	zone_str_free(z.name)
+	for o in z.objects {
+		zone_str_free(o.otype)
+		zone_str_free(o.model)
+	}
 	if z.objects != nil do delete(z.objects)
+	for s in z.structures {
+		zone_str_free(s.otype)
+	}
 	if z.structures != nil do delete(z.structures)
+	for t in z.teleporters {
+		zone_str_free(t.id)
+		zone_str_free(t.target_zone)
+		zone_str_free(t.target_spawn)
+		zone_str_free(t.label)
+	}
 	if z.teleporters != nil do delete(z.teleporters)
+	for l in z.lights {
+		zone_str_free(l.otype)
+	}
 	if z.lights != nil do delete(z.lights)
 	if z.collision_grid != nil do delete(z.collision_grid)
 	free(z)

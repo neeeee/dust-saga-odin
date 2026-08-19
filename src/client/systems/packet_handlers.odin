@@ -21,6 +21,29 @@ Notification :: struct {
 	life:     f32, // seconds remaining on screen
 }
 
+// A ground AOE zone telegraph (Firestorm, Ice Tempest, Arrow Rain, ...) mirrored
+// from AOE_ENTITY broadcasts. Fixed buffers keep it allocation-free; expiry is
+// converted to local clock seconds so the render pass can drop stale zones.
+AOE_Zone :: struct {
+	id:          [64]u8,
+	id_len:      int,
+	skill_name:  [64]u8,
+	name_len:    int,
+	position:    rl.Vector3,
+	radius:      f32,
+	expire_at_s: f64,
+}
+
+// The local player's active song (song_* status effect). Songs toggle on/off
+// server-side and each refresh re-broadcasts the effect list, so mirroring the
+// presence/expiry of the effect is enough to drive the aura graphic.
+Local_Song :: struct {
+	active:     bool,
+	type_str:   [24]u8,
+	type_len:   int,
+	expires_at: u64, // local ms, same clock as Status_Effect.expires_at
+}
+
 Game_Context :: struct {
 	net:                 ^Network_Client,
 	scene:               ^Scene,
@@ -31,7 +54,11 @@ Game_Context :: struct {
 	engine_ready:        bool,
 	notifications:       [dynamic]Notification,
 	floating:           [dynamic]Floating_Text,
-	dialog:             Dialog_State,
+	dialog:              Dialog_State,
+
+	// Ground AOE zone telegraphs + the local player's active song aura.
+	aoe_zones:           [dynamic]AOE_Zone,
+	local_song:          Local_Song,
 
 	// Ground loot bags (mirrors the server's activeLoot; keyed alongside the
 	// scene entity that renders each bag).
@@ -67,14 +94,19 @@ game_context_init :: proc(
 	ctx.floating = make([dynamic]Floating_Text)
 	ctx.loot_bags = make([dynamic]Loot_Bag)
 	ctx.pending_spawns = make([dynamic]JSON_Value)
+	ctx.aoe_zones = make([dynamic]AOE_Zone)
+	ctx.local_song = Local_Song{}
 	return ctx
 }
 
 game_context_destroy :: proc(ctx: ^Game_Context) {
+	zone_destroy(ctx.zone) // nil-safe: frees the map + its owned strings
+	ctx.zone = nil
 	delete(ctx.notifications)
 	delete(ctx.floating)
 	delete(ctx.loot_bags)
 	delete(ctx.pending_spawns)
+	delete(ctx.aoe_zones)
 	free(ctx)
 }
 
@@ -176,6 +208,10 @@ handle_packet :: proc(ctx: ^Game_Context, p: ^Packet, free_after: bool) {
 		handle_loot_despawn(ctx, p.data)
 	case .LOOT_PICKUP:
 		handle_loot_pickup(ctx, p.data)
+	case .AOE_ENTITY:
+		handle_aoe_entity(ctx, p.data)
+	case .AOE_DESPAWN:
+		handle_aoe_despawn(ctx, p.data)
 	case:
 	}
 
@@ -204,6 +240,10 @@ handle_world_state :: proc(ctx: ^Game_Context, data: ^JSON_Value) {
 	// Reset the entity scene and spawn everything from the snapshot.
 	scene_clear(ctx.scene)
 	ctx.scene.player_id = string_to_entity_id(character_id_string(ctx.player))
+
+	// Zone transition: drop all ground AOE telegraphs and the local song aura.
+	clear(&ctx.aoe_zones)
+	ctx.local_song = Local_Song{}
 
 	spawn_entities_from_array(ctx, get_array(root, "enemies"), .ENEMY)
 	spawn_entities_from_array(ctx, get_array(root, "npcs"), .NPC)
@@ -407,6 +447,60 @@ handle_entity_despawn :: proc(ctx: ^Game_Context, data: ^JSON_Value) {
 	id_str := get_string(o, "entityId")
 	if len(id_str) == 0 do return
 	remove_entity(ctx.scene, string_to_entity_id(id_str))
+}
+
+// ── ground AOE zone telegraphs ──────────────────────────────────────────────
+
+// Spawn (or refresh) a pulsing ground circle from an AOE_ENTITY broadcast:
+// {id, type:'aoe', position, rotation, data:{skillName, radius, expiresAt}}.
+// Cone one-shot payloads (coneVfx) carry no zone radius and are ignored.
+handle_aoe_entity :: proc(ctx: ^Game_Context, data: ^JSON_Value) {
+	if data == nil do return
+	root := obj_of(data^)
+	if is_null(data^) do return
+
+	d := get_object(root, "data")
+	radius := get_f32(d, "radius", 0)
+	expires_at := get_f64(d, "expiresAt", 0)
+	if radius <= 0 || expires_at <= 0 do return
+
+	id_str := get_string(root, "id")
+	if len(id_str) == 0 do return
+
+	z := AOE_Zone {
+		radius       = radius,
+		expire_at_s  = server_to_clock_seconds(ctx, u64(expires_at)),
+	}
+	copy_string_to_buffer(z.id[:], &z.id_len, id_str)
+	copy_string_to_buffer(z.skill_name[:], &z.name_len, get_string(d, "skillName"))
+	pos := vec3_from(root, "position")
+	z.position = {pos[0], pos[1], pos[2]}
+
+	// Replace any stale record for the same zone id.
+	for i in 0..<len(ctx.aoe_zones) {
+		if matches_name(ctx.aoe_zones[i].id[:], ctx.aoe_zones[i].id_len, id_str) {
+			ctx.aoe_zones[i] = z
+			return
+		}
+	}
+	append(&ctx.aoe_zones, z)
+}
+
+// Remove a zone telegraph on AOE_DESPAWN: {entityId}.
+handle_aoe_despawn :: proc(ctx: ^Game_Context, data: ^JSON_Value) {
+	if data == nil do return
+	o := obj_of(data^)
+	id_str := get_string(o, "entityId")
+	if len(id_str) == 0 do return
+
+	i := 0
+	for i < len(ctx.aoe_zones) {
+		if matches_name(ctx.aoe_zones[i].id[:], ctx.aoe_zones[i].id_len, id_str) {
+			ordered_remove(&ctx.aoe_zones, i)
+		} else {
+			i += 1
+		}
+	}
 }
 
 // ── ground loot bags ───────────────────────────────────────────────────────
@@ -1095,7 +1189,7 @@ handle_batch_combat :: proc(ctx: ^Game_Context, data: ^JSON_Value) {
 			data = clone_value(ev_data),
 		}
 		handle_packet(ctx, &sub, false)
-		free_value(sub.data)
+		free_owned_value(sub.data)
 	}
 }
 
@@ -1139,14 +1233,32 @@ handle_status_effect_update :: proc(ctx: ^Game_Context, data: ^JSON_Value) {
 	effects_arr := get_array(root, "effects")
 	dyn := as_dyn(effects_arr)
 
+	now := now_ms_local()
+
+	// The local player isn't part of the scene SoA, so mirror their active
+	// song separately: the song_* effect only ever sits on the caster and is
+	// re-broadcast (present or absent) whenever their effects change.
+	song := &ctx.local_song
+	song.active = false
+	for i in 0..<len(dyn) {
+		eff_obj := obj_of(dyn[i])
+		t := get_string(eff_obj, "type")
+		if !strings.has_prefix(t, "song_") do continue
+		song.active = true
+		n := min(len(t), len(song.type_str))
+		copy(song.type_str[:n], transmute([]u8)t)
+		song.type_len = n
+		song.expires_at = now + u64(get_f64(eff_obj, "duration", 0))
+		break
+	}
+
 	player_idx := find_index(ctx.scene, ctx.scene.player_id)
 	if player_idx < 0 do return
 
-	now := now_ms_local()
 	ef := &ctx.scene.effects[player_idx]
 	ef.count = 0
 
-	for i in 0 ..< len(dyn) {
+	for i in 0..<len(dyn) {
 		if ef.count >= MAX_STATUS_EFFECTS do break
 		eff_obj := obj_of(dyn[i])
 		e := &ef.effects[ef.count]

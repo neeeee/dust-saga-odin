@@ -10,19 +10,87 @@ import rl "vendor:raylib"
 // ── combat ────────────────────────────────────────────────────────────────
 
 apply_combat :: proc(inp: sys.Input_State) {
-	// Auto-attack (F): gated by AUTO_ATTACK_BASE_COOLDOWN / attackSpeed.
-	if inp.attack && state.player.target_id != sys.INVALID_ENTITY {
+	// Auto-attack (F): a toggle state, not a held key. F (or a double-click
+	// on an enemy, see apply_targeting) engages it; F or Esc cancels. While
+	// active the player keeps attacking its target on the cooldown gate.
+	if inp.attack {
+		if state.auto_attack_active {
+			state.auto_attack_active = false
+		} else if state.player.target_id != sys.INVALID_ENTITY {
+			state.auto_attack_active = true
+			try_auto_attack()
+		} else {
+			sys.push_notification(state.ctx, "No target.", "info")
+		}
+	}
+
+	if state.auto_attack_active && state.player.target_id != sys.INVALID_ENTITY {
 		try_auto_attack()
 	}
 
-	// Manual cone attack (Space): gated by MANUAL_ATTACK_COOLDOWN.
+	// Manual attack (Space), aimed at the cursor and gated by
+	// MANUAL_ATTACK_COOLDOWN. Melee weapons (incl. staves and wands) sweep a
+	// cone around the aim direction; bows/crossbows loose a single arrow.
 	if inp.manual_attack {
 		if f64(state.clock_ms - state.player.last_manual_attack_ms) >=
 		   sys.COMBAT.MANUAL_ATTACK_COOLDOWN {
-			sys.send_manual_attack(state.net, state.player.yaw)
+			dx, dz, aim_dist := aim_direction()
+			sys.send_manual_attack(state.net, math.atan2(dx, dz))
 			state.player.last_manual_attack_ms = state.clock_ms
+			state.player.attack_anim_until_ms = state.clock_ms + 300
+			if player_weapon_is_ranged() {
+				spawn_arrow_tracer(dx, dz, aim_dist)
+			}
 		}
 	}
+}
+
+// Aim direction (normalized XZ) for a manual attack: from the player toward
+// the cursor's ground point. Falls back to screen-forward (opposite the
+// camera orbit offset) when the cursor ray misses the ground plane or lands
+// on the player. Also returns the aim distance (0 on fallback) so ranged
+// tracers know how far the arrow flew.
+aim_direction :: proc() -> (dx, dz, dist: f32) {
+	ray := rl.GetScreenToWorldRay(rl.GetMousePosition(), state.player.camera)
+	hit, point := sys.ray_ground_hit(ray, 0.0)
+	if hit {
+		px := point.x - state.player.position.x
+		pz := point.z - state.player.position.z
+		d := math.sqrt(px * px + pz * pz)
+		if d > 0.25 {
+			return px / d, pz / d, d
+		}
+	}
+	return -math.sin(state.player.yaw), -math.cos(state.player.yaw), 0.0
+}
+
+// True when the equipped weapon is a bow/crossbow (ranged manual attack —
+// server-authoritative; this only picks the client-side attack visuals).
+player_weapon_is_ranged :: proc() -> bool {
+	w := &state.player.inventory.equipment[sys.EQUIP_SLOT.WAPON]
+	if w.item_id_len == 0 do return false
+	def, ok := sys.item_def(sys.item_id_string(w))
+	if !ok do return false
+	return def.weapon_type == .BOW || def.weapon_type == .CROSSBOW
+}
+
+// Visual arrow for a ranged manual attack: a short-lived tracer from the
+// player toward the aim point, capped at the ranged attack range.
+spawn_arrow_tracer :: proc(dx, dz: f32, aim_dist: f32) {
+	dist := sys.GAME.RANGED_ATTACK_RANGE
+	if aim_dist > 0.0 {
+		dist = math.min(aim_dist + 1.0, dist)
+	}
+	from := rl.Vector3{
+		state.player.position.x + dx * 0.5,
+		state.player.position.y + 1.2,
+		state.player.position.z + dz * 0.5,
+	}
+	append(&state.arrows, Arrow_Tracer{
+		from,
+		{from.x + dx * dist, from.y, from.z + dz * dist},
+		ARROW_TRACER_LIFE,
+	})
 }
 
 try_auto_attack :: proc() {
@@ -110,6 +178,8 @@ apply_targeting :: proc(inp: sys.Input_State) {
 			if kind == .NPC {
 				try_talk_to(idx)
 			} else if kind == .ENEMY {
+				// Double-click on an enemy: target it and engage auto-attack.
+				state.auto_attack_active = true
 				try_auto_attack()
 			} else if kind == .LOOT {
 				try_loot(idx)

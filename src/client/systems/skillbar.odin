@@ -87,6 +87,7 @@ load_skill_bar :: proc(p: ^Local_Player) {
 	defer delete(data)
 	v, ok := json_parse(data)
 	if !ok do return
+	defer json.destroy_value(v) // parse tree is heap-backed
 	bars := as_dyn(array_of(v))
 	for bi in 0 ..< min(len(bars), SKILL_BAR_COUNT) {
 		bar_obj := obj_of(bars[bi])
@@ -125,9 +126,20 @@ save_skill_bar :: proc(p: ^Local_Player) {
 		bar_fields[2] = JSON_Field{"y", json.Float(f64(p.skill_bar_pos[bi].y))}
 		bar_obj := build_object(bar_fields[:])
 		all_bars[bi] = bar_obj^
+		free(bar_obj) // shell node; its map value lives on in all_bars
 	}
 	v: JSON_Value = json.Array(all_bars)
 	out, ok := json_marshal(&v)
 	if !ok do return
+	defer delete(out) // json_marshal output is heap-allocated
 	_ = os.write_entire_file_from_string(path, out)
+
+	// Free the per-bar maps. Only the maps: their "slots" values are
+	// temp-arena dynamics that die with the frame arena (delete on them
+	// would go through the wrong allocator).
+	for i in 0 ..< len(all_bars) {
+		if o, o_ok := all_bars[i].(json.Object); o_ok {
+			delete(as_map(o))
+		}
+	}
 }

@@ -77,11 +77,13 @@ Menu :: struct {
 // ── internal helpers ───────────────────────────────────────────────────────
 
 draw_str :: proc(text: string, x, y: i32, size: i32, color: rl.Color) {
-	rl.DrawText(strings.clone_to_cstring(text), x, y, size, color)
+	// temp allocator (frame arena): the cstring only needs to live for the
+	// DrawText call, and cloning on the heap here would leak per item/frame.
+	rl.DrawText(strings.clone_to_cstring(text, context.temp_allocator), x, y, size, color)
 }
 
 measure_str :: proc(text: string, size: i32) -> i32 {
-	return rl.MeasureText(strings.clone_to_cstring(text), size)
+	return rl.MeasureText(strings.clone_to_cstring(text, context.temp_allocator), size)
 }
 
 slider_update_value :: proc(item: ^Menu_Item, m: ^Menu) {

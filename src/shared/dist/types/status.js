@@ -197,7 +197,7 @@ exports.STATUS_EFFECT_DEFS = {
     [StatusEffectType.SONG_YELLOW]: { type: StatusEffectType.SONG_YELLOW, duration: 999999999, tickInterval: 3000, potency: 0, isDoT: false, isCC: false },
     [StatusEffectType.SONG_RED]: { type: StatusEffectType.SONG_RED, duration: 999999999, tickInterval: 3000, potency: 0, isDoT: false, isCC: true },
     [StatusEffectType.SONG_ACTIVE]: { type: StatusEffectType.SONG_ACTIVE, duration: 999999999, tickInterval: 0, potency: 0, isDoT: false, isCC: false },
-    [StatusEffectType.FEAR]: { type: StatusEffectType.FEAR, duration: 5000, tickInterval: 0, potency: 0, isDoT: true, isCC: true },
+    [StatusEffectType.FEAR]: { type: StatusEffectType.FEAR, duration: 2000, tickInterval: 0, potency: 0, isDoT: true, isCC: true },
     [StatusEffectType.CURSE]: { type: StatusEffectType.CURSE, duration: 60000, tickInterval: 0, potency: 0, isDoT: false, isCC: false },
     [StatusEffectType.PREVENT_FIELD_SPELLS]: { type: StatusEffectType.PREVENT_FIELD_SPELLS, duration: 60000, tickInterval: 0, potency: 0, isDoT: false, isCC: false },
     [StatusEffectType.PREVENT_RESSURECT]: { type: StatusEffectType.PREVENT_RESSURECT, duration: 60000, tickInterval: 0, potency: 0, isDoT: false, isCC: false },

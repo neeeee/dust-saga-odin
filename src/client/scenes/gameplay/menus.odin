@@ -406,8 +406,10 @@ enhance_element_display :: proc "contextless" (elem: string) -> string {
 }
 
 // Inventory indices of rows to show: equippable items (left) / gems (right).
+// Per-frame transient (called every frame while the window is open): the
+// returned rows live on the temp allocator and die with the frame arena.
 collect_enh_rows :: proc(gems: bool) -> []int {
-	rows := make([dynamic]int)
+	rows := make([dynamic]int, context.temp_allocator)
 	inv := &state.player.inventory
 	for i in 0 ..< len(inv.items) {
 		id := sys.item_id_string(&inv.items[i])
@@ -940,6 +942,37 @@ update_shop_menu :: proc() {
 // ── init / update / draw ────────────────────────────────────────────────
 
 init_menus :: proc() {
+	// `state` is package-level and survives logout→login, so a previous
+	// session's menus/dynamics must be released before re-creating them.
+	// (menu_destroy on a fresh state is a no-op: items is nil.)
+	prev_menus := make(
+		[]^ui.Menu,
+		15,
+		context.temp_allocator,
+	)
+	prev_menus[0] = &state.inventory_menu
+	prev_menus[1] = &state.settings_menu
+	prev_menus[2] = &state.skills_menu
+	prev_menus[3] = &state.friends_menu
+	prev_menus[4] = &state.party_menu
+	prev_menus[5] = &state.quest_list_menu
+	prev_menus[6] = &state.accept_deny_menu
+	prev_menus[7] = &state.blacksmith_menu
+	prev_menus[8] = &state.soul_extraction_menu
+	prev_menus[9] = &state.character_profile_menu
+	prev_menus[10] = &state.loot_drop_menu
+	prev_menus[11] = &state.loot_party_menu
+	prev_menus[12] = &state.shop_menu
+	prev_menus[13] = &state.system_menu
+	prev_menus[14] = &state.debug_menu
+	for m in prev_menus {
+		if m.items != nil do ui.menu_destroy(m)
+	}
+	if state.shop_cache.entries != nil do sys.shop_cache_destroy(&state.shop_cache)
+	if state.shop_visible_indices != nil do delete(state.shop_visible_indices)
+	if state.click_path != nil do delete(state.click_path)
+	if state.bar_buttons != nil do delete(state.bar_buttons)
+
 	create_settings_menu()
 	create_skills_menu()
 	create_friends_menu()

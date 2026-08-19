@@ -111,7 +111,7 @@ function handleManualAttack(ctx, socket, data) {
     if ((0, shared_1.isZonePvpEnabled)(session.zoneId)) {
         ctx.forEachPlayerInZone(session.zoneId, (id, p) => zonePlayerBuf.set(id, p));
     }
-    const results = ctx.combat.processManualAttack(session, data.facingAngle, zoneEnemies, zonePlayerBuf).filter((r) => !ctx.state.players.has(r.targetId) || r.targetId === characterId || !ctx.isPartyMember(characterId, r.targetId));
+    const results = ctx.combat.processManualAttack(session, data.facingAngle, zoneEnemies, zonePlayerBuf, session.zoneId).filter((r) => !ctx.state.players.has(r.targetId) || r.targetId === characterId || !ctx.isPartyMember(characterId, r.targetId));
     for (const info of results) {
         const enemy = ctx.spawnMgr.getEnemy(info.targetId);
         const pTarget = ctx.state.players.get(info.targetId);

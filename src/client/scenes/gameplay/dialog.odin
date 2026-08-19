@@ -56,7 +56,9 @@ dialog_text_width :: proc "contextless" () -> f32 {
 }
 
 wrap_lines :: proc(text: string, max_w: f32, fz: int) -> []string {
-	lines := make([dynamic]string)
+	// Per-frame transient (rebuilt every frame by update/draw): allocate on
+	// the temp allocator so it's reclaimed with the frame arena.
+	lines := make([dynamic]string, context.temp_allocator)
 	line := ""
 	i := 0
 	for i <= len(text) {
@@ -118,7 +120,9 @@ dialog_body_lines :: proc(d: ^sys.Dialog_State) -> int {
 // Rebuild the visible button list from the dialog state (pure — used by both
 // update and draw so hit-testing and rendering always agree).
 build_dialog_buttons :: proc(d: ^sys.Dialog_State) -> []Dialog_Btn {
-	btns := make([dynamic]Dialog_Btn)
+	// Per-frame transient (see wrap_lines): frame-arena backed, freed at
+	// frame end; labels are tprintf results on the same arena.
+	btns := make([dynamic]Dialog_Btn, context.temp_allocator)
 	switch d.mode {
 	case .NPC_PAGE:
 		for i in 0 ..< d.page_option_count {

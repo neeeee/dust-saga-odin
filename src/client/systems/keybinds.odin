@@ -20,8 +20,8 @@ Action :: enum u8 {
 	Sprint,
 
 	// combat / interaction
-	Attack,       // held — auto-attack
-	Manual_Attack, // cone attack
+	Attack,       // toggle — auto-attack state (Esc also cancels)
+	Manual_Attack, // manual attack toward the cursor (cone melee / arrow ranged)
 	Interact,
 	Toggle_Rest,
 	Cycle_Target, // Shift+Cycle_Target = reverse
@@ -190,6 +190,7 @@ load_keybinds :: proc() {
 	defer delete(data)
 	v, pok := json_parse(data)
 	if !pok do return
+	defer json.destroy_value(v) // parse tree is heap-backed
 	obj := obj_of(v)
 	for a in Action {
 		s := get_string(obj, action_name(a))
@@ -206,6 +207,7 @@ save_keybinds :: proc() {
 	out, ok := json_marshal(&v)
 	delete(obj)
 	if !ok do return
+	defer delete(out) // json_marshal output is heap-allocated
 	_ = os.write_entire_file_from_string(KEYBINDS_PATH, out)
 }
 

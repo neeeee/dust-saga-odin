@@ -3,6 +3,7 @@ package gameplay
 import sys "../../systems"
 import "core:fmt"
 import "core:math"
+import "core:strings"
 import rl "vendor:raylib"
 
 // 2D HUD + 3D overlay rendering, split from the core orchestrator. All state
@@ -22,7 +23,10 @@ render :: proc() {
 	// Draw the local player as a capsule too (distinct color).
 	draw_local_player()
 	sys.render(state.scene, state.player.camera)
+	draw_arrow_tracers()
 	draw_ground_reticle_3d()
+	draw_aoe_zones()
+	draw_song_auras()
 	rl.EndMode3D()
 
 	// 2D entity nameplates / health bars / target indicators.
@@ -43,6 +47,17 @@ render :: proc() {
 	if state.player.is_dead do draw_death_overlay()
 }
 
+// Ranged manual-attack arrows: short-lived tracer lines fading out.
+draw_arrow_tracers :: proc() {
+	for &a in state.arrows {
+		t := math.clamp(a.life / ARROW_TRACER_LIFE, 0, 1)
+		alpha := u8(t * 255.0)
+		rl.DrawLine3D(a.from, a.to, rl.Color{200, 160, 90, alpha})
+		head := rl.Vector3{a.to.x, a.to.y, a.to.z}
+		rl.DrawCube(head, 0.12, 0.12, 0.12, rl.Color{240, 220, 160, alpha})
+	}
+}
+
 // Ground-target reticle: a ring + center marker on the ground under the cursor.
 draw_ground_reticle_3d :: proc() {
 	gt := &state.ground_target
@@ -50,8 +65,139 @@ draw_ground_reticle_3d :: proc() {
 	ray := rl.GetScreenToWorldRay(rl.GetMousePosition(), state.player.camera)
 	hit, point := sys.ray_ground_hit(ray, 0.0)
 	if !hit do return
-	rl.DrawCircle3D(point, gt.radius, {0, 1, 0}, 0.0, rl.Color{230, 120, 40, 210})
+	rl.DrawCircle3D(point, gt.radius, {1, 0, 0}, 90.0, rl.Color{230, 120, 40, 210})
 	rl.DrawCube(point, 0.5, 0.5, 0.5, rl.Color{230, 120, 40, 230})
+}
+
+// ── ground AOE / song aura graphics ────────────────────────────────────────
+
+AOE_PULSE_HZ :: 1.4
+SONG_PULSE_HZ :: 0.9
+SONG_AURA_RADIUS :: 1.6
+RIM_SEGMENTS :: 40
+
+// A flat disc + rim ring on the ground whose brightness and rim radius breathe
+// at `hz`. `fade` scales the alpha (used to fade zones out at expiry).
+draw_pulsing_disc :: proc(center: rl.Vector3, radius: f32, col: rl.Color, hz: f64, fade: f32) {
+	t := f32(rl.GetTime())
+	pulse := 0.5 + 0.5 * math.sin(t * f32(hz) * 2.0 * math.PI)
+	f := math.clamp(fade, 0, 1)
+
+	disc := rl.Color{col.r, col.g, col.b, u8((26 + 40 * pulse) * f)}
+	// DrawCircle3D lays the disc in the XY plane; rotate 90° about X to lay it
+	// flat on the XZ ground plane.
+	rl.DrawCircle3D(center, radius, {1, 0, 0}, 90.0, disc)
+
+	rim_r := radius * (0.92 + 0.08 * pulse)
+	rim := rl.Color{col.r, col.g, col.b, u8((150 + 90 * pulse) * f)}
+	for i in 0..<RIM_SEGMENTS {
+		a0 := f32(i) / f32(RIM_SEGMENTS) * 2.0 * math.PI
+		a1 := f32(i + 1) / f32(RIM_SEGMENTS) * 2.0 * math.PI
+		rl.DrawLine3D(
+			{center.x + math.cos(a0) * rim_r, center.y, center.z + math.sin(a0) * rim_r},
+			{center.x + math.cos(a1) * rim_r, center.y, center.z + math.sin(a1) * rim_r},
+			rim,
+		)
+	}
+}
+
+// Element-ish tint for a ground AOE zone from its skill name. "Arrow" is
+// matched first so Arrow Storm/Rain don't hit the Thunderstorm branch.
+aoe_zone_color :: proc(skill: string) -> rl.Color {
+	switch {
+	case strings.contains(skill, "Arrow"):
+		return {230, 200, 130, 255}
+	case strings.contains(skill, "Ice"):
+		return {140, 210, 255, 255}
+	case strings.contains(skill, "Fire") || strings.contains(skill, "Meteor"):
+		return {255, 140, 70, 255}
+	case strings.contains(skill, "Thunder"):
+		return {255, 230, 110, 255}
+	case strings.contains(skill, "Holy"):
+		return {255, 245, 190, 255}
+	case strings.contains(skill, "Dark") || strings.contains(skill, "Despair") ||
+		strings.contains(skill, "Void") || strings.contains(skill, "Wasteland") ||
+		strings.contains(skill, "Pestilence") || strings.contains(skill, "Swamp"):
+		return {180, 110, 230, 255}
+	case:
+		return {200, 160, 255, 255}
+	}
+}
+
+song_color :: proc(type_str: string) -> rl.Color {
+	switch {
+	case strings.contains(type_str, "green"):
+		return {90, 220, 120, 255}
+	case strings.contains(type_str, "blue"):
+		return {90, 160, 255, 255}
+	case strings.contains(type_str, "yellow"):
+		return {240, 220, 90, 255}
+	case strings.contains(type_str, "red"):
+		return {255, 100, 90, 255}
+	case:
+		return {200, 160, 255, 255}
+	}
+}
+
+// Pulsing circles for active ground AOE zones (Ice Tempest, Arrow Rain, ...),
+// mirrored from AOE_ENTITY broadcasts; each fades out just before expiry.
+draw_aoe_zones :: proc() {
+	ctx := state.ctx
+	if ctx == nil do return
+	t := f64(rl.GetTime())
+	for &z in ctx.aoe_zones {
+		if t >= z.expire_at_s do continue
+		fade := f32(min(z.expire_at_s - t, 0.4) / 0.4)
+		center := rl.Vector3{z.position.x, z.position.y + 0.05, z.position.z}
+		draw_pulsing_disc(
+			center,
+			z.radius,
+			aoe_zone_color(string(z.skill_name[:z.name_len])),
+			AOE_PULSE_HZ,
+			fade,
+		)
+	}
+}
+
+// Pulsing circle under any entity with an active song_* status effect (i.e.
+// the singer), plus the local player's own song mirrored from
+// STATUS_EFFECT_UPDATE. Follows the caster as they move.
+draw_song_auras :: proc() {
+	ctx := state.ctx
+	if ctx == nil do return
+	now := sys.now_ms_local()
+
+	s := state.scene
+	for i in 0..<s.count {
+		ef := &s.effects[i]
+		for j in 0..<ef.count {
+			e := &ef.effects[j]
+			if now >= e.expires_at do continue
+			type_str := string(e.type_str[:e.type_len])
+			if !strings.has_prefix(type_str, "song_") do continue
+			p := s.transforms[i].position
+			draw_pulsing_disc(
+				{p.x, p.y + 0.05, p.z},
+				SONG_AURA_RADIUS,
+				song_color(type_str),
+				SONG_PULSE_HZ,
+				1.0,
+			)
+			break
+		}
+	}
+
+	song := &ctx.local_song
+	if song.active && now < song.expires_at {
+		p := state.player.position
+		draw_pulsing_disc(
+			{p.x, p.y + 0.05, p.z},
+			SONG_AURA_RADIUS,
+			song_color(string(song.type_str[:song.type_len])),
+			SONG_PULSE_HZ,
+			1.0,
+		)
+	}
 }
 
 // 2D prompt shown while aiming a ground-targeted skill.
@@ -124,6 +270,11 @@ draw_hud :: proc() {
 		rl.BLUE,
 		fmt.tprintf("MP %d/%d", i32(s.mana), i32(s.max_mana)),
 	)
+
+	// Auto-attack state indicator (F toggles, Esc cancels).
+	if state.auto_attack_active {
+		sys.draw_text("Auto-attack", 22, 100, 16, rl.Color{255, 200, 80, 255})
+	}
 
 	// Skill bar bottom-center.
 	draw_skill_bar()

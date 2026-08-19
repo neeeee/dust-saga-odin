@@ -2535,16 +2535,18 @@ exports.CLASS_SKILL_DATA = {
                         damageSubType: skills_1.MagicalDamageSubType.DARK,
                         description: "Slice enemy with weapon",
                         basePower: 1,
+                        baseHits: 3,
                     },
                     "Bind Criminal": {
                         name: "Bind Criminal",
                         reqPoints: 81,
                         mpCost: 30,
-                        castTime: 0,
+                        castTime: 10,
                         cooldown: 90,
                         duration: 0,
                         description: "Bind targets in large AOE, preventing them from moving",
                         isAOE: true,
+                        aoeRadius: 8,
                         debuffEffectTable: {
                             moveSpeedDown: 0.1,
                         },
@@ -2702,11 +2704,14 @@ exports.CLASS_SKILL_DATA = {
                         mpCost: 69,
                         castTime: 2,
                         cooldown: 20,
-                        duration: 0,
+                        duration: 60,
                         description: "Curse target, preventing resurrection",
                         damageSubType: skills_1.MagicalDamageSubType.DARK,
-                        basePower: 3,
+                        basePower: 1,
                         preventResurrect: true,
+                        debuffEffectTable: {
+                            curse: true,
+                        }
                     },
                     Hallucination: {
                         name: "Hallucination",

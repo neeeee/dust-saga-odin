@@ -197,8 +197,10 @@ handle_eio_frame :: proc(nc: ^Network_Client, payload: []u8) {
 		nc.awaiting_pong = false
 		if len(rest) > 0 {
 			if v, ok := json_parse(rest); ok {
+				defer json.destroy_value(v)
 				obj := obj_of(v)
 				if !is_null(v) {
+					if len(nc.sid) > 0 do delete(nc.sid)
 					nc.sid = get_string_owned(obj, "sid")
 					nc.ping_interval_ms = u64(get_f64(obj, "pingInterval", 20000))
 					nc.ping_timeout_ms = u64(get_f64(obj, "pingTimeout", 60000))
@@ -272,6 +274,7 @@ handle_sio_event :: proc(nc: ^Network_Client, rest: []u8) {
 
 	v, ok := json_parse(rest)
 	if !ok do return
+	defer json.destroy_value(v) // tree is heap-backed; only `data` is cloned below
 	arr := array_of(v)
 	dyn := as_dyn(arr)
 	if len(dyn) < 2 do return
@@ -638,8 +641,10 @@ process_polling_packet :: proc(nc: ^Network_Client, code: u8, payload: []u8) {
 		nc.last_ping_sent_ms = now_ms()
 		if len(payload) > 0 {
 			if v, ok := json_parse(payload); ok {
+				defer json.destroy_value(v)
 				obj := obj_of(v)
 				if !is_null(v) {
+					if len(nc.sid) > 0 do delete(nc.sid)
 					nc.sid = get_string_owned(obj, "sid")
 					nc.ping_interval_ms = u64(get_f64(obj, "pingInterval", 20000))
 					nc.ping_timeout_ms = u64(get_f64(obj, "pingTimeout", 60000))

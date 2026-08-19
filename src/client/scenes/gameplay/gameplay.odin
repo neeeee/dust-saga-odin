@@ -92,6 +92,14 @@ state: struct {
 	last_click_time_ms:     u64,
 	last_click_target:      sys.Entity_Id,
 
+	// Auto-attack state: F toggles it on (requires a target), F or Esc
+	// cancels. While active the local player keeps attacking its target
+	// without holding the key.
+	auto_attack_active:     bool,
+
+	// Ranged manual-attack tracers (short-lived visual arrows).
+	arrows:                 [dynamic]Arrow_Tracer,
+
 	click_path:             [dynamic]rl.Vector3,
 	click_path_index:       int,
 	click_move_active:      bool,
@@ -115,6 +123,16 @@ Ground_Target :: struct {
 	radius:     f32,
 }
 
+// A visible arrow line for ranged manual attacks; flies instantly, lingers
+// briefly so the shot direction reads on screen.
+Arrow_Tracer :: struct {
+	from: rl.Vector3,
+	to:   rl.Vector3,
+	life: f32, // seconds remaining
+}
+
+ARROW_TRACER_LIFE :: 0.18
+
 
 // Allocate everything gameplay needs. The network client / scene / player /
 // chat are passed in from main (which owns their lifetimes across state
@@ -137,6 +155,8 @@ init :: proc(
 	state.status = .PLAYING
 	state.initialized = true
 	state.was_connected = true
+	state.auto_attack_active = false
+	state.arrows = make([dynamic]Arrow_Tracer)
 	state.last_move_send_ms = sys.now_ms()
 	state.clock_ms = sys.now_ms()
 	init_menus()
@@ -149,6 +169,9 @@ shutdown :: proc() {
 	state.status = .IDLE
 	state.chat_focused = false
 	state.chat_len = 0
+	state.auto_attack_active = false
+	clear(&state.arrows)
+	delete(state.arrows)
 }
 
 // Called every frame from main. dt is seconds.
@@ -165,6 +188,8 @@ update :: proc(dt: f32) -> (requested: sys.App_State, has_request: bool) {
 		state.was_connected = true
 		sys.net_log("gameplay: reconnected, clearing stale scene entities")
 		sys.scene_clear(state.scene)
+		clear(&state.ctx.aoe_zones)
+		state.ctx.local_song.active = false
 		state.ctx.zone_loaded = false
 		state.ctx.clock_synced = false
 		if sys.has_auth_credentials(state.net) {
@@ -190,6 +215,7 @@ update :: proc(dt: f32) -> (requested: sys.App_State, has_request: bool) {
 	//    for a Priest/Cleric/Enchanter revive). If the player disconnects
 	//    while dead, they reconnect dead in the same place.
 	if state.player.is_dead {
+		state.auto_attack_active = false
 		p := state.player
 		if !p.respawn_sent {
 			mouse := rl.GetMousePosition()
@@ -254,6 +280,8 @@ update :: proc(dt: f32) -> (requested: sys.App_State, has_request: bool) {
 	tick_notifications(dt)
 	tick_floating(dt)
 	tick_cast(dt)
+	tick_arrows(dt)
+	tick_aoe_zones()
 
 	// 10. Camera follow.
 	sys.update_camera(dt, state.player, cursor_over_ui())
@@ -296,6 +324,7 @@ update :: proc(dt: f32) -> (requested: sys.App_State, has_request: bool) {
 update_timers :: proc(dt: f32) {
 	tick_notifications(dt)
 	tick_floating(dt)
+	tick_aoe_zones()
 	ppos := [3]f32{state.player.position.x, state.player.position.y, state.player.position.z}
 	sys.update(state.scene, dt, f64(rl.GetTime()), ppos, int(rl.GetFPS()))
 	sys.update_camera(dt, state.player, cursor_over_ui())
@@ -387,7 +416,13 @@ apply_escape :: proc() {
 		return
 	}
 
-	// 3. Clear target.
+	// 3. Cancel auto-attack.
+	if state.auto_attack_active {
+		state.auto_attack_active = false
+		return
+	}
+
+	// 4. Clear target.
 	if state.player.target_id != sys.INVALID_ENTITY {
 		state.scene.target_id = sys.INVALID_ENTITY
 		state.player.target_id = sys.INVALID_ENTITY
@@ -397,7 +432,7 @@ apply_escape :: proc() {
 		return
 	}
 
-	// 4. Toggle system menu.
+	// 5. Toggle system menu.
 	if state.system_menu.open {
 		ui.menu_close(&state.system_menu)
 	} else {
@@ -450,6 +485,7 @@ send_player_move :: proc() {
 	pos_fields[1] = sys.JSON_Field{"y", sys.json_float(state.player.position.y)}
 	pos_fields[2] = sys.JSON_Field{"z", sys.json_float(state.player.position.z)}
 	pos := sys.build_object(pos_fields[:])
+	defer free(pos) // shell node only; its map is freed via send_object's free_value
 
 	// rotation as a quaternion facing yaw (Y-axis only).
 	q := yaw_to_quat(state.player.yaw)
@@ -460,6 +496,7 @@ send_player_move :: proc() {
 	rot_fields[2] = sys.JSON_Field{"z", sys.json_float(q[2])}
 	rot_fields[3] = sys.JSON_Field{"w", sys.json_float(q[3])}
 	rot := sys.build_object(rot_fields[:])
+	defer free(rot) // shell node only; its map is freed via send_object's free_value
 
 	fields := make([dynamic]sys.JSON_Field, 2)
 	defer delete(fields)
@@ -566,6 +603,33 @@ tick_floating :: proc(dt: f32) {
 tick_cast :: proc(dt: f32) {
 	if state.player.casting.active {
 		state.player.casting.elapsed += f64(dt * 1000.0)
+	}
+}
+
+tick_arrows :: proc(dt: f32) {
+	i := 0
+	for i < len(state.arrows) {
+		state.arrows[i].life -= dt
+		if state.arrows[i].life <= 0 {
+			delete_at_index(&state.arrows, i)
+		} else {
+			i += 1
+		}
+	}
+}
+
+// Drop expired ground AOE telegraphs. The server also sends AOE_DESPAWN, but
+// pruning on expiry keeps the list bounded even if a despawn is missed.
+tick_aoe_zones :: proc() {
+	if state.ctx == nil do return
+	t := f64(rl.GetTime())
+	i := 0
+	for i < len(state.ctx.aoe_zones) {
+		if t >= state.ctx.aoe_zones[i].expire_at_s {
+			delete_at_index(&state.ctx.aoe_zones, i)
+		} else {
+			i += 1
+		}
 	}
 }
 

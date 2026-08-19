@@ -35,10 +35,10 @@ ui_draw_button :: proc(btn: UI_Button) {
 	rl.DrawRectangleLinesEx(btn.rect, 2, rl.BLACK)
 
 	// Calculate centered text position
-	text_width := rl.MeasureText(strings.clone_to_cstring(btn.text), btn.font_size)
+	text_width := rl.MeasureText(strings.clone_to_cstring(btn.text, context.temp_allocator), btn.font_size)
 	text_x := i32(btn.rect.x + (btn.rect.width - f32(text_width)) / 2.0)
 	text_y := i32(btn.rect.y + (btn.rect.height - f32(btn.font_size)) / 2.0)
 
 	// Draw the text
-	rl.DrawText(strings.clone_to_cstring(btn.text), text_x, text_y, btn.font_size, btn.text_color)
+	rl.DrawText(strings.clone_to_cstring(btn.text, context.temp_allocator), text_x, text_y, btn.font_size, btn.text_color)
 }

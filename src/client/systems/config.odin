@@ -60,6 +60,7 @@ NETWORK_CONFIG :: struct {
 	MOVEMENT_SEND_RATE_MS:    f64, // min gap between PLAYER_MOVE sends
 	POLLING_INTERVAL_MS:      f64, // long-poll cycle duration (ms)
 	POLLING_TIMEOUT_MS:       f64, // how long to wait per poll before retrying
+	MAX_PENDING_SEND:         int, // cap on packets buffered while disconnected
 }
 
 NET :: NETWORK_CONFIG {
@@ -72,6 +73,7 @@ NET :: NETWORK_CONFIG {
 	MOVEMENT_SEND_RATE_MS    = 50.0,
 	POLLING_INTERVAL_MS      = 20000.0,
 	POLLING_TIMEOUT_MS       = 20000.0,
+	MAX_PENDING_SEND         = 128,
 }
 
 // Culling thresholds live in culling.odin (declared there first).

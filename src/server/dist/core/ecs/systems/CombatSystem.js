@@ -3,6 +3,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.CombatSystem = void 0;
 const EntityManager_1 = require("../EntityManager");
 const shared_1 = require("@dust-saga/shared");
+const LineOfSight_1 = require("../../world/LineOfSight");
 class CombatSystem extends EntityManager_1.System {
     constructor(entityManager) {
         super(entityManager);
@@ -75,6 +76,20 @@ class CombatSystem extends EntityManager_1.System {
         if (!def?.weaponType)
             return false;
         return shared_1.RANGED_WEAPON_TYPES.has(def.weaponType);
+    }
+    // Melee manual attacks sweep a cone; ranged manual attacks fly a thin
+    // corridor (an arrow). Shared filter for manual-attack candidate targets.
+    isAlongManualAttackLine(isRanged, dx, dz, dist, facingX, facingZ, halfCone, arrowHalfWidthSq) {
+        if (isRanged) {
+            const projection = dx * facingX + dz * facingZ;
+            if (projection <= 0)
+                return false;
+            const perpX = dx - projection * facingX;
+            const perpZ = dz - projection * facingZ;
+            return perpX * perpX + perpZ * perpZ <= arrowHalfWidthSq;
+        }
+        const dot = (dx * facingX + dz * facingZ) / dist;
+        return dot >= Math.cos(halfCone);
     }
     hasExtraHit(attacker) {
         return attacker.statusEffects?.some(e => e.buffData?.extraHit) || false;
@@ -167,7 +182,7 @@ class CombatSystem extends EntityManager_1.System {
         }
         return results;
     }
-    processManualAttack(attacker, facingAngle, enemies, players) {
+    processManualAttack(attacker, facingAngle, enemies, players, zoneId) {
         const now = Date.now();
         if (now - attacker.lastManualAttackTime < shared_1.GAME_CONFIG.MANUAL_ATTACK_COOLDOWN)
             return [];
@@ -177,6 +192,7 @@ class CombatSystem extends EntityManager_1.System {
         const halfCone = shared_1.COMBAT_CONFIG.MANUAL_ATTACK_CONE_ANGLE / 2;
         const facingX = Math.sin(facingAngle);
         const facingZ = Math.cos(facingAngle);
+        const arrowHalfWidthSq = shared_1.COMBAT_CONFIG.MANUAL_ATTACK_ARROW_HALF_WIDTH * shared_1.COMBAT_CONFIG.MANUAL_ATTACK_ARROW_HALF_WIDTH;
         const candidates = [];
         for (const [id, enemy] of enemies) {
             if (enemy.state === 'dead')
@@ -186,8 +202,7 @@ class CombatSystem extends EntityManager_1.System {
             const dist = Math.sqrt(dx * dx + dz * dz);
             if (dist > range)
                 continue;
-            const dot = (dx * facingX + dz * facingZ) / dist;
-            if (dot < Math.cos(halfCone))
+            if (!this.isAlongManualAttackLine(isRanged, dx, dz, dist, facingX, facingZ, halfCone, arrowHalfWidthSq))
                 continue;
             const def = (0, shared_1.getEnemyDefinition)(enemy.enemyType);
             candidates.push({ id, position: enemy.position, defense: def?.defense || 0, isEnemy: true, enemyRef: enemy, playerRef: null });
@@ -200,18 +215,35 @@ class CombatSystem extends EntityManager_1.System {
             const dist = Math.sqrt(dx * dx + dz * dz);
             if (dist > range)
                 continue;
-            const dot = (dx * facingX + dz * facingZ) / dist;
-            if (dot < Math.cos(halfCone))
+            if (!this.isAlongManualAttackLine(isRanged, dx, dz, dist, facingX, facingZ, halfCone, arrowHalfWidthSq))
                 continue;
             const pe = player.effectiveStats ?? (0, shared_1.getEffectiveStats)(player.stats, player.statPoints, player.statusEffects || []);
             candidates.push({ id, position: player.position, defense: pe.defense, isEnemy: false, enemyRef: null, playerRef: player });
         }
-        candidates.sort((a, b) => {
-            const da = Math.sqrt((a.position.x - attacker.position.x) ** 2 + (a.position.z - attacker.position.z) ** 2);
-            const db = Math.sqrt((b.position.x - attacker.position.x) ** 2 + (b.position.z - attacker.position.z) ** 2);
-            return da - db;
-        });
-        const hitTargets = candidates.slice(0, shared_1.COMBAT_CONFIG.MANUAL_ATTACK_MAX_TARGETS);
+        // Melee: conal swing — nearest targets first, damage falls off per target.
+        // Ranged: a single arrow — it hits the first thing on its line, and is
+        // eaten by terrain if an obstacle blocks the path to that target.
+        let hitTargets;
+        if (isRanged) {
+            candidates.sort((a, b) => {
+                const pa = (a.position.x - attacker.position.x) * facingX + (a.position.z - attacker.position.z) * facingZ;
+                const pb = (b.position.x - attacker.position.x) * facingX + (b.position.z - attacker.position.z) * facingZ;
+                return pa - pb;
+            });
+            hitTargets = [];
+            const first = candidates[0];
+            if (first && (0, LineOfSight_1.hasLineOfSight)(zoneId, attacker.position, first.position)) {
+                hitTargets.push(first);
+            }
+        }
+        else {
+            candidates.sort((a, b) => {
+                const da = Math.sqrt((a.position.x - attacker.position.x) ** 2 + (a.position.z - attacker.position.z) ** 2);
+                const db = Math.sqrt((b.position.x - attacker.position.x) ** 2 + (b.position.z - attacker.position.z) ** 2);
+                return da - db;
+            });
+            hitTargets = candidates.slice(0, shared_1.COMBAT_CONFIG.MANUAL_ATTACK_MAX_TARGETS);
+        }
         const effective = attacker.effectiveStats ?? (0, shared_1.getEffectiveStats)(attacker.stats, attacker.statPoints, attacker.statusEffects || []);
         const baseStats = attacker.baseStats || { STA: 0, STR: 0, AGI: 0, DEX: 0, SPI: 0, INT: 0 };
         const totalSPI = (attacker.statPoints.SPI || 0) + (baseStats.SPI || 0);

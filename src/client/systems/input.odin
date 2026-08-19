@@ -5,9 +5,10 @@ import "core:math/linalg"
 import rl "vendor:raylib"
 
 // Mirrors packages/client/src/core/input/InputManager.ts:
-//   WASD move, Shift sprint, F auto-attack, Space manual attack, E interact,
-//   digits 0-0 = skill bar slots, Tab cycle target, Enter toggle chat, Esc.
-// When chat is focused or a dialog is active, gameplay keys are suppressed.
+//   WASD move, Shift sprint, F toggle auto-attack, Space manual attack,
+//   E interact, digits 0-0 = skill bar slots, Tab cycle target, Enter toggle
+//   chat, Esc. When chat is focused or a dialog is active, gameplay keys are
+//   suppressed.
 
 Input_State :: struct {
 	// Movement (camera-relative, normalized).
@@ -17,8 +18,8 @@ Input_State :: struct {
 	sprint:              bool,
 
 	// Combat / interaction edge triggers (true for the frame the key went down).
-	attack:              bool, // F  — auto-attack request
-	manual_attack:       bool, // Space — cone attack
+	attack:              bool, // F  — toggle auto-attack state
+	manual_attack:       bool, // Space — manual attack toward the cursor
 	interact:            bool, // E
 	cycle_target:        int, // -1 (prev), +1 (next), 0 none  (Tab / Shift+Tab)
 	toggle_rest:         bool, // R
@@ -99,7 +100,7 @@ poll_input :: proc(chat_focused: bool, p: ^Local_Player, dt: f32) -> Input_State
 	state.sprint = bind_down(.Sprint)
 
 	// --- combat / interaction ---
-	state.attack = bind_down(.Attack)
+	state.attack = bind_pressed(.Attack)
 	state.manual_attack = bind_pressed(.Manual_Attack)
 	state.interact = bind_pressed(.Interact)
 	state.toggle_rest = bind_pressed(.Toggle_Rest)
@@ -186,6 +187,7 @@ update_camera :: proc(dt: f32, p: ^Local_Player, block_zoom: bool) {
 
 	if rl.IsMouseButtonReleased(.RIGHT) {
 		rl.EnableCursor() // free the cursor
+		rl.HideCursor()   // ...but keep the OS cursor hidden (custom cursor is drawn in main)
 	}
 
 	// Scroll-wheel zoom: GetMouseWheelMove() is positive scrolling up (toward

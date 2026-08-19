@@ -1,5 +1,6 @@
 import { EntityManager, System } from '../EntityManager';
 import { GAME_CONFIG, COMBAT_CONFIG, PlayerSession, EnemyInstance, DamageInfo, getEnemyDefinition, applyRacialCritChance, processRacialOnDamage, getEffectiveStats, calculateWeaponElementalDamage, calculateAccuracy, calculateHitChance, StatusEffectType, RANGED_WEAPON_TYPES } from '@dust-saga/shared';
+import { hasLineOfSight } from '../../world/LineOfSight';
 import type { ItemSystem } from '../../../systems/ItemSystem';
 
 interface ConeTarget {
@@ -106,6 +107,29 @@ export class CombatSystem extends System {
     const def = this.itemSys.getItemDefinition(weapon.itemId);
     if (!def?.weaponType) return false;
     return RANGED_WEAPON_TYPES.has(def.weaponType);
+  }
+
+  // Melee manual attacks sweep a cone; ranged manual attacks fly a thin
+  // corridor (an arrow). Shared filter for manual-attack candidate targets.
+  private isAlongManualAttackLine(
+    isRanged: boolean,
+    dx: number,
+    dz: number,
+    dist: number,
+    facingX: number,
+    facingZ: number,
+    halfCone: number,
+    arrowHalfWidthSq: number
+  ): boolean {
+    if (isRanged) {
+      const projection = dx * facingX + dz * facingZ;
+      if (projection <= 0) return false;
+      const perpX = dx - projection * facingX;
+      const perpZ = dz - projection * facingZ;
+      return perpX * perpX + perpZ * perpZ <= arrowHalfWidthSq;
+    }
+    const dot = (dx * facingX + dz * facingZ) / dist;
+    return dot >= Math.cos(halfCone);
   }
 
   private hasExtraHit(attacker: PlayerSession): boolean {
@@ -225,7 +249,8 @@ export class CombatSystem extends System {
     attacker: PlayerSession,
     facingAngle: number,
     enemies: Map<string, EnemyInstance>,
-    players: Map<string, PlayerSession>
+    players: Map<string, PlayerSession>,
+    zoneId: string
   ): DamageInfo[] {
     const now = Date.now();
     if (now - attacker.lastManualAttackTime < GAME_CONFIG.MANUAL_ATTACK_COOLDOWN) return [];
@@ -236,6 +261,7 @@ export class CombatSystem extends System {
     const halfCone = COMBAT_CONFIG.MANUAL_ATTACK_CONE_ANGLE / 2;
     const facingX = Math.sin(facingAngle);
     const facingZ = Math.cos(facingAngle);
+    const arrowHalfWidthSq = COMBAT_CONFIG.MANUAL_ATTACK_ARROW_HALF_WIDTH * COMBAT_CONFIG.MANUAL_ATTACK_ARROW_HALF_WIDTH;
 
     const candidates: ConeTarget[] = [];
 
@@ -245,8 +271,7 @@ export class CombatSystem extends System {
       const dz = enemy.position.z - attacker.position.z;
       const dist = Math.sqrt(dx * dx + dz * dz);
       if (dist > range) continue;
-      const dot = (dx * facingX + dz * facingZ) / dist;
-      if (dot < Math.cos(halfCone)) continue;
+      if (!this.isAlongManualAttackLine(isRanged, dx, dz, dist, facingX, facingZ, halfCone, arrowHalfWidthSq)) continue;
       const def = getEnemyDefinition(enemy.enemyType);
       candidates.push({ id, position: enemy.position, defense: def?.defense || 0, isEnemy: true, enemyRef: enemy, playerRef: null });
     }
@@ -257,19 +282,34 @@ export class CombatSystem extends System {
       const dz = player.position.z - attacker.position.z;
       const dist = Math.sqrt(dx * dx + dz * dz);
       if (dist > range) continue;
-      const dot = (dx * facingX + dz * facingZ) / dist;
-      if (dot < Math.cos(halfCone)) continue;
+      if (!this.isAlongManualAttackLine(isRanged, dx, dz, dist, facingX, facingZ, halfCone, arrowHalfWidthSq)) continue;
       const pe = player.effectiveStats ?? getEffectiveStats(player.stats, player.statPoints, player.statusEffects || []);
       candidates.push({ id, position: player.position, defense: pe.defense, isEnemy: false, enemyRef: null, playerRef: player });
     }
 
-    candidates.sort((a, b) => {
-      const da = Math.sqrt((a.position.x - attacker.position.x) ** 2 + (a.position.z - attacker.position.z) ** 2);
-      const db = Math.sqrt((b.position.x - attacker.position.x) ** 2 + (b.position.z - attacker.position.z) ** 2);
-      return da - db;
-    });
-
-    const hitTargets = candidates.slice(0, COMBAT_CONFIG.MANUAL_ATTACK_MAX_TARGETS);
+    // Melee: conal swing — nearest targets first, damage falls off per target.
+    // Ranged: a single arrow — it hits the first thing on its line, and is
+    // eaten by terrain if an obstacle blocks the path to that target.
+    let hitTargets: ConeTarget[];
+    if (isRanged) {
+      candidates.sort((a, b) => {
+        const pa = (a.position.x - attacker.position.x) * facingX + (a.position.z - attacker.position.z) * facingZ;
+        const pb = (b.position.x - attacker.position.x) * facingX + (b.position.z - attacker.position.z) * facingZ;
+        return pa - pb;
+      });
+      hitTargets = [];
+      const first = candidates[0];
+      if (first && hasLineOfSight(zoneId, attacker.position, first.position)) {
+        hitTargets.push(first);
+      }
+    } else {
+      candidates.sort((a, b) => {
+        const da = Math.sqrt((a.position.x - attacker.position.x) ** 2 + (a.position.z - attacker.position.z) ** 2);
+        const db = Math.sqrt((b.position.x - attacker.position.x) ** 2 + (b.position.z - attacker.position.z) ** 2);
+        return da - db;
+      });
+      hitTargets = candidates.slice(0, COMBAT_CONFIG.MANUAL_ATTACK_MAX_TARGETS);
+    }
 
     const effective = attacker.effectiveStats ?? getEffectiveStats(attacker.stats, attacker.statPoints, attacker.statusEffects || []);
     const baseStats = attacker.baseStats || { STA: 0, STR: 0, AGI: 0, DEX: 0, SPI: 0, INT: 0 };

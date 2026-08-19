@@ -260,9 +260,12 @@ new_network_client :: proc(host: string, port: int) -> ^Network_Client {
 destroy_network_client :: proc(nc: ^Network_Client) {
 	disconnect(nc)
 	close_polling_socket(nc)
+	for &p in nc.pending_send do free_owned_value(p.data)
+	for &p in nc.inbound do free_owned_value(p.data)
 	delete(nc.pending_send)
 	delete(nc.inbound)
 	delete(nc.recv_buf)
+	delete(nc.out_buf)
 	free(nc)
 }
 
@@ -397,6 +400,9 @@ get_auth_character_id :: proc(nc: ^Network_Client) -> string {
 // handshake completes (like the TS client's pendingPackets).
 send :: proc(nc: ^Network_Client, ptype: Packet_Type, data: ^JSON_Value = nil) {
 	if !is_connected(nc) {
+		// The movement tick keeps sending while the server is unreachable;
+		// without a cap the buffered clones would grow without bound.
+		if len(nc.pending_send) >= NET.MAX_PENDING_SEND do return
 		owned: ^JSON_Value = nil
 		if data != nil {
 			owned = clone_value(data^)
@@ -502,6 +508,7 @@ send_skill_use_ground :: proc(nc: ^Network_Client, skill_name: string, x, y, z: 
 	pos_fields[1] = JSON_Field{"y", json_float(y)}
 	pos_fields[2] = JSON_Field{"z", json_float(z)}
 	pos := build_object(pos_fields[:])
+	defer free(pos) // shell node only; its map is freed via send_object's free_value
 
 	fields := make([dynamic]JSON_Field, 2)
 	defer delete(fields)
@@ -667,7 +674,7 @@ poll_inbound :: proc(nc: ^Network_Client) -> []Packet {
 
 free_packet :: proc(p: ^Packet) {
 	if p.data != nil {
-		free_value(p.data)
+		free_owned_value(p.data)
 		p.data = nil
 	}
 }
@@ -737,15 +744,17 @@ build_object :: proc(fields: []JSON_Field) -> ^JSON_Value {
 	return v
 }
 
-// Recursively free a heap-owned json.Value tree produced by build_object /
-// clone_value. Ownership rule: the ONLY things we `free`/`delete` here are the
-// containers WE allocated with make() (map / dynamic) and the single heap node
-// from new(). We must NOT free individual string values: those are either
+// Recursively free a json.Value tree produced by build_object. Ownership rule:
+// the ONLY things we `free`/`delete` here are the containers WE allocated with
+// make() (map / dynamic) and the single heap node from new(). We must NOT free
+// individual string values: those are either
 //   (a) string literals the program passed in (e.g. json.String("username")) —
 //       not heap-allocated by us, freeing them is the invalid-pointer crash; or
 //   (b) strings owned by json.parse's allocator, which the container's own
 //       delete() already releases. Manually freeing strings double-frees / frees
 //       literals → SIGABRT. So: containers + the top node only.
+// For trees produced by clone_value (which owns every string byte), use
+// free_owned_value instead.
 free_value :: proc(v: ^JSON_Value) {
 	if v == nil do return
 	free_value_value(v^)
@@ -773,12 +782,42 @@ free_value_value :: proc(v: JSON_Value) {
 	}
 }
 
+// Recursively free a json.Value tree produced by clone_value. Unlike
+// build_object trees, clone trees own EVERY string byte (values and map keys
+// were deep-cloned), so all of it is released here.
+free_owned_value :: proc(v: ^JSON_Value) {
+	if v == nil do return
+	free_owned_value_value(v^)
+	free(v)
+}
+
+free_owned_value_value :: proc(v: JSON_Value) {
+	#partial switch e in v {
+	case json.Object:
+		m := as_map(JSON_Object(e))
+		for key, val in m {
+			delete(key)
+			free_owned_value_value(val)
+		}
+		delete(m)
+	case json.Array:
+		a := as_dyn(JSON_Array(e))
+		for i in 0 ..< len(a) {
+			free_owned_value_value(a[i])
+		}
+		delete(a)
+	case json.String:
+		delete(as_string(e))
+	case:
+	}
+}
+
 flush_pending :: proc(nc: ^Network_Client) {
 	if !is_connected(nc) do return
 	for &p in nc.pending_send {
 		flush_one(nc, p)
 		if p.data != nil {
-			free_value(p.data)
+			free_owned_value(p.data)
 			p.data = nil
 		}
 	}
@@ -813,7 +852,10 @@ flush_one :: proc(nc: ^Network_Client, p: Packet) {
 
 	// Strip the excessive float precision to match JS JSON.stringify
 	// e.g. "-50.0000000000000000" becomes "-50.0"
-	frame, _ := strings.replace_all(raw_frame, ".0000000000000000", ".0")
+	// replace_all returns the input unchanged when nothing matched (raw_frame
+	// lives in the frame arena), so only free when it actually allocated.
+	frame, did_alloc := strings.replace_all(raw_frame, ".0000000000000000", ".0")
+	defer if did_alloc do delete(frame)
 	DEBUG_PRINTFLN("SEND frame: %s", frame)
 
 	if nc.transport == .POLLING {
@@ -860,7 +902,12 @@ clone_value_value :: proc(v: JSON_Value) -> JSON_Value {
 		// Reserve capacity to prevent reallocations
 		reserve(&m, len(src))
 		for key, val in src {
-			m[key] = clone_value_value(val)
+			// Odin maps store string headers, not bytes: a borrowed key would
+			// dangle once the source tree (e.g. the inbound parse tree) is
+			// freed, so the clone must own its keys too.
+			key_owned := make([]u8, len(key))
+			copy(key_owned, key)
+			m[string(key_owned)] = clone_value_value(val)
 		}
 		return json.Object(m)
 

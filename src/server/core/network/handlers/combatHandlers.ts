@@ -133,7 +133,8 @@ function handleManualAttack(ctx: NetworkContext, socket: Socket, data: any): voi
     session,
     data.facingAngle,
     zoneEnemies,
-    zonePlayerBuf
+    zonePlayerBuf,
+    session.zoneId
   ).filter((r: any) => !ctx.state.players.has(r.targetId) || r.targetId === characterId || !ctx.isPartyMember(characterId, r.targetId));
 
   for (const info of results) {

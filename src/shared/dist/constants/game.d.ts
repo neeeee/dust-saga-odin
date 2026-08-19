@@ -30,6 +30,7 @@ export declare const COMBAT_CONFIG: {
     readonly MANUAL_ATTACK_CONE_ANGLE: number;
     readonly MANUAL_ATTACK_MAX_TARGETS: 5;
     readonly MANUAL_ATTACK_FALLOFF: 0.8;
+    readonly MANUAL_ATTACK_ARROW_HALF_WIDTH: 0.9;
     readonly SKILL_COOLDOWN: 3000;
     readonly DAMAGE_REDUCTION_PER_DEFENSE: 0.02;
     readonly MIN_DAMAGE: 1;

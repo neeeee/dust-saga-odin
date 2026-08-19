@@ -3,6 +3,7 @@ package systems
 import "core:encoding/json"
 import "core:fmt"
 import "core:os"
+import "core:strings"
 import rl "vendor:raylib"
 
 // Loads a zone's map JSON (src/client/assets/maps/<zoneId>.json) into a
@@ -12,10 +13,10 @@ import rl "vendor:raylib"
 MAPS_DIR :: "assets/maps"
 
 // Load `assets/maps/<zone_id>.json`. Returns a freshly-allocated, parsed
-// Zone_Definition (loaded=false on any failure). Caller owns it.
+// Zone_Definition (loaded=false on any failure). Caller owns it; every string
+// field is a heap clone (zone_destroy frees them).
 load_zone_map :: proc(zone_id: string) -> ^Zone_Definition {
 	z := zone_init()
-	z.id = zone_id
 
 	// fmt.tprintf allocates via context.temp_allocator — never delete() it.
 	path := fmt.tprintf("%s/%s.json", MAPS_DIR, zone_id)
@@ -24,7 +25,8 @@ load_zone_map :: proc(zone_id: string) -> ^Zone_Definition {
 	if err != nil {
 		// Fall back to a procedural flat zone so the client still runs.
 		z.loaded = false
-		z.name = "Unknown Zone"
+		z.id, _ = strings.clone(zone_id)
+		z.name, _ = strings.clone("Unknown Zone")
 		z.ground = {
 			color            = {0.35, 0.55, 0.25},
 			size             = 120,
@@ -42,8 +44,13 @@ load_zone_map :: proc(zone_id: string) -> ^Zone_Definition {
 	root_v, perr := json.parse(data)
 	if perr != .None {
 		z.loaded = false
+		z.id, _ = strings.clone(zone_id)
 		return z
 	}
+	// The parse tree is heap-backed (json.parse clones every key/string with
+	// context.allocator); all extraction below copies out via get_string_owned,
+	// so the tree can be released when this scope ends.
+	defer json.destroy_value(root_v)
 	root := obj_of(root_v)
 	if is_null(root_v) {
 		z.loaded = false

@@ -2,13 +2,13 @@ package main
 
 import "core:fmt"
 import "core:mem"
-import rl "vendor:raylib"
 import sys "systems"
+import rl "vendor:raylib"
 
+import character_select "scenes/character_select"
 import gameplay "scenes/gameplay"
 import login "scenes/login"
 import title_screen "scenes/title_screen"
-import character_select "scenes/character_select"
 
 // Main entry point and top-level state machine:
 //   TITLE → LOGIN → CHARACTER_SELECT → GAMEPLAY
@@ -26,6 +26,15 @@ main :: proc() {
 	rl.SetTargetFPS(60)
 	rl.SetExitKey(.KEY_NULL) // we handle ESC ourselves
 	defer rl.CloseWindow()
+
+	// Custom image cursor: hide the OS cursor everywhere and draw this
+	// texture at the mouse position, topmost, every frame.
+	CURSOR_PATH :: "assets/images/cursor.png"
+	CURSOR_SIZE :: 64.0
+	cursor_tex := rl.LoadTexture(CURSOR_PATH)
+	defer rl.UnloadTexture(cursor_tex)
+	rl.SetTextureFilter(cursor_tex, .BILINEAR)
+	rl.HideCursor()
 
 	frame_arena: mem.Dynamic_Arena
 	mem.dynamic_arena_init(&frame_arena)
@@ -116,6 +125,16 @@ main :: proc() {
 			rl.DrawText("Unknown state", 20, 20, 20, rl.RED)
 		}
 		rl.DrawFPS(10, 690)
+
+		// Custom cursor, drawn last so it sits above every scene's UI.
+		// Skipped during right-drag mouselook — DisableCursor locks the
+		// pointer at the window center there, so nothing should be drawn.
+		if cursor_tex.id > 0 && !rl.IsMouseButtonDown(.RIGHT) {
+			mouse := rl.GetMousePosition()
+			src := rl.Rectangle{0, 0, f32(cursor_tex.width), f32(cursor_tex.height)}
+			dst := rl.Rectangle{mouse.x, mouse.y, CURSOR_SIZE, CURSOR_SIZE}
+			rl.DrawTexturePro(cursor_tex, src, dst, {}, 0, rl.WHITE)
+		}
 		rl.EndDrawing()
 
 		// Reset the frame arena — all per-frame temp allocations are freed here.
