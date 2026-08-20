@@ -86,6 +86,7 @@ Object.defineProperty(exports, "DESIGN_JOB_IDS", { enumerable: true, get: functi
 Object.defineProperty(exports, "HOT_JOB_CONFIG", { enumerable: true, get: function () { return jobSkillValues_1.HOT_JOB_CONFIG; } });
 __exportStar(require("./types/skillBar"), exports);
 __exportStar(require("./types/party"), exports);
+__exportStar(require("./types/guild"), exports);
 __exportStar(require("./types/trade"), exports);
 __exportStar(require("./types/summon"), exports);
 __exportStar(require("./utils/proficiency"), exports);

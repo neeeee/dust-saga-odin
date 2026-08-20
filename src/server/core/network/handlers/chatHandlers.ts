@@ -66,6 +66,38 @@ function handleChatMessage(ctx: NetworkContext, socket: Socket, data: any): void
     }
   };
 
+  // Party chat routes to party members only (any zone, any shard via relay).
+  if (channel === 'party') {
+    const party = ctx.partySys.getPartyForMember(characterId);
+    if (!party) {
+      ctx.sendToPlayer(characterId, {
+        type: PacketType.CHAT_MESSAGE,
+        timestamp: Date.now(),
+        data: { sender: 'System', message: 'You are not in a party.', channel: 'system' }
+      });
+      return;
+    }
+    for (const m of party.members) {
+      ctx.sendToPlayer(m.characterId, packet);
+    }
+    return;
+  }
+
+  // Guild chat routes to online guild members.
+  if (channel === 'guild') {
+    const guild = ctx.guildSys.getGuildForMember(characterId);
+    if (!guild) {
+      ctx.sendToPlayer(characterId, {
+        type: PacketType.CHAT_MESSAGE,
+        timestamp: Date.now(),
+        data: { sender: 'System', message: 'You are not in a guild.', channel: 'system' }
+      });
+      return;
+    }
+    ctx.guildSys.relayPacket(guild.guildId, packet);
+    return;
+  }
+
   if (channel === 'global') {
     (ctx as any).io.emit('packet', packet);
   } else {

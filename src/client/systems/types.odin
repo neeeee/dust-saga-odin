@@ -170,6 +170,8 @@ Chat_Channel :: enum u8 {
 	ZONE,
 	PARTY,
 	SYSTEM,
+	WHISPER,
+	GUILD,
 }
 
 chat_channel_from_string :: proc "contextless" (s: string) -> Chat_Channel {
@@ -180,6 +182,10 @@ chat_channel_from_string :: proc "contextless" (s: string) -> Chat_Channel {
 		return .PARTY
 	case "system":
 		return .SYSTEM
+	case "whisper":
+		return .WHISPER
+	case "guild":
+		return .GUILD
 	case:
 		return .ZONE
 	}
@@ -193,6 +199,10 @@ chat_channel_color :: proc "contextless" (c: Chat_Channel) -> rl.Color {
 		return {120, 255, 150, 255}
 	case .SYSTEM:
 		return {255, 220, 120, 255}
+	case .WHISPER:
+		return {230, 150, 255, 255}
+	case .GUILD:
+		return {130, 220, 210, 255}
 	case:
 		return {220, 220, 220, 255}
 	}
@@ -206,6 +216,10 @@ chat_channel_name :: proc "contextless" (c: Chat_Channel) -> string {
 		return "party"
 	case .SYSTEM:
 		return "system"
+	case .WHISPER:
+		return "whisper"
+	case .GUILD:
+		return "guild"
 	case:
 		return "zone"
 	}

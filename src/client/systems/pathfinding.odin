@@ -16,7 +16,11 @@ build_collision_grid :: proc(zone: ^Zone_Definition) {
 	rows := cols
 	total := cols * rows
 
+	// delete() frees the backing but leaves the header dangling (stale cap),
+	// which would let the resize below reuse the freed block when the zone
+	// reloads at the same size — nil the header so resize allocates fresh.
 	delete(zone.collision_grid)
+	zone.collision_grid = nil
 	resize(&zone.collision_grid, total)
 	for i in 0 ..< total do zone.collision_grid[i] = false
 
@@ -279,7 +283,14 @@ astar :: proc(zone: ^Zone_Definition, sc, sr, ec, er: int) -> [dynamic][2]int {
 // ── path smoothing (line-of-sight shortcutting) ────────────────────────────
 
 smooth_path :: proc(zone: ^Zone_Definition, in_path: [dynamic][2]int) -> [dynamic][2]int {
-	if len(in_path) <= 2 do return in_path
+	if len(in_path) <= 2 {
+		// Never return the input array itself: the caller deletes BOTH its own
+		// copy and the returned one, so an aliased short path would be freed
+		// twice (free(): invalid pointer on clicks within a cell of the player).
+		out: [dynamic][2]int
+		append(&out, ..in_path[:])
+		return out
+	}
 
 	result: [dynamic][2]int
 	append(&result, in_path[0])

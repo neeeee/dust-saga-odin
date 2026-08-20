@@ -46,15 +46,343 @@ create_skills_menu :: proc() {
 }
 
 create_friends_menu :: proc() {
+	// Content is rebuilt each frame by refresh_friends_menu (live data).
+	state.friends_menu = ui.menu_create("Friends", 400, 200, 350, 400)
+	state.friends_menu.close_on_esc = true
+}
+
+create_guild_menu :: proc() {
+	// Content is rebuilt each frame by refresh_guild_menu (live data).
+	state.guild_menu = ui.menu_create("Guild", 420, 160, 400, 560)
+	state.guild_menu.close_on_esc = true
+}
+
+// Button-id bases for the friends window.
+FRIEND_ROW_BASE :: 9500 // whisper/prefill target
+FRIEND_RM_BASE :: 9600  // remove (two-click confirm)
+FRIEND_ADD_ID :: 9700
+
+// Live friend list: one row per friend (click → whisper), a two-click Remove,
+// and an Add Friend button that explains the /friend command. Rows are only
+// clickable buttons when the list is non-empty.
+refresh_friends_menu :: proc() {
 	m := &state.friends_menu
-	m^ = ui.menu_create("Friends", 400, 200, 350, 400)
-	ui.menu_add_label(m, "Online - 2")
+	if !m.open do return
+	ui.menu_clear(m)
+
+	friends := &state.ctx.friends
+	online := 0
+	for i in 0 ..< len(friends) {
+		if friends[i].online do online += 1
+	}
+	ui.menu_add_label(m, fmt.tprintf("Online — %d/%d", online, len(friends)))
 	ui.menu_add_separator(m)
-	ui.menu_add_button(m, "xLuna      Lv 42")
-	ui.menu_add_button(m, "DustKing   Lv 38")
+
+	if len(friends) == 0 {
+		ui.menu_add_label(m, "No friends yet.")
+		ui.menu_add_label(m, "Use /friend add <name> in chat.")
+	} else {
+		for i in 0 ..< len(friends) {
+			f := &friends[i]
+			name := string(f.name[:f.name_len])
+			status := f.online ? "" : " (offline)"
+			label := fmt.tprintf("%-14s Lv %d%s", name, f.level, status)
+			ui.menu_add_button_id(m, label, FRIEND_ROW_BASE + i)
+			if state.friend_remove_idx == i {
+				ui.menu_add_button_id(m, "Remove? (click again)", FRIEND_RM_BASE + i)
+			} else {
+				ui.menu_add_button_id(m, "Remove", FRIEND_RM_BASE + i)
+			}
+		}
+	}
+
 	ui.menu_add_separator(m)
-	ui.menu_add_button(m, "Add Friend")
-	ui.menu_add_button(m, "Whisper")
+	ui.menu_add_button_id(m, "Add Friend (see chat hint)", FRIEND_ADD_ID)
+	ui.menu_auto_height(m, 480)
+}
+
+handle_friends_menu_clicks :: proc() {
+	m := &state.friends_menu
+	if !m.open do return
+	friends := &state.ctx.friends
+
+	for i in 0 ..< len(m.items) {
+		item := &m.items[i]
+		if item.kind != .BUTTON || !item.clicked do continue
+
+		if item.id == FRIEND_ADD_ID {
+			sys.push_notification(state.ctx, "Type /friend add <name> in chat.", "info")
+			return
+		}
+		if item.id >= FRIEND_RM_BASE {
+			idx := item.id - FRIEND_RM_BASE
+			if idx < 0 || idx >= len(friends) do return
+			if state.friend_remove_idx == idx {
+				f := &friends[idx]
+				sys.send_friend_remove(state.net, string(f.char_id[:f.id_len]))
+				state.friend_remove_idx = -1
+			} else {
+				state.friend_remove_idx = idx
+			}
+			return
+		}
+		if item.id >= FRIEND_ROW_BASE {
+			idx := item.id - FRIEND_ROW_BASE
+			if idx < 0 || idx >= len(friends) do return
+			// Open the chat with "/w <name> " prefilled.
+			f := &friends[idx]
+			name := string(f.name[:f.name_len])
+			prefix := fmt.tprintf("/w %s ", name)
+			n := min(len(prefix), len(state.chat_buf))
+			copy(state.chat_buf[:n], transmute([]u8)prefix)
+			state.chat_len = n
+			state.chat_focused = true
+			return
+		}
+	}
+}
+
+// ── guild window ────────────────────────────────────────────────────────────
+
+// Button-id bases for the guild window. Stride-1000 ranges so member/bank
+// indices can never collide across actions.
+GUILD_MEMBER_BASE   :: 9800  // select member row (+i)
+GUILD_INVITE_ID     :: 9900
+GUILD_LEAVE_ID      :: 9901
+GUILD_DISBAND_ID    :: 9902
+GUILD_GOLD_DEP_ID   :: 9903
+GUILD_GOLD_WD_ID    :: 9904
+GUILD_PROMOTE_BASE  :: 20000 // + member index
+GUILD_DEMOTE_BASE   :: 21000 // + member index
+GUILD_MAKELEAD_BASE :: 22000 // + member index
+GUILD_KICKG_BASE    :: 23000 // + member index
+GUILD_BANK_WD_BASE  :: 24000 // + bank index (withdraw 1)
+GUILD_BANK_DP_BASE  :: 25000 // + inventory index (deposit 1)
+
+// Promote/demote move a member one rank along leader>officer>member>recruit.
+rank_index :: proc(rank: string) -> int {
+	switch rank {
+	case "leader":  return 0
+	case "officer": return 1
+	case "member":  return 2
+	case "":        return 2 // unknown → member
+	case:           return 3 // recruit
+	}
+}
+
+rank_name :: proc(idx: int) -> string {
+	switch idx {
+	case 0: return "leader"
+	case 1: return "officer"
+	case 2: return "member"
+	case:  return "recruit"
+	}
+}
+
+refresh_guild_menu :: proc() {
+	m := &state.guild_menu
+	if !m.open do return
+	ui.menu_clear(m)
+
+	g := &state.ctx.guild
+	if !g.in_guild {
+		ui.menu_add_label(m, "You are not in a guild.")
+		ui.menu_add_label(m, "Create one with /gcreate <name> <tag>")
+		ui.menu_add_label(m, "in chat (3+ char name, 2-6 char tag).")
+		ui.menu_auto_height(m, 560)
+		return
+	}
+
+	xp_pct := g.xp_to_next > 0 ? 100 * g.experience / g.xp_to_next : 0
+	ui.menu_add_label(m, fmt.tprintf("%s [%s]  —  Lv %d (%d%% to %d)",
+		string(g.name[:g.name_len]),
+		string(g.tag[:g.tag_len]),
+		g.level, xp_pct, g.level + 1))
+	if g.motd_len > 0 {
+		ui.menu_add_label(m, fmt.tprintf("MOTD: %s", string(g.motd[:g.motd_len])))
+	} else if g.perms.set_motd {
+		ui.menu_add_label(m, "No MOTD — set with /gmotd <text>")
+	}
+	ui.menu_add_separator(m)
+
+	// Member rows; the selected row exposes rank actions (perm-gated).
+	self_id := sys.character_id_string(state.player)
+	am_leader := sys.matches_name(g.leader_id[:], g.leader_len, self_id)
+	my_rank_idx := rank_index(string(g.my_rank[:g.rank_len]))
+	for i in 0 ..< len(g.members) {
+		mem := &g.members[i]
+		name := string(mem.name[:mem.name_len])
+		status := mem.online ? "" : " (offline)"
+		label := fmt.tprintf("%-14s %-8s Lv %d%s", name, string(mem.rank[:mem.rank_len]), mem.level, status)
+		ui.menu_add_button_id(m, label, GUILD_MEMBER_BASE + i)
+
+		if i == state.guild_member_selected {
+			is_self := sys.matches_name(mem.char_id[:], mem.id_len, self_id)
+			ri := rank_index(string(mem.rank[:mem.rank_len]))
+			// Rank actions: leader always; others need the promote perm and
+			// may only touch members strictly below their own rank.
+			can_touch := am_leader || (g.perms.promote && my_rank_idx < ri)
+			if can_touch && ri > 0 {
+				ui.menu_add_button_id(m, "  Promote", GUILD_PROMOTE_BASE + i)
+			}
+			if can_touch && ri < 3 {
+				ui.menu_add_button_id(m, "  Demote", GUILD_DEMOTE_BASE + i)
+			}
+			if am_leader && !is_self {
+				ui.menu_add_button_id(m, "  Make Leader", GUILD_MAKELEAD_BASE + i)
+			}
+			if g.perms.kick && !is_self && can_touch {
+				ui.menu_add_button_id(m, "  Kick", GUILD_KICKG_BASE + i)
+			}
+		}
+	}
+
+	ui.menu_add_separator(m)
+
+	// Bank: gold + deposit/withdraw + item rows.
+	ui.menu_add_label(m, fmt.tprintf("Bank: %d gold", g.gold))
+	if g.perms.bank_deposit {
+		ui.menu_add_button_id(m, "Deposit 100 gold", GUILD_GOLD_DEP_ID)
+	}
+	if g.perms.bank_withdraw {
+		ui.menu_add_button_id(m, "Withdraw 100 gold", GUILD_GOLD_WD_ID)
+	}
+	if len(g.bank) > 0 {
+		ui.menu_add_label(m, "— Bank items (click: withdraw 1) —")
+		for i in 0 ..< len(g.bank) {
+			b := &g.bank[i]
+			if !g.perms.bank_withdraw {
+				ui.menu_add_label(m, fmt.tprintf("%s x%d",
+					string(b.item_name[:b.name_len]), b.quantity))
+			} else {
+				ui.menu_add_button_id(m, fmt.tprintf("%s x%d",
+					string(b.item_name[:b.name_len]), b.quantity), GUILD_BANK_WD_BASE + i)
+			}
+		}
+	}
+	// Quick-deposit: click an inventory stack to move one into the bank.
+	if g.perms.bank_deposit {
+		ui.menu_add_label(m, "— Deposit from bag (click: deposit 1) —")
+		inv := &state.player.inventory
+		shown := 0
+		for i in 0 ..< len(inv.items) {
+			if shown >= 12 do break
+			it := &inv.items[i]
+			if it.item_id_len == 0 do continue
+			ui.menu_add_button_id(m, fmt.tprintf("%s x%d",
+				sys.item_id_string(it), it.quantity), GUILD_BANK_DP_BASE + i)
+			shown += 1
+		}
+	}
+
+	ui.menu_add_separator(m)
+	if g.perms.invite {
+		ui.menu_add_button_id(m, "Invite Target", GUILD_INVITE_ID)
+	}
+	ui.menu_add_button_id(m, "Leave Guild", GUILD_LEAVE_ID)
+	if am_leader {
+		ui.menu_add_button_id(m, "Disband Guild", GUILD_DISBAND_ID)
+	}
+	ui.menu_auto_height(m, 620)
+}
+
+handle_guild_menu_clicks :: proc() {
+	m := &state.guild_menu
+	if !m.open do return
+	g := &state.ctx.guild
+
+	for i in 0 ..< len(m.items) {
+		item := &m.items[i]
+		if item.kind != .BUTTON || !item.clicked do continue
+
+		if item.id == GUILD_INVITE_ID {
+			idx := sys.find_index(state.scene, state.player.target_id)
+			if idx < 0 || state.scene.metas[idx].kind != .PLAYER {
+				sys.push_notification(state.ctx, "Target a player to invite.", "info")
+				return
+			}
+			tid := target_string_id()
+			if len(tid) > 0 do sys.send_guild_invite(state.net, tid)
+			return
+		}
+		if item.id == GUILD_LEAVE_ID {
+			sys.send_guild_leave(state.net)
+			state.guild_member_selected = -1
+			return
+		}
+		if item.id == GUILD_DISBAND_ID {
+			sys.send_guild_disband(state.net)
+			state.guild_member_selected = -1
+			return
+		}
+		if item.id == GUILD_GOLD_DEP_ID {
+			sys.send_guild_bank_gold(state.net, 100)
+			return
+		}
+		if item.id == GUILD_GOLD_WD_ID {
+			sys.send_guild_bank_gold(state.net, -100)
+			return
+		}
+
+		if item.id >= GUILD_BANK_DP_BASE {
+			idx := item.id - GUILD_BANK_DP_BASE
+			inv := &state.player.inventory
+			if idx >= 0 && idx < len(inv.items) {
+				it := &inv.items[idx]
+				if it.item_id_len > 0 {
+					sys.send_guild_bank_item(state.net, sys.item_id_string(it), 1)
+				}
+			}
+			return
+		}
+		if item.id >= GUILD_BANK_WD_BASE {
+			idx := item.id - GUILD_BANK_WD_BASE
+			if idx >= 0 && idx < len(g.bank) {
+				b := &g.bank[idx]
+				sys.send_guild_bank_item(state.net, string(b.item_id[:b.item_len]), -1)
+			}
+			return
+		}
+		if item.id >= GUILD_MAKELEAD_BASE {
+			idx := item.id - GUILD_MAKELEAD_BASE
+			if idx >= 0 && idx < len(g.members) {
+				mem := &g.members[idx]
+				sys.send_guild_rank_set(state.net, string(mem.char_id[:mem.id_len]), "leader")
+			}
+			return
+		}
+		if item.id >= GUILD_KICKG_BASE {
+			idx := item.id - GUILD_KICKG_BASE
+			if idx >= 0 && idx < len(g.members) {
+				mem := &g.members[idx]
+				sys.send_guild_kick(state.net, string(mem.char_id[:mem.id_len]))
+				state.guild_member_selected = -1
+			}
+			return
+		}
+		if item.id >= GUILD_DEMOTE_BASE {
+			idx := item.id - GUILD_DEMOTE_BASE
+			if idx >= 0 && idx < len(g.members) {
+				mem := &g.members[idx]
+				ri := rank_index(string(mem.rank[:mem.rank_len]))
+				sys.send_guild_rank_set(state.net, string(mem.char_id[:mem.id_len]), rank_name(min(ri + 1, 3)))
+			}
+			return
+		}
+		if item.id >= GUILD_PROMOTE_BASE {
+			idx := item.id - GUILD_PROMOTE_BASE
+			if idx >= 0 && idx < len(g.members) {
+				mem := &g.members[idx]
+				ri := rank_index(string(mem.rank[:mem.rank_len]))
+				sys.send_guild_rank_set(state.net, string(mem.char_id[:mem.id_len]), rank_name(max(ri - 1, 1)))
+			}
+			return
+		}
+		if item.id >= GUILD_MEMBER_BASE {
+			state.guild_member_selected = item.id - GUILD_MEMBER_BASE
+			return
+		}
+	}
 }
 
 create_party_menu :: proc() {
@@ -72,8 +400,6 @@ PARTY_HEADER_H :: 24
 PARTY_ROW_H :: 52
 PARTY_FOOTER_H :: 28
 
-// Member rows shown in the panel. Until PARTY_UPDATE is wired up client-side,
-// the local player is the sole row (party leader).
 party_panel_rect :: proc() -> rl.Rectangle {
 	sw := f32(rl.GetScreenWidth())
 	return {sw - PARTY_PANEL_W - 12, 64, PARTY_PANEL_W, PARTY_PANEL_H}
@@ -83,18 +409,90 @@ party_row_rect :: proc(panel: rl.Rectangle, i: int) -> rl.Rectangle {
 	return {panel.x + 6, panel.y + PARTY_HEADER_H + 6 + f32(i * PARTY_ROW_H), panel.width - 12, f32(PARTY_ROW_H - 4)}
 }
 
-party_footer_btn_rect :: proc(panel: rl.Rectangle, i: int) -> rl.Rectangle {
-	bw := (panel.width - 24) / 2 - 3
+PARTY_FOOTER_MAX :: 3
+
+Party_Footer_Action :: enum {
+	INVITE,
+	KICK,
+	PROMOTE,
+	LEAVE,
+}
+
+// Footer buttons depend on state: normally [Invite | Leave]; when the leader
+// has another member row selected, [Kick | Make Leader | Leave].
+party_footer_actions :: proc() -> (labels: [PARTY_FOOTER_MAX]string, actions: [PARTY_FOOTER_MAX]Party_Footer_Action, n: int) {
+	party := &state.ctx.party
+	self_id := sys.character_id_string(state.player)
+	am_leader := party.in_party && sys.matches_name(party.leader_id[:], party.leader_len, self_id)
+
+	other_selected := false
+	if am_leader && state.party_selected >= 0 && state.party_selected < len(party.members) {
+		m := &party.members[state.party_selected]
+		other_selected = !sys.matches_name(m.char_id[:], m.id_len, self_id)
+	}
+
+	if other_selected {
+		labels[0] = "Kick"
+		actions[0] = .KICK
+		labels[1] = "Make Leader"
+		actions[1] = .PROMOTE
+		labels[2] = "Leave"
+		actions[2] = .LEAVE
+		return labels, actions, 3
+	}
+	labels[0] = "Invite"
+	actions[0] = .INVITE
+	labels[1] = "Leave"
+	actions[1] = .LEAVE
+	return labels, actions, 2
+}
+
+party_footer_btn_at :: proc(panel: rl.Rectangle, i, n: int) -> rl.Rectangle {
+	bw := (panel.width - 16 - f32(n-1) * 6) / f32(n)
 	return {
-		panel.x + 8 + f32(i) * (bw + 8),
+		panel.x + 8 + f32(i) * (bw + 6),
 		panel.y + panel.height - PARTY_FOOTER_H,
 		bw,
 		f32(PARTY_FOOTER_H - 6),
 	}
 }
 
+// Invite the current target: creates the party when solo, otherwise asks the
+// leader's client to send a re-invite (server enforces leader-only anyway).
+try_party_invite :: proc() {
+	idx := sys.find_index(state.scene, state.player.target_id)
+	if idx < 0 || state.scene.metas[idx].kind != .PLAYER {
+		sys.push_notification(state.ctx, "Target a player to invite.", "info")
+		return
+	}
+	tid := target_string_id()
+	if len(tid) == 0 do return
+
+	party := &state.ctx.party
+	if !party.in_party {
+		sys.send_party_create(state.net, tid)
+		return
+	}
+	self_id := sys.character_id_string(state.player)
+	if sys.matches_name(party.leader_id[:], party.leader_len, self_id) {
+		sys.send_party_invite(state.net, tid)
+	} else {
+		sys.push_notification(state.ctx, "Only the party leader can invite.", "error")
+	}
+}
+
 update_party_panel :: proc() {
 	m := &state.party_menu
+
+	// Party-membership latch: the panel auto-opens when a party is joined and
+	// auto-closes when it dissolves. In between, only the PTY button toggles
+	// it — ESC deliberately does not close it.
+	in_party := state.ctx.party.in_party
+	if in_party != state.was_in_party {
+		state.was_in_party = in_party
+		m.open = in_party
+		if !in_party do state.party_selected = -1
+	}
 	if !m.open do return
 
 	// Anchored top-right; rect + focused are refreshed every frame (the panel
@@ -102,12 +500,52 @@ update_party_panel :: proc() {
 	m.rect = party_panel_rect()
 	m.focused = rl.CheckCollisionPointRec(rl.GetMousePosition(), m.rect)
 
+	party := &state.ctx.party
+	if state.party_selected >= len(party.members) do state.party_selected = -1
+
 	mouse := rl.GetMousePosition()
 	if !state.chat_focused && rl.IsMouseButtonPressed(.LEFT) {
-		if rl.CheckCollisionPointRec(mouse, party_footer_btn_rect(m.rect, 0)) {
-			// Invite — TODO: target picker once party invites are wired.
-		} else if rl.CheckCollisionPointRec(mouse, party_footer_btn_rect(m.rect, 1)) {
-			sys.send(state.net, .PARTY_LEAVE)
+		// Row click: select the member (and target them when they're a scene
+		// entity — handy for heals/buffs, Pandora-Saga style).
+		for i in 0 ..< len(party.members) {
+			if !rl.CheckCollisionPointRec(mouse, party_row_rect(m.rect, i)) do continue
+			state.party_selected = i
+			member_id := string(party.members[i].char_id[:party.members[i].id_len])
+			if member_id != sys.character_id_string(state.player) {
+				idx := sys.find_index(state.scene, sys.string_to_entity_id(member_id))
+				if idx >= 0 {
+					state.player.target_id = state.scene.entity_ids[idx]
+					state.scene.target_id = state.scene.entity_ids[idx]
+				}
+			}
+			return
+		}
+
+		// Footer buttons.
+		labels, actions, n := party_footer_actions()
+		for i in 0 ..< n {
+			if !rl.CheckCollisionPointRec(mouse, party_footer_btn_at(m.rect, i, n)) do continue
+			#partial switch actions[i] {
+			case .INVITE:
+				try_party_invite()
+			case .LEAVE:
+				sys.send(state.net, .PARTY_LEAVE)
+				state.party_selected = -1
+			case .KICK:
+				if state.party_selected >= 0 {
+					mem := &party.members[state.party_selected]
+					sys.send_party_kick(state.net, string(mem.char_id[:mem.id_len]))
+					state.party_selected = -1
+				}
+			case .PROMOTE:
+				if state.party_selected >= 0 {
+					mem := &party.members[state.party_selected]
+					sys.send_party_promote(state.net, string(mem.char_id[:mem.id_len]))
+					state.party_selected = -1
+				}
+			case:
+			}
+			return
 		}
 	}
 }
@@ -115,13 +553,21 @@ update_party_panel :: proc() {
 draw_party_panel :: proc() {
 	m := &state.party_menu
 	if !m.open do return
-	p := state.player
+	party := &state.ctx.party
+	self_id := sys.character_id_string(state.player)
 
 	rl.DrawRectangleRec(m.rect, rl.Color{15, 16, 22, 210})
 	rl.DrawRectangleLinesEx(m.rect, 1, rl.Color{90, 90, 110, 220})
 
-	// Header.
-	sys.draw_text(fmt.tprintf("PT MEMBER  (%d/4)", 1), int(m.rect.x) + 8, int(m.rect.y) + 5, 14, rl.Color{220, 220, 235, 255})
+	// Header: live member count (solo shows 1).
+	count := party.in_party ? len(party.members) : 1
+	sys.draw_text(
+		fmt.tprintf("PT MEMBER  (%d/%d)", count, sys.MAX_PARTY_MEMBERS),
+		int(m.rect.x) + 8,
+		int(m.rect.y) + 5,
+		14,
+		rl.Color{220, 220, 235, 255},
+	)
 	rl.DrawLine(
 		i32(m.rect.x),
 		i32(m.rect.y + PARTY_HEADER_H),
@@ -130,30 +576,84 @@ draw_party_panel :: proc() {
 		rl.Color{90, 90, 110, 220},
 	)
 
-	// Member rows: name + level, HP and MP bars.
-	s := &p.stats
-	row := party_row_rect(m.rect, 0)
-	name := string(p.name[:p.name_len])
-	sys.draw_text(fmt.tprintf("Lv%d", s.level), int(row.x) + 4, int(row.y), 12, rl.GRAY)
-	sys.draw_text(name, int(row.x) + 36, int(row.y), 12, rl.Color{130, 180, 255, 255})
-	bar_w := row.width - 8
-	hp_ratio := s.max_health > 0 ? s.health / s.max_health : 0
-	mp_ratio := s.max_mana > 0 ? s.mana / s.max_mana : 0
-	draw_party_bar(row.x + 4, row.y + 18, bar_w, 10, hp_ratio, rl.Color{200, 40, 40, 255},
-		fmt.tprintf("%d/%d", i32(s.health), i32(s.max_health)))
-	draw_party_bar(row.x + 4, row.y + 32, bar_w, 8, mp_ratio, rl.Color{60, 110, 220, 255}, "")
+	// Member rows. Solo (no party): one synthetic row from live stats.
+	if !party.in_party {
+		draw_party_member_row(party_row_rect(m.rect, 0), state.player.stats.level,
+			string(state.player.name[:state.player.name_len]), false,
+			state.player.stats.health, state.player.stats.max_health, false, true, false)
+	} else {
+		my_zone := string(state.player.zone_id_buf[:state.player.zone_id_len])
+		for i in 0 ..< len(party.members) {
+			mem := &party.members[i]
+			is_self := sys.matches_name(mem.char_id[:], mem.id_len, self_id)
+			// Self row shows live local stats (server snapshot can lag).
+			hp := mem.health
+			maxhp := mem.max_health
+			if is_self {
+				hp = state.player.stats.health
+				maxhp = state.player.stats.max_health
+			}
+			zone := string(mem.zone_id[:mem.zone_len])
+			same_zone := zone == my_zone
+			draw_party_member_row(
+				party_row_rect(m.rect, i),
+				mem.level,
+				string(mem.name[:mem.name_len]),
+				mem.is_leader,
+				hp,
+				maxhp,
+				!same_zone,
+				is_self,
+				i == state.party_selected,
+			)
+		}
+	}
 
 	// Footer buttons.
 	mouse := rl.GetMousePosition()
-	labels := [2]string{"Invite", "Leave"}
-	for i in 0 ..< 2 {
-		btn := party_footer_btn_rect(m.rect, i)
+	labels, _, n := party_footer_actions()
+	for i in 0 ..< n {
+		btn := party_footer_btn_at(m.rect, i, n)
 		hov := rl.CheckCollisionPointRec(mouse, btn)
 		col := hov ? rl.Color{75, 85, 115, 230} : rl.Color{55, 60, 75, 230}
 		rl.DrawRectangleRec(btn, col)
 		rl.DrawRectangleLinesEx(btn, 1, rl.Color{140, 140, 160, 255})
 		tw := sys.measure_text(labels[i], 13)
 		sys.draw_text(labels[i], int(btn.x + btn.width/2 - f32(tw)/2), int(btn.y) + 6, 13, rl.Color{220, 220, 235, 255})
+	}
+}
+
+// One member row: level + name (+ leader marker), HP bar with numbers, and a
+// gray zone line for members who are elsewhere.
+draw_party_member_row :: proc(
+	row:     rl.Rectangle,
+	level:   int,
+	name:    string,
+	leader:  bool,
+	health:  f32,
+	max_h:   f32,
+	away:    bool,
+	self:    bool,
+	selected: bool,
+) {
+	if selected {
+		rl.DrawRectangleRec(row, rl.Color{45, 55, 80, 160})
+	}
+	sys.draw_text(fmt.tprintf("Lv%d", level), int(row.x) + 4, int(row.y), 12, rl.GRAY)
+
+	name_col := rl.Color{130, 180, 255, 255}
+	if self do name_col = rl.Color{160, 255, 190, 255}
+	if away do name_col = rl.Color{130, 150, 170, 255}
+	label := leader ? fmt.tprintf("%s (L)", name) : name
+	sys.draw_text(label, int(row.x) + 36, int(row.y), 12, name_col)
+
+	bar_w := row.width - 8
+	hp_ratio := max_h > 0 ? health / max_h : 0
+	draw_party_bar(row.x + 4, row.y + 18, bar_w, 12, hp_ratio, rl.Color{200, 40, 40, 255},
+		fmt.tprintf("%d/%d", i32(health), i32(max_h)))
+
+	if away {
+		sys.draw_text("elsewhere", int(row.x) + 4, int(row.y) + 34, 10, rl.Color{120, 130, 150, 255})
 	}
 }
 
@@ -165,6 +665,227 @@ draw_party_bar :: proc(x, y, w, h: f32, ratio: f32, color: rl.Color, label: stri
 	if len(label) > 0 {
 		tw := f32(sys.measure_text(label, 10))
 		sys.draw_text(label, int(x + w/2 - tw/2), int(y + h/2 - 5), 10, rl.WHITE)
+	}
+}
+
+// ── invite / request dialogs (party, guild, friend share accept_deny_menu) ─
+
+PARTY_INVITE_ACCEPT_ID :: 1
+PARTY_INVITE_DECLINE_ID :: 2
+GUILD_INVITE_ACCEPT_ID :: 3
+GUILD_INVITE_DECLINE_ID :: 4
+FRIEND_REQ_ACCEPT_ID :: 5
+FRIEND_REQ_DECLINE_ID :: 6
+
+Invite_Kind :: enum {
+	NONE,
+	PARTY,
+	GUILD,
+	FRIEND,
+}
+
+// Which pending prompt is showing (party > guild > friend priority), plus its
+// title copied into stable storage. Keying the rebuild on these — NOT on
+// menu.title, which points into the recycled frame arena and would spuriously
+// differ every frame (recreate-flicker + cleared clicks).
+invite_kind :: proc() -> Invite_Kind {
+	if state.ctx.party.has_invite do return .PARTY
+	if state.ctx.guild.has_invite do return .GUILD
+	if state.ctx.has_friend_req do return .FRIEND
+	return .NONE
+}
+
+// Build the dialog for whichever prompt is pending. The menu is created once
+// per (kind, title) and auto-heighted so every button is visible.
+update_party_invite_dialog :: proc() {
+	ctx := state.ctx
+	m := &state.accept_deny_menu
+
+	kind := invite_kind()
+	if kind == .NONE {
+		state.invite_kind = .NONE
+		if m.open do ui.menu_close(m)
+		return
+	}
+
+	// Compose the title into a local buffer, then decide whether to rebuild.
+	title_buf: [160]u8
+	title_len := 0
+	switch kind {
+	case .PARTY:
+		leader := string(ctx.party.invite_leader[:ctx.party.invite_leader_len])
+		title_len = copy_invite_title(&title_buf, fmt.tprintf("%s invites you to a party", leader))
+	case .GUILD:
+		guild_name := string(ctx.guild.invite_guild_name[:ctx.guild.invite_name_len])
+		by := string(ctx.guild.invite_by[:ctx.guild.invite_by_len])
+		title_len = copy_invite_title(&title_buf, fmt.tprintf("%s invites you to %s", by, guild_name))
+	case .FRIEND:
+		name := string(ctx.friend_req_name[:ctx.friend_req_name_len])
+		title_len = copy_invite_title(&title_buf, fmt.tprintf("%s wants to be your friend", name))
+	case .NONE:
+	}
+
+	if m.open && state.invite_kind == kind &&
+	   sys.matches_name(state.invite_title[:], state.invite_title_len, string(title_buf[:title_len])) {
+		// Same prompt already showing — fall through to click handling.
+	} else {
+		if m.items != nil do ui.menu_destroy(m)
+		state.invite_kind = kind
+		copy(state.invite_title[:], title_buf[:title_len])
+		state.invite_title_len = title_len
+
+		// menu.title must reference storage that outlives the frame: use the
+		// state-owned buffer.
+		m^ = ui.menu_create(string(state.invite_title[:state.invite_title_len]), 0, 0, 360, 40)
+		m.close_on_esc = true
+		switch kind {
+		case .PARTY:
+			ui.menu_add_button_id(m, "Accept", PARTY_INVITE_ACCEPT_ID)
+			ui.menu_add_button_id(m, "Decline", PARTY_INVITE_DECLINE_ID)
+		case .GUILD:
+			ui.menu_add_button_id(m, "Accept", GUILD_INVITE_ACCEPT_ID)
+			ui.menu_add_button_id(m, "Decline", GUILD_INVITE_DECLINE_ID)
+		case .FRIEND:
+			ui.menu_add_button_id(m, "Accept", FRIEND_REQ_ACCEPT_ID)
+			ui.menu_add_button_id(m, "Decline", FRIEND_REQ_DECLINE_ID)
+		case .NONE:
+		}
+		ui.menu_auto_height(m, 220)
+		m.rect.x = f32(rl.GetScreenWidth())/2.0 - m.rect.width/2.0
+		m.rect.y = f32(rl.GetScreenHeight())/2.0 - m.rect.height/2.0
+		m.open = true
+	}
+
+	for i in 0 ..< len(m.items) {
+		item := &m.items[i]
+		if item.kind != .BUTTON || !item.clicked do continue
+
+		switch item.id {
+		case PARTY_INVITE_ACCEPT_ID:
+			party_id := string(ctx.party.invite_party_id[:ctx.party.invite_party_len])
+			sys.send_party_join(state.net, party_id, true)
+			ctx.party.has_invite = false
+		case PARTY_INVITE_DECLINE_ID:
+			party_id := string(ctx.party.invite_party_id[:ctx.party.invite_party_len])
+			sys.send_party_join(state.net, party_id, false)
+			ctx.party.has_invite = false
+		case GUILD_INVITE_ACCEPT_ID:
+			guild_id := string(ctx.guild.invite_guild_id[:ctx.guild.invite_guild_len])
+			sys.send_guild_join(state.net, guild_id, true)
+			ctx.guild.has_invite = false
+		case GUILD_INVITE_DECLINE_ID:
+			guild_id := string(ctx.guild.invite_guild_id[:ctx.guild.invite_guild_len])
+			sys.send_guild_join(state.net, guild_id, false)
+			ctx.guild.has_invite = false
+		case FRIEND_REQ_ACCEPT_ID:
+			from := string(ctx.friend_req_from[:ctx.friend_req_len])
+			sys.send_friend_request_response(state.net, from, true)
+			ctx.has_friend_req = false
+		case FRIEND_REQ_DECLINE_ID:
+			from := string(ctx.friend_req_from[:ctx.friend_req_len])
+			sys.send_friend_request_response(state.net, from, false)
+			ctx.has_friend_req = false
+		case:
+		}
+		ui.menu_close(m)
+		state.invite_kind = .NONE
+		return
+	}
+}
+
+// Copy a formatted title into a fixed buffer (fmt.tprintf lives on the frame
+// arena); returns the copied length.
+copy_invite_title :: proc(dst: ^[160]u8, src: string) -> int {
+	n := min(len(src), len(dst^))
+	copy(dst^[:n], transmute([]u8)src)
+	return n
+}
+
+// ── party loot roll window (loot_party_menu) ───────────────────────────────
+
+// Button-id bases (stride 100 so roll indices never collide across actions).
+PARTY_LOOT_NEED_ID :: 100
+PARTY_LOOT_GREED_ID :: 200
+PARTY_LOOT_PASS_ID :: 300
+PARTY_LOOT_TAKE_ID :: 400
+
+// One window per pending PARTY_LOOT_ROLL entry: pool items get a single Take
+// button (first-click wins), need/greed items get Need/Greed/Pass. Entries
+// disappear when resolved (PARTY_LOOT_RESULT) or rolled on.
+update_party_loot_menu :: proc() {
+	party := &state.ctx.party
+	m := &state.loot_party_menu
+
+	if len(party.rolls) == 0 {
+		if m.open do ui.menu_close(m)
+		return
+	}
+
+	// Rebuild content when the pending set changes (keyed by first loot id +
+	// count; cheap and stable for this scale). The key is copied into a fixed
+	// buffer — fmt.tprintf results die with the frame arena.
+	r0 := &party.rolls[0]
+	key := fmt.tprintf("%s|%d", string(r0.loot_id[:r0.loot_len]), len(party.rolls))
+	key_buf: [128]u8
+	key_len := min(len(key), len(key_buf))
+	copy(key_buf[:key_len], transmute([]u8)key)
+	if !m.open || !sys.matches_name(state.party_loot_key[:], state.party_loot_key_len, key) {
+		if m.items != nil do ui.menu_destroy(m)
+		copy(state.party_loot_key[:], key_buf[:key_len])
+		state.party_loot_key_len = key_len
+		m^ = ui.menu_create("Party Loot", 0, 0, 320, 60)
+		m.close_on_esc = false // pending loot shouldn't be ESC-dismissable
+		for i in 0 ..< len(party.rolls) {
+			roll := &party.rolls[i]
+			item := string(roll.item_name[:roll.item_len])
+			ui.menu_add_label(m, fmt.tprintf("%s x%d", item, roll.quantity))
+			if roll.is_pool {
+				ui.menu_add_button_id(m, "Take", PARTY_LOOT_TAKE_ID+i)
+			} else {
+				ui.menu_add_button_id(m, "Need", PARTY_LOOT_NEED_ID+i)
+				ui.menu_add_button_id(m, "Greed", PARTY_LOOT_GREED_ID+i)
+				ui.menu_add_button_id(m, "Pass", PARTY_LOOT_PASS_ID+i)
+			}
+			ui.menu_add_separator(m)
+		}
+		ui.menu_auto_height(m, 400)
+		m.rect.x = f32(rl.GetScreenWidth()) - 340
+		m.rect.y = f32(rl.GetScreenHeight()) - 420
+		if m.rect.y < 320 do m.rect.y = 320
+		m.open = true
+	}
+
+	for i in 0 ..< len(m.items) {
+		item := &m.items[i]
+		if item.kind != .BUTTON || !item.clicked do continue
+		roll_idx := -1
+		kind := ""
+		if item.id >= PARTY_LOOT_TAKE_ID {
+			roll_idx = item.id - PARTY_LOOT_TAKE_ID
+			kind = "take"
+		} else if item.id >= PARTY_LOOT_PASS_ID {
+			roll_idx = item.id - PARTY_LOOT_PASS_ID
+			kind = "pass"
+		} else if item.id >= PARTY_LOOT_GREED_ID {
+			roll_idx = item.id - PARTY_LOOT_GREED_ID
+			kind = "greed"
+		} else if item.id >= PARTY_LOOT_NEED_ID {
+			roll_idx = item.id - PARTY_LOOT_NEED_ID
+			kind = "need"
+		}
+		if roll_idx < 0 || roll_idx >= len(party.rolls) do continue
+
+		roll := &party.rolls[roll_idx]
+		loot_id := string(roll.loot_id[:roll.loot_len])
+		if kind == "take" {
+			sys.send_loot_take(state.net, loot_id)
+		} else {
+			sys.send_party_loot_submit(state.net, loot_id, kind)
+		}
+		// Optimistically drop the entry; PARTY_LOOT_RESULT reconciles.
+		ordered_remove(&party.rolls, roll_idx)
+		state.party_loot_key_len = 0
+		return
 	}
 }
 
@@ -947,7 +1668,7 @@ init_menus :: proc() {
 	// (menu_destroy on a fresh state is a no-op: items is nil.)
 	prev_menus := make(
 		[]^ui.Menu,
-		15,
+		16,
 		context.temp_allocator,
 	)
 	prev_menus[0] = &state.inventory_menu
@@ -965,6 +1686,7 @@ init_menus :: proc() {
 	prev_menus[12] = &state.shop_menu
 	prev_menus[13] = &state.system_menu
 	prev_menus[14] = &state.debug_menu
+	prev_menus[15] = &state.guild_menu
 	for m in prev_menus {
 		if m.items != nil do ui.menu_destroy(m)
 	}
@@ -977,6 +1699,7 @@ init_menus :: proc() {
 	create_skills_menu()
 	create_friends_menu()
 	create_party_menu()
+	create_guild_menu()
 	create_quest_list_menu()
 	create_shop_menu()
 
@@ -1018,6 +1741,7 @@ init_menus :: proc() {
 	append(&state.bar_buttons, Bar_Button{"Set", &state.settings_menu})
 	append(&state.bar_buttons, Bar_Button{"Frn", &state.friends_menu})
 	append(&state.bar_buttons, Bar_Button{"Pty", &state.party_menu})
+	append(&state.bar_buttons, Bar_Button{"Gld", &state.guild_menu})
 	append(&state.bar_buttons, Bar_Button{"Qst", &state.quest_list_menu})
 }
 
@@ -1041,6 +1765,8 @@ update_menus :: proc() {
 	if state.character_profile_menu.open do refresh_character_menu()
 	if state.debug_menu.open do refresh_debug_menu()
 	if state.settings_menu.open do refresh_settings_menu()
+	if state.friends_menu.open do refresh_friends_menu()
+	if state.guild_menu.open do refresh_guild_menu()
 	update_shop_menu()
 	update_party_panel()
 	update_blacksmith_menu()
@@ -1050,6 +1776,7 @@ update_menus :: proc() {
 	ui.menu_update(&state.settings_menu)
 	ui.menu_update(&state.skills_menu)
 	ui.menu_update(&state.friends_menu)
+	ui.menu_update(&state.guild_menu)
 	ui.menu_update(&state.quest_list_menu)
 	ui.menu_update(&state.accept_deny_menu)
 	ui.menu_update(&state.soul_extraction_menu)
@@ -1076,6 +1803,10 @@ update_menus :: proc() {
 	handle_settings_menu_clicks()
 	handle_skills_menu_clicks()
 	handle_quest_list_menu_clicks()
+	handle_friends_menu_clicks()
+	handle_guild_menu_clicks()
+	update_party_invite_dialog()
+	update_party_loot_menu()
 }
 
 draw_menu_bar :: proc() {
@@ -1111,6 +1842,7 @@ draw_menu_bar :: proc() {
 	ui.menu_draw(&state.settings_menu)
 	ui.menu_draw(&state.skills_menu)
 	ui.menu_draw(&state.friends_menu)
+	ui.menu_draw(&state.guild_menu)
 	draw_party_panel()
 	ui.menu_draw(&state.quest_list_menu)
 	ui.menu_draw(&state.accept_deny_menu)

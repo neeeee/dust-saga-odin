@@ -2,7 +2,9 @@ package gameplay
 
 import sys "../../systems"
 import ui "../../ui"
+import "core:fmt"
 import "core:math"
+import "core:strings"
 import rl "vendor:raylib"
 
 // The gameplay scene owns the game context (network + scene + local player +
@@ -67,6 +69,7 @@ state: struct {
 	skills_menu:            ui.Menu,
 	friends_menu:           ui.Menu,
 	party_menu:             ui.Menu,
+	guild_menu:             ui.Menu,
 	quest_list_menu:        ui.Menu,
 	quest_log_abandon_idx:  int,
 	// enhancement window selections (inventory item ids — re-resolved to
@@ -111,6 +114,29 @@ state: struct {
 	// Ground-targeted skill aiming: when active, a reticle follows the cursor
 	// and the next left-click casts at that ground point (Esc cancels).
 	ground_target:          Ground_Target,
+
+	// Party UI: selected member row index (-1 none) + content key for the
+	// party-loot window rebuilds.
+	party_selected:         int,
+	party_loot_key:         [128]u8,
+	party_loot_key_len:     int,
+
+	// Party panel latch: tracks ctx.party.in_party transitions so the panel
+	// auto-opens on joining and auto-closes on leaving (PTY toggles manually;
+	// ESC never closes it while partied).
+	was_in_party:           bool,
+
+	// Friends window: armed Remove row (two-click confirm).
+	friend_remove_idx:      int,
+
+	// Invite / friend-request dialog: which prompt the accept_deny_menu is
+	// currently showing + its title in stable storage (see menus.odin).
+	invite_kind:            Invite_Kind,
+	invite_title:           [160]u8,
+	invite_title_len:       int,
+
+	// Guild window: selected member row (-1 none).
+	guild_member_selected:  int,
 
 	logout_start_ms:        u64,
 	exit_start_ms:          u64,
@@ -157,6 +183,13 @@ init :: proc(
 	state.was_connected = true
 	state.auto_attack_active = false
 	state.arrows = make([dynamic]Arrow_Tracer)
+	state.party_selected = -1
+	state.party_loot_key_len = 0
+	state.friend_remove_idx = -1
+	state.guild_member_selected = -1
+	state.invite_kind = .NONE
+	state.invite_title_len = 0
+	state.was_in_party = false
 	state.last_move_send_ms = sys.now_ms()
 	state.clock_ms = sys.now_ms()
 	init_menus()
@@ -398,7 +431,7 @@ apply_escape :: proc() {
 	if state.settings_menu.open      { ui.menu_close(&state.settings_menu);      return }
 	if state.skills_menu.open        { ui.menu_close(&state.skills_menu);        return }
 	if state.friends_menu.open       { ui.menu_close(&state.friends_menu);       return }
-	if state.party_menu.open         { ui.menu_close(&state.party_menu);         return }
+	if state.guild_menu.open         { ui.menu_close(&state.guild_menu);         return }
 	if state.quest_list_menu.open    { ui.menu_close(&state.quest_list_menu);    return }
 	if state.accept_deny_menu.open   { ui.menu_close(&state.accept_deny_menu);   return }
 	if state.blacksmith_menu.open    { ui.menu_close(&state.blacksmith_menu);    return }
@@ -544,7 +577,7 @@ handle_chat_input :: proc(inp: sys.Input_State) {
 	if inp.chat_submit {
 		msg := string(state.chat_buf[:state.chat_len])
 		if len(msg) > 0 {
-			sys.send_chat(state.net, msg)
+			handle_chat_command(msg)
 		}
 		state.chat_focused = false
 		state.chat_len = 0
@@ -559,6 +592,117 @@ handle_chat_input :: proc(inp: sys.Input_State) {
 		}
 		c = rl.GetCharPressed()
 	}
+}
+
+// Chat slash commands. Anything unrecognized starting with '/' is sent as a
+// normal zone message (the server owns the GM command set and will reply).
+handle_chat_command :: proc(msg: string) {
+	if strings.has_prefix(msg, "/p ") {
+		sys.send_chat(state.net, msg[3:], "party")
+		return
+	}
+	if strings.has_prefix(msg, "/party ") {
+		sys.send_chat(state.net, msg[7:], "party")
+		return
+	}
+	if strings.has_prefix(msg, "/g ") {
+		sys.send_chat(state.net, msg[3:], "guild")
+		return
+	}
+	if strings.has_prefix(msg, "/guild ") {
+		sys.send_chat(state.net, msg[6:], "guild")
+		return
+	}
+	if strings.has_prefix(msg, "/gcreate ") {
+		rest := msg[len("/gcreate "):]
+		space := strings.index_byte(rest, ' ')
+		if space <= 0 || space == len(rest)-1 {
+			sys.push_notification(state.ctx, "Usage: /gcreate <name> <tag>", "error")
+			return
+		}
+		name := rest[:space]
+		tag := rest[space+1:]
+		// Tag ends at a space if the user typed more words.
+		if tspace := strings.index_byte(tag, ' '); tspace >= 0 {
+			tag = tag[:tspace]
+		}
+		sys.send_guild_create(state.net, name, tag)
+		return
+	}
+	if strings.has_prefix(msg, "/gmotd ") {
+		sys.send_guild_motd(state.net, msg[len("/gmotd "):])
+		return
+	}
+
+	// "/w name msg" / "/whisper name msg" — name ends at the first space.
+	if strings.has_prefix(msg, "/w ") || strings.has_prefix(msg, "/whisper ") {
+		rest := msg[3:]
+		if strings.has_prefix(msg, "/whisper ") do rest = msg[9:]
+		space := strings.index_byte(rest, ' ')
+		if space == -1 || space == 0 {
+			sys.push_notification(state.ctx, "Usage: /w <name> <message>", "error")
+			return
+		}
+		name := rest[:space]
+		body := rest[space+1:]
+		if len(body) == 0 {
+			sys.push_notification(state.ctx, "Usage: /w <name> <message>", "error")
+			return
+		}
+		sys.copy_string_to_buffer(state.ctx.last_whisper[:], &state.ctx.last_whisper_len, name)
+		sys.send_whisper(state.net, name, body)
+		return
+	}
+
+	// "/r msg" — reply to the last whisper partner.
+	if strings.has_prefix(msg, "/r ") {
+		if state.ctx.last_whisper_len == 0 {
+			sys.push_notification(state.ctx, "No one to reply to yet.", "error")
+			return
+		}
+		name := string(state.ctx.last_whisper[:state.ctx.last_whisper_len])
+		sys.send_whisper(state.net, name, msg[3:])
+		return
+	}
+
+	if strings.has_prefix(msg, "/friend ") {
+		rest := msg[len("/friend "):]
+		if strings.has_prefix(rest, "add ") {
+			arg := rest[len("add "):]
+			if len(arg) == 0 {
+				sys.push_notification(state.ctx, "Usage: /friend add <name>", "error")
+			} else {
+				sys.send_friend_add(state.net, arg)
+			}
+			return
+		}
+		if strings.has_prefix(rest, "remove ") {
+			remove_friend_by_name(rest[len("remove "):])
+			return
+		}
+		sys.push_notification(state.ctx, "Usage: /friend add|remove <name>", "error")
+		return
+	}
+
+	sys.send_chat(state.net, msg)
+}
+
+// Resolve a friend row by name and send FRIEND_REMOVE for it.
+remove_friend_by_name :: proc(name: string) {
+	if len(name) == 0 {
+		sys.push_notification(state.ctx, "Usage: /friend remove <name>", "error")
+		return
+	}
+	friends := &state.ctx.friends
+	for i in 0 ..< len(friends) {
+		f := &friends[i]
+		if sys.matches_name(f.name[:], f.name_len, name) {
+			sys.send_friend_remove(state.net, string(f.char_id[:f.id_len]))
+			state.friend_remove_idx = -1
+			return
+		}
+	}
+	sys.push_notification(state.ctx, fmt.tprintf("%s is not on your friend list.", name), "error")
 }
 
 // ── per-frame tickers ─────────────────────────────────────────────────────
@@ -656,6 +800,7 @@ any_menu_focused :: proc() -> bool {
 	       state.settings_menu.open        && state.settings_menu.focused ||
 	       state.skills_menu.open          && state.skills_menu.focused ||
 	       state.friends_menu.open         && state.friends_menu.focused ||
+	       state.guild_menu.open           && state.guild_menu.focused ||
 	       state.party_menu.open           && state.party_menu.focused ||
 	       state.quest_list_menu.open      && state.quest_list_menu.focused ||
 	       state.accept_deny_menu.open     && state.accept_deny_menu.focused ||
@@ -693,6 +838,7 @@ cursor_over_ui :: proc() -> bool {
 	if state.settings_menu.open        && rl.CheckCollisionPointRec(mouse, state.settings_menu.rect) do return true
 	if state.skills_menu.open          && rl.CheckCollisionPointRec(mouse, state.skills_menu.rect) do return true
 	if state.friends_menu.open         && rl.CheckCollisionPointRec(mouse, state.friends_menu.rect) do return true
+	if state.guild_menu.open           && rl.CheckCollisionPointRec(mouse, state.guild_menu.rect) do return true
 	if state.party_menu.open           && rl.CheckCollisionPointRec(mouse, state.party_menu.rect) do return true
 	if state.quest_list_menu.open      && rl.CheckCollisionPointRec(mouse, state.quest_list_menu.rect) do return true
 	if state.accept_deny_menu.open     && rl.CheckCollisionPointRec(mouse, state.accept_deny_menu.rect) do return true

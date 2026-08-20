@@ -59,6 +59,9 @@ Entity_UI :: struct {
 	show_name:    bool,
 	name_str:     [32]u8,
 	name_len:     int,
+	// Guild tag shown after the name ("Name [TAG]"); players only.
+	guild_tag:    [8]u8,
+	tag_len:      int,
 }
 
 MAX_STATUS_EFFECTS :: 16
@@ -308,17 +311,26 @@ render_entity_ui_2d :: proc(s: ^Scene, camera: rl.Camera3D) {
 			)
 			text_w := rl.MeasureText(name_c, font_sz)
 			rl.DrawText(name_c, ix - text_w / 2, iy - 20, font_sz, rl.Color{230, 190, 70, 255})
-		} else if ui.show_name && ui.name_len > 0 {
-			name_c := strings.clone_to_cstring(
-				fmt.tprintf("Lv%d %s", meta.level, string(ui.name_str[:ui.name_len])),
-				context.temp_allocator,
+	} else if ui.show_name && ui.name_len > 0 {
+		// Players with a guild tag render "Lv N Name [TAG]".
+		label := ""
+		if ui.tag_len > 0 {
+			label = fmt.tprintf(
+				"Lv%d %s [%s]",
+				meta.level,
+				string(ui.name_str[:ui.name_len]),
+				string(ui.guild_tag[:ui.tag_len]),
 			)
-			text_w := rl.MeasureText(name_c, font_sz)
-			name_color := rl.WHITE
-			if meta.kind == .ENEMY do name_color = {255, 150, 150, 255}
-			if meta.kind == .NPC do name_color = {255, 255, 100, 255}
-			rl.DrawText(name_c, ix - text_w / 2, iy - 20, font_sz, name_color)
+		} else {
+			label = fmt.tprintf("Lv%d %s", meta.level, string(ui.name_str[:ui.name_len]))
 		}
+		name_c := strings.clone_to_cstring(label, context.temp_allocator)
+		text_w := rl.MeasureText(name_c, font_sz)
+		name_color := rl.WHITE
+		if meta.kind == .ENEMY do name_color = {255, 150, 150, 255}
+		if meta.kind == .NPC do name_color = {255, 255, 100, 255}
+		rl.DrawText(name_c, ix - text_w / 2, iy - 20, font_sz, name_color)
+	}
 
 		// Health bar.
 		if ui.health_ratio > 0.0 && ui.health_ratio < 1.0 {

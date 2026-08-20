@@ -39,6 +39,8 @@ import { LootSystem, LootInstance } from '../ecs/systems/LootSystem';
 import { PlayerSystem } from '../ecs/systems/PlayerSystem';
 import { SkillSystem } from '../ecs/systems/SkillSystem';
 import { PartySystem } from '../ecs/systems/PartySystem';
+import { FriendSystem } from '../ecs/systems/FriendSystem';
+import { GuildSystem } from '../ecs/systems/GuildSystem';
 import { EnmitySystem } from '../ecs/systems/EnmitySystem';
 import { TradeSystem } from '../ecs/systems/TradeSystem';
 import { SpawnManager } from '../world/SpawnManager';
@@ -78,6 +80,8 @@ export class NetworkServer implements NetworkContext {
   readonly playerSys: PlayerSystem;
   readonly skillSys: SkillSystem;
   readonly partySys: PartySystem;
+  readonly friendSys: FriendSystem;
+  readonly guildSys: GuildSystem;
   readonly enmity: EnmitySystem;
   readonly tradeSys: TradeSystem;
   readonly spawnMgr: SpawnManager;
@@ -178,6 +182,16 @@ export class NetworkServer implements NetworkContext {
       redis: presenceOpts.redis,
       isConnected: presenceOpts.isRedisConnected,
       shardId,
+    });
+    this.friendSys = new FriendSystem({
+      getPlayers: () => this.state.players,
+      sendToPlayer: (id, pkt) => this.sendToPlayer(id, pkt),
+    });
+    this.guildSys = new GuildSystem({
+      getPlayers: () => this.state.players,
+      sendToPlayer: (id, pkt) => this.sendToPlayer(id, pkt),
+      broadcastInZone: (zone, pkt) => this.broadcastInZone(zone, pkt),
+      getItemName: (itemId) => this.itemSys.getItemDefinition(itemId)?.name || itemId,
     });
     this.state = {
       players: new Map(),
@@ -584,6 +598,45 @@ export class NetworkServer implements NetworkContext {
     this.refreshPartyForMember(session.characterId);
   }
 
+  // Split kill XP across the killer and any party members nearby (same zone,
+  // within 50 units — the same criteria as quest kill credit). Each recipient
+  // gets an equal share (minimum 1).
+  grantPartyExperience(killer: PlayerSession, baseExperience: number): void {
+    if (baseExperience <= 0) return;
+    const recipients: PlayerSession[] = [killer];
+    const party = this.partySys.getPartyForMember(killer.characterId);
+    if (party) {
+      for (const member of party.members) {
+        if (member.characterId === killer.characterId) continue;
+        const memberSession = this.findPlayerByCharacterId(member.characterId);
+        if (!memberSession) continue;
+        if (memberSession.zoneId !== killer.zoneId) continue;
+        const dx = memberSession.position.x - killer.position.x;
+        const dz = memberSession.position.z - killer.position.z;
+        if (Math.sqrt(dx * dx + dz * dz) <= 50) {
+          recipients.push(memberSession);
+        }
+      }
+    }
+
+    const share = Math.max(1, Math.floor(baseExperience / recipients.length));
+    for (const recipient of recipients) {
+      this.playerSys.grantExperience(recipient, share);
+      // Kills feed guild XP (10% of the member's share).
+      this.guildSys.addExperience(recipient.characterId, Math.max(1, Math.floor(share / 10)));
+      this.sendToPlayer(recipient.characterId, {
+        type: PacketType.EXPERIENCE_GAIN,
+        timestamp: Date.now(),
+        data: { experience: share, totalExperience: recipient.stats.experience, level: recipient.stats.level }
+      });
+      this.sendToPlayer(recipient.characterId, {
+        type: PacketType.STATS_UPDATE,
+        timestamp: Date.now(),
+        data: { characterId: recipient.characterId, stats: recipient.stats }
+      });
+    }
+  }
+
   grantQuestKillCredit(killer: PlayerSession, enemyType: string, zoneId: string): void {
     const creditRecipients: PlayerSession[] = [killer];
     const party = this.partySys.getPartyForMember(killer.characterId);
@@ -846,17 +899,7 @@ export class NetworkServer implements NetworkContext {
 
     const killer = this.findPlayerByCharacterId(killerId);
     if (killer && enemyDef) {
-      this.playerSys.grantExperience(killer, enemyDef.experience);
-      this.sendToPlayer(killer.characterId, {
-        type: PacketType.EXPERIENCE_GAIN,
-        timestamp: Date.now(),
-        data: { experience: enemyDef.experience, totalExperience: killer.stats.experience, level: killer.stats.level }
-      });
-      this.sendToPlayer(killer.characterId, {
-        type: PacketType.STATS_UPDATE,
-        timestamp: Date.now(),
-        data: { characterId: killer.characterId, stats: killer.stats }
-      });
+      this.grantPartyExperience(killer, enemyDef.experience);
 
       this.grantQuestKillCredit(killer, enemy.enemyType, killer.zoneId);
 
@@ -1625,17 +1668,7 @@ export class NetworkServer implements NetworkContext {
 
       const killer = this.findPlayerByCharacterId(killerId);
       if (killer) {
-        this.playerSys.grantExperience(killer, enemyDef.experience);
-        this.sendToPlayer(killer.characterId, {
-          type: PacketType.EXPERIENCE_GAIN,
-          timestamp: Date.now(),
-          data: { experience: enemyDef.experience, totalExperience: killer.stats.experience, level: killer.stats.level }
-        });
-        this.sendToPlayer(killer.characterId, {
-          type: PacketType.STATS_UPDATE,
-          timestamp: Date.now(),
-          data: { characterId: killer.characterId, stats: killer.stats }
-        });
+        this.grantPartyExperience(killer, enemyDef.experience);
 
         this.grantQuestKillCredit(killer, enemy.enemyType, killer.zoneId);
 
@@ -1877,6 +1910,8 @@ export class NetworkServer implements NetworkContext {
         }).catch(err => console.error('Failed to save character on disconnect:', err));
 
         this.aoeZoneMgr.cleanupOwner(characterId);
+        this.friendSys.onDisconnect(characterId);
+        void this.guildSys.refreshForGuildOf(characterId);
 
         const despawnedSummons = this.summonMgr.despawnAllForOwner(characterId);
         for (const summonId of despawnedSummons) {
@@ -1977,7 +2012,7 @@ export class NetworkServer implements NetworkContext {
         type: 'player',
         position: player.position,
         rotation: player.rotation,
-        data: { name: player.characterName, class: player.jobId, race: player.race, jobId: player.jobId, level: player.stats.level, health: player.stats.health, maxHealth: player.stats.maxHealth, modelFile: JOB_DEFINITIONS[player.jobId]?.modelFile, invisible: player.statusEffects?.some(e => e.type === StatusEffectType.INVISIBLE) || false, isResting: player.isResting, role: player.role }
+        data: { name: player.characterName, class: player.jobId, race: player.race, jobId: player.jobId, level: player.stats.level, health: player.stats.health, maxHealth: player.stats.maxHealth, modelFile: JOB_DEFINITIONS[player.jobId]?.modelFile, invisible: player.statusEffects?.some(e => e.type === StatusEffectType.INVISIBLE) || false, isResting: player.isResting, role: player.role, guildTag: player.guildTag || '' }
       });
     });
 
@@ -2325,12 +2360,7 @@ export class NetworkServer implements NetworkContext {
           enemy.deathTime = Date.now();
           const enemyDef = getEnemyDefinition(enemy.enemyType);
           if (enemyDef) {
-            this.playerSys.grantExperience(session, enemyDef.experience);
-            this.sendToPlayer(characterId, {
-              type: PacketType.EXPERIENCE_GAIN,
-              timestamp: Date.now(),
-              data: { experience: enemyDef.experience, totalExperience: session.stats.experience, level: session.stats.level }
-            });
+            this.grantPartyExperience(session, enemyDef.experience);
             this.handleEnemyLoot(session, enemy.enemyType, enemy.position);
           }
           this.broadcastInZone(session.zoneId, { type: PacketType.DEATH, timestamp: Date.now(), data: { entityId: entry.id, killerId: characterId } });
@@ -2528,17 +2558,7 @@ export class NetworkServer implements NetworkContext {
           enemy.deathTime = Date.now();
           const enemyDef = getEnemyDefinition(enemy.enemyType);
           if (enemyDef) {
-            this.playerSys.grantExperience(session, enemyDef.experience);
-            this.sendToPlayer(characterId, {
-              type: PacketType.EXPERIENCE_GAIN,
-              timestamp: Date.now(),
-              data: { experience: enemyDef.experience, totalExperience: session.stats.experience, level: session.stats.level }
-            });
-            this.sendToPlayer(characterId, {
-              type: PacketType.STATS_UPDATE,
-              timestamp: Date.now(),
-              data: { characterId, stats: session.stats }
-            });
+            this.grantPartyExperience(session, enemyDef.experience);
             this.handleEnemyLoot(session, enemy.enemyType, enemy.position);
           }
           batchEvents.push({

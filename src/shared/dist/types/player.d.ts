@@ -127,6 +127,10 @@ export interface PlayerSession {
         z: number;
         w: number;
     };
+    /** Guild membership mirror (kept in sync by GuildSystem; used for spawn tags + gating). */
+    guildId?: string | null;
+    guildTag?: string | null;
+    guildRank?: string | null;
 }
 export interface EnmityEntry {
     ce: number;

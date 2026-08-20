@@ -168,6 +168,46 @@ class DatabaseManager {
 
       CREATE INDEX IF NOT EXISTS idx_characters_zone ON characters(zone_id);
       CREATE INDEX IF NOT EXISTS idx_characters_player ON characters(player_id);
+
+      CREATE TABLE IF NOT EXISTS friends (
+        character_id UUID NOT NULL,
+        friend_id UUID NOT NULL,
+        created_at TIMESTAMP DEFAULT NOW(),
+        PRIMARY KEY (character_id, friend_id)
+      );
+      CREATE INDEX IF NOT EXISTS idx_friends_friend ON friends(friend_id);
+
+      CREATE TABLE IF NOT EXISTS friend_requests (
+        from_id UUID NOT NULL,
+        to_id UUID NOT NULL,
+        created_at TIMESTAMP DEFAULT NOW(),
+        PRIMARY KEY (from_id, to_id)
+      );
+      CREATE INDEX IF NOT EXISTS idx_friend_requests_to ON friend_requests(to_id);
+
+      CREATE TABLE IF NOT EXISTS guilds (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        name VARCHAR(40) UNIQUE NOT NULL,
+        tag VARCHAR(6) NOT NULL,
+        leader_id UUID NOT NULL,
+        level INTEGER DEFAULT 1,
+        experience BIGINT DEFAULT 0,
+        gold BIGINT DEFAULT 0,
+        bank_items JSONB DEFAULT '[]',
+        rank_perms JSONB DEFAULT '{}',
+        motd VARCHAR(255),
+        created_at TIMESTAMP DEFAULT NOW()
+      );
+      CREATE INDEX IF NOT EXISTS idx_guilds_leader ON guilds(leader_id);
+
+      CREATE TABLE IF NOT EXISTS guild_members (
+        guild_id UUID NOT NULL REFERENCES guilds(id) ON DELETE CASCADE,
+        character_id UUID NOT NULL UNIQUE,
+        rank VARCHAR(20) NOT NULL DEFAULT 'member',
+        joined_at TIMESTAMP DEFAULT NOW(),
+        PRIMARY KEY (guild_id, character_id)
+      );
+      CREATE INDEX IF NOT EXISTS idx_guild_members_character ON guild_members(character_id);
     `;
         try {
             await this.postgres.query(schema);

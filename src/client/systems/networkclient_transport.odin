@@ -301,7 +301,7 @@ handle_sio_event :: proc(nc: ^Network_Client, rest: []u8) {
 // named members of the enum. The valid-bit table is seeded from the enum
 // itself on first use, so it stays in sync automatically — no hand-maintained
 // switch to update when packets are added.
-PACKET_TYPE_MAX_WIRE :: 189 // == int(Packet_Type.FLOATING_TEXT), the highest value
+PACKET_TYPE_MAX_WIRE :: 212 // == int(Packet_Type.ENTITY_GUILD_TAG), the highest value
 packet_type_valid: [PACKET_TYPE_MAX_WIRE + 1]bool
 packet_type_valid_seeded: bool
 

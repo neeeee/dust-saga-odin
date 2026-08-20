@@ -111,4 +111,28 @@ var PacketType;
     PacketType[PacketType["CUTSCENE_COMPLETE"] = 187] = "CUTSCENE_COMPLETE";
     PacketType[PacketType["CUTSCENE_END"] = 188] = "CUTSCENE_END";
     PacketType[PacketType["FLOATING_TEXT"] = 189] = "FLOATING_TEXT";
+    // Friends (190-198)
+    PacketType[PacketType["FRIEND_LIST_REQUEST"] = 190] = "FRIEND_LIST_REQUEST";
+    PacketType[PacketType["FRIEND_LIST"] = 191] = "FRIEND_LIST";
+    PacketType[PacketType["FRIEND_ADD"] = 192] = "FRIEND_ADD";
+    PacketType[PacketType["FRIEND_ADD_RESULT"] = 193] = "FRIEND_ADD_RESULT";
+    PacketType[PacketType["FRIEND_REMOVE"] = 194] = "FRIEND_REMOVE";
+    PacketType[PacketType["FRIEND_STATUS"] = 195] = "FRIEND_STATUS";
+    PacketType[PacketType["WHISPER"] = 196] = "WHISPER";
+    PacketType[PacketType["FRIEND_REQUEST"] = 197] = "FRIEND_REQUEST";
+    PacketType[PacketType["FRIEND_REQUEST_RESPONSE"] = 198] = "FRIEND_REQUEST_RESPONSE";
+    // Guild (200-210)
+    PacketType[PacketType["GUILD_CREATE"] = 200] = "GUILD_CREATE";
+    PacketType[PacketType["GUILD_INVITE"] = 201] = "GUILD_INVITE";
+    PacketType[PacketType["GUILD_JOIN_REQUEST"] = 202] = "GUILD_JOIN_REQUEST";
+    PacketType[PacketType["GUILD_LEAVE"] = 203] = "GUILD_LEAVE";
+    PacketType[PacketType["GUILD_KICK"] = 204] = "GUILD_KICK";
+    PacketType[PacketType["GUILD_RANK_SET"] = 205] = "GUILD_RANK_SET";
+    PacketType[PacketType["GUILD_RANK_PERMS"] = 206] = "GUILD_RANK_PERMS";
+    PacketType[PacketType["GUILD_UPDATE"] = 207] = "GUILD_UPDATE";
+    PacketType[PacketType["GUILD_MOTD"] = 208] = "GUILD_MOTD";
+    PacketType[PacketType["GUILD_BANK_GOLD"] = 209] = "GUILD_BANK_GOLD";
+    PacketType[PacketType["GUILD_BANK_ITEM"] = 210] = "GUILD_BANK_ITEM";
+    PacketType[PacketType["GUILD_DISBAND"] = 211] = "GUILD_DISBAND";
+    PacketType[PacketType["ENTITY_GUILD_TAG"] = 212] = "ENTITY_GUILD_TAG";
 })(PacketType || (exports.PacketType = PacketType = {}));

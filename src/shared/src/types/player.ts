@@ -114,6 +114,10 @@ export interface PlayerSession {
   inCutscene?: boolean;
   cutsceneReturnPosition?: { x: number; y: number; z: number };
   cutsceneReturnRotation?: { x: number; y: number; z: number; w: number };
+  /** Guild membership mirror (kept in sync by GuildSystem; used for spawn tags + gating). */
+  guildId?: string | null;
+  guildTag?: string | null;
+  guildRank?: string | null;
 }
 
 export interface EnmityEntry {

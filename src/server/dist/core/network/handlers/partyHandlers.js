@@ -145,8 +145,29 @@ function handlePartyJoinRequest(ctx, socket, data) {
         return;
     if (!data.partyId)
         return;
-    if (data.accept === false)
+    // Decline: tell the leader their invite was refused, confirm to the decliner.
+    // If the party disbanded while the invite was pending, the notify is a no-op.
+    if (data.accept === false) {
+        const party = ctx.partySys.getPartyData(data.partyId);
+        if (party) {
+            ctx.sendToPlayer(party.leaderId, {
+                type: shared_1.PacketType.PARTY_JOIN_RESPONSE,
+                timestamp: Date.now(),
+                data: { partyId: party.partyId, accepted: false, characterId, name: session.characterName }
+            });
+            ctx.sendToPlayer(party.leaderId, {
+                type: shared_1.PacketType.NOTIFICATION,
+                timestamp: Date.now(),
+                data: { message: `${session.characterName} declined the party invitation.`, type: 'info' }
+            });
+        }
+        ctx.sendToPlayer(characterId, {
+            type: shared_1.PacketType.NOTIFICATION,
+            timestamp: Date.now(),
+            data: { message: 'Invitation declined.', type: 'info' }
+        });
         return;
+    }
     const party = ctx.partySys.joinByInvite(data.partyId, characterId, session);
     if (!party) {
         const joinParty = ctx.partySys.joinParty(data.partyId, characterId, session);

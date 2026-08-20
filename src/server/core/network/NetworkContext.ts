@@ -13,6 +13,8 @@ import { LootSystem } from '../ecs/systems/LootSystem';
 import { PlayerSystem } from '../ecs/systems/PlayerSystem';
 import { SkillSystem } from '../ecs/systems/SkillSystem';
 import { PartySystem } from '../ecs/systems/PartySystem';
+import { FriendSystem } from '../ecs/systems/FriendSystem';
+import { GuildSystem } from '../ecs/systems/GuildSystem';
 import { EnmitySystem } from '../ecs/systems/EnmitySystem';
 import { TradeSystem } from '../ecs/systems/TradeSystem';
 import { SpawnManager } from '../world/SpawnManager';
@@ -42,6 +44,8 @@ export interface NetworkContext {
   readonly playerSys: PlayerSystem;
   readonly skillSys: SkillSystem;
   readonly partySys: PartySystem;
+  readonly friendSys: FriendSystem;
+  readonly guildSys: GuildSystem;
   readonly enmity: EnmitySystem;
   readonly tradeSys: TradeSystem;
   readonly spawnMgr: SpawnManager;

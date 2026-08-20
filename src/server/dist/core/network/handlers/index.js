@@ -13,6 +13,8 @@ const npcHandlers_1 = require("./npcHandlers");
 const zoneHandlers_1 = require("./zoneHandlers");
 const statHandlers_1 = require("./statHandlers");
 const partyHandlers_1 = require("./partyHandlers");
+const friendHandlers_1 = require("./friendHandlers");
+const guildHandlers_1 = require("./guildHandlers");
 const deathHandlers_1 = require("./deathHandlers");
 const enhancementHandlers_1 = require("./enhancementHandlers");
 const tradeHandlers_1 = require("./tradeHandlers");
@@ -33,6 +35,8 @@ function registerAllHandlers() {
     (0, zoneHandlers_1.registerHandlers)(registry);
     (0, statHandlers_1.registerHandlers)(registry);
     (0, partyHandlers_1.registerHandlers)(registry);
+    (0, friendHandlers_1.registerHandlers)(registry);
+    (0, guildHandlers_1.registerHandlers)(registry);
     (0, deathHandlers_1.registerHandlers)(registry);
     (0, enhancementHandlers_1.registerHandlers)(registry);
     (0, tradeHandlers_1.registerHandlers)(registry);

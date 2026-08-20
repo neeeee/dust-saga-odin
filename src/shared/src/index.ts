@@ -43,6 +43,7 @@ export { JOB_SKILL_VALUES, getJobSkillValues, getMinAdeptness, getMaxPotential, 
 export type { HotJobConfig } from './constants/jobSkillValues';
 export * from './types/skillBar';
 export * from './types/party';
+export * from './types/guild';
 export * from './types/trade';
 export * from './types/summon';
 export * from './utils/proficiency';

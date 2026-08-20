@@ -44,6 +44,129 @@ Local_Song :: struct {
 	expires_at: u64, // local ms, same clock as Status_Effect.expires_at
 }
 
+MAX_PARTY_MEMBERS :: 8
+
+// One row of a PARTY_UPDATE members[] entry (shared/src/types/party.ts
+// PartyMember). Fixed buffers, allocation-free after parse.
+Party_Member_Info :: struct {
+	char_id:    [64]u8,
+	id_len:     int,
+	name:       [32]u8,
+	name_len:   int,
+	level:      int,
+	job_id:     [32]u8,
+	job_len:    int,
+	health:     f32,
+	max_health: f32,
+	is_leader:  bool,
+	zone_id:    [32]u8,
+	zone_len:   int,
+}
+
+// A pending party-loot roll / pool item pushed by PARTY_LOOT_ROLL.
+Party_Loot_Roll :: struct {
+	loot_id:   [64]u8,
+	loot_len:  int,
+	item_name: [48]u8,
+	item_len:  int,
+	quantity:  int,
+	is_pool:   bool, // mode 'pool' (first-click take) vs 'need_greed' roll
+}
+
+// Client mirror of the server party (PartyData): membership, member stat
+// snapshots (the server refreshes them on stat changes), pending loot rolls,
+// and any invite awaiting the accept/decline dialog.
+Party_State :: struct {
+	in_party:   bool,
+	party_id:   [64]u8,
+	party_len:  int,
+	leader_id:  [64]u8,
+	leader_len: int,
+	members:    [dynamic]Party_Member_Info,
+	rolls:      [dynamic]Party_Loot_Roll,
+
+	// Incoming invite (PARTY_INVITE) awaiting the accept/decline dialog.
+	has_invite:         bool,
+	invite_party_id:    [64]u8,
+	invite_party_len:   int,
+	invite_leader:      [32]u8,
+	invite_leader_len:  int,
+}
+
+// One FRIEND_LIST entry (server FriendEntry).
+Friend_Info :: struct {
+	char_id: [64]u8,
+	id_len:  int,
+	name:    [32]u8,
+	name_len: int,
+	level:   int,
+	online:  bool,
+}
+
+MAX_GUILD_MEMBERS :: 40
+
+Guild_Member_Info :: struct {
+	char_id: [64]u8,
+	id_len:  int,
+	name:    [32]u8,
+	name_len: int,
+	level:   int,
+	rank:    [16]u8,
+	rank_len: int,
+	online:  bool,
+}
+
+Guild_Bank_Item :: struct {
+	item_id:   [64]u8,
+	item_len:  int,
+	item_name: [48]u8,
+	name_len:  int,
+	quantity:  int,
+}
+
+Guild_Perms :: struct {
+	invite:       bool,
+	kick:         bool,
+	promote:      bool,
+	set_motd:     bool,
+	bank_withdraw: bool,
+	bank_deposit: bool,
+}
+
+// Client mirror of the server guild (GUILD_UPDATE payload): identity, XP,
+// MOTD, bank, member rows, our rank + each rank's permissions.
+Guild_State :: struct {
+	in_guild:   bool,
+	guild_id:   [64]u8,
+	guild_len:  int,
+	name:       [40]u8,
+	name_len:   int,
+	tag:        [8]u8,
+	tag_len:    int,
+	leader_id:  [64]u8,
+	leader_len: int,
+	level:      int,
+	experience: int,
+	xp_to_next: int,
+	motd:       [255]u8,
+	motd_len:   int,
+	gold:       int,
+	members:    [dynamic]Guild_Member_Info,
+	bank:       [dynamic]Guild_Bank_Item,
+	my_rank:    [16]u8,
+	rank_len:   int,
+	perms:      Guild_Perms, // effective permissions for my_rank
+
+	// Incoming guild invite (GUILD_INVITE) awaiting the dialog.
+	has_invite:      bool,
+	invite_guild_id: [64]u8,
+	invite_guild_len: int,
+	invite_guild_name: [40]u8,
+	invite_name_len: int,
+	invite_by:       [32]u8,
+	invite_by_len:   int,
+}
+
 Game_Context :: struct {
 	net:                 ^Network_Client,
 	scene:               ^Scene,
@@ -53,12 +176,30 @@ Game_Context :: struct {
 	zone_loaded:         bool,
 	engine_ready:        bool,
 	notifications:       [dynamic]Notification,
-	floating:           [dynamic]Floating_Text,
+	floating:            [dynamic]Floating_Text,
 	dialog:              Dialog_State,
 
 	// Ground AOE zone telegraphs + the local player's active song aura.
 	aoe_zones:           [dynamic]AOE_Zone,
 	local_song:          Local_Song,
+
+	// Party mirror (see Party_State).
+	party:               Party_State,
+
+	// Friends (server FriendSystem) + last whisper partner (for /r).
+	friends:             [dynamic]Friend_Info,
+	last_whisper:        [32]u8,
+	last_whisper_len:    int,
+
+	// Incoming friend request awaiting the accept/decline dialog.
+	has_friend_req:      bool,
+	friend_req_from:     [64]u8,
+	friend_req_len:      int,
+	friend_req_name:     [32]u8,
+	friend_req_name_len: int,
+
+	// Guild mirror (see Guild_State).
+	guild:               Guild_State,
 
 	// Ground loot bags (mirrors the server's activeLoot; keyed alongside the
 	// scene entity that renders each bag).
@@ -96,6 +237,11 @@ game_context_init :: proc(
 	ctx.pending_spawns = make([dynamic]JSON_Value)
 	ctx.aoe_zones = make([dynamic]AOE_Zone)
 	ctx.local_song = Local_Song{}
+	ctx.party.members = make([dynamic]Party_Member_Info)
+	ctx.party.rolls = make([dynamic]Party_Loot_Roll)
+	ctx.friends = make([dynamic]Friend_Info)
+	ctx.guild.members = make([dynamic]Guild_Member_Info)
+	ctx.guild.bank = make([dynamic]Guild_Bank_Item)
 	return ctx
 }
 
@@ -107,6 +253,11 @@ game_context_destroy :: proc(ctx: ^Game_Context) {
 	delete(ctx.loot_bags)
 	delete(ctx.pending_spawns)
 	delete(ctx.aoe_zones)
+	delete(ctx.party.members)
+	delete(ctx.party.rolls)
+	delete(ctx.friends)
+	delete(ctx.guild.members)
+	delete(ctx.guild.bank)
 	free(ctx)
 }
 
@@ -212,6 +363,32 @@ handle_packet :: proc(ctx: ^Game_Context, p: ^Packet, free_after: bool) {
 		handle_aoe_entity(ctx, p.data)
 	case .AOE_DESPAWN:
 		handle_aoe_despawn(ctx, p.data)
+	case .PARTY_UPDATE:
+		handle_party_update(ctx, p.data)
+	case .PARTY_INVITE:
+		handle_party_invite(ctx, p.data)
+	case .PARTY_DISBAND:
+		handle_party_disband(ctx, p.data)
+	case .PARTY_LOOT_ROLL:
+		handle_party_loot_roll(ctx, p.data)
+	case .PARTY_LOOT_RESULT:
+		handle_party_loot_result(ctx, p.data)
+	case .FRIEND_LIST:
+		handle_friend_list(ctx, p.data)
+	case .FRIEND_ADD_RESULT:
+		handle_friend_add_result(ctx, p.data)
+	case .FRIEND_STATUS:
+		handle_friend_status(ctx, p.data)
+	case .WHISPER:
+		handle_whisper(ctx, p.data)
+	case .FRIEND_REQUEST:
+		handle_friend_request(ctx, p.data)
+	case .GUILD_UPDATE:
+		handle_guild_update(ctx, p.data)
+	case .GUILD_INVITE:
+		handle_guild_invite(ctx, p.data)
+	case .ENTITY_GUILD_TAG:
+		handle_entity_guild_tag(ctx, p.data)
 	case:
 	}
 
@@ -244,6 +421,15 @@ handle_world_state :: proc(ctx: ^Game_Context, data: ^JSON_Value) {
 	// Zone transition: drop all ground AOE telegraphs and the local song aura.
 	clear(&ctx.aoe_zones)
 	ctx.local_song = Local_Song{}
+
+	// Party membership survives zone changes (server keeps it), but any
+	// pending invite is stale after a zone switch.
+	ctx.party.has_invite = false
+	ctx.guild.has_invite = false
+	ctx.has_friend_req = false
+
+	// Refresh the friend list (online flags change with zone/reconnects).
+	send_friend_list_request(ctx.net)
 
 	spawn_entities_from_array(ctx, get_array(root, "enemies"), .ENEMY)
 	spawn_entities_from_array(ctx, get_array(root, "npcs"), .NPC)
@@ -330,6 +516,7 @@ spawn_one_entity :: proc(ctx: ^Game_Context, o: JSON_Object, kind: Entity_Kind) 
 		r.height = 1.8
 		r.radius = 0.5
 		set_entity_name(ctx.scene, idx, get_string(d, "name"))
+		copy_string_to_buffer(ui.guild_tag[:], &ui.tag_len, get_string(d, "guildTag"))
 		meta.level = get_int(d, "level")
 	case .SUMMON:
 		r.color = {180, 120, 220, 255}
@@ -501,6 +688,330 @@ handle_aoe_despawn :: proc(ctx: ^Game_Context, data: ^JSON_Value) {
 			i += 1
 		}
 	}
+}
+
+// ── party ───────────────────────────────────────────────────────────────────
+
+// PARTY_UPDATE: {partyId, leaderId, members[], settings, lootPool}.
+// Members carry stat snapshots the server refreshes on stat changes; the
+// gameplay panel shows the local player's live stats over their own row.
+handle_party_update :: proc(ctx: ^Game_Context, data: ^JSON_Value) {
+	if data == nil do return
+	root := obj_of(data^)
+	if is_null(data^) do return
+
+	p := &ctx.party
+	p.in_party = true
+	copy_string_to_buffer(p.party_id[:], &p.party_len, get_string(root, "partyId"))
+	copy_string_to_buffer(p.leader_id[:], &p.leader_len, get_string(root, "leaderId"))
+
+	clear(&p.members)
+	dyn := as_dyn(get_array(root, "members"))
+	for i in 0 ..< len(dyn) {
+		if len(p.members) >= MAX_PARTY_MEMBERS do break
+		o := obj_of(dyn[i])
+		m := Party_Member_Info {
+			level      = get_int(o, "level"),
+			health     = get_f32(o, "health"),
+			max_health = get_f32(o, "maxHealth"),
+			is_leader  = get_bool(o, "isLeader"),
+		}
+		copy_string_to_buffer(m.char_id[:], &m.id_len, get_string(o, "characterId"))
+		copy_string_to_buffer(m.name[:], &m.name_len, get_string(o, "characterName"))
+		copy_string_to_buffer(m.job_id[:], &m.job_len, get_string(o, "jobId"))
+		copy_string_to_buffer(m.zone_id[:], &m.zone_len, get_string(o, "zoneId"))
+		append(&p.members, m)
+	}
+}
+
+// PARTY_INVITE: {partyId, leaderName, settings, memberCount}. Stored; the
+// gameplay layer opens the accept/decline dialog while has_invite is set.
+handle_party_invite :: proc(ctx: ^Game_Context, data: ^JSON_Value) {
+	if data == nil do return
+	root := obj_of(data^)
+	if is_null(data^) do return
+
+	p := &ctx.party
+	p.has_invite = true
+	copy_string_to_buffer(p.invite_party_id[:], &p.invite_party_len, get_string(root, "partyId"))
+	copy_string_to_buffer(p.invite_leader[:], &p.invite_leader_len, get_string(root, "leaderName"))
+}
+
+// PARTY_DISBAND: we left, were kicked, or the party dissolved — clear all
+// party state including pending loot rolls.
+handle_party_disband :: proc(ctx: ^Game_Context, _data: ^JSON_Value) {
+	p := &ctx.party
+	p.in_party = false
+	p.party_len = 0
+	p.leader_len = 0
+	p.has_invite = false
+	p.invite_party_len = 0
+	p.invite_leader_len = 0
+	clear(&p.members)
+	clear(&p.rolls)
+}
+
+// PARTY_LOOT_ROLL: {lootId, itemId, itemName, quantity, mode}. Pool items are
+// first-click-take; need_greed items want a roll choice. The gameplay layer
+// shows one window per pending entry.
+handle_party_loot_roll :: proc(ctx: ^Game_Context, data: ^JSON_Value) {
+	if data == nil do return
+	root := obj_of(data^)
+	if is_null(data^) do return
+
+	r := Party_Loot_Roll {
+		quantity = get_int(root, "quantity", 1),
+		is_pool  = get_string(root, "mode") == "pool",
+	}
+	loot_id := get_string(root, "lootId")
+	if len(loot_id) == 0 do return
+	copy_string_to_buffer(r.loot_id[:], &r.loot_len, loot_id)
+	copy_string_to_buffer(r.item_name[:], &r.item_len, get_string(root, "itemName"))
+
+	// Replace any stale entry for the same loot id.
+	for i in 0 ..< len(ctx.party.rolls) {
+		if matches_name(ctx.party.rolls[i].loot_id[:], ctx.party.rolls[i].loot_len, loot_id) {
+			ctx.party.rolls[i] = r
+			return
+		}
+	}
+	append(&ctx.party.rolls, r)
+}
+
+// PARTY_LOOT_RESULT: resolved roll / pool claim — surface as a notification.
+handle_party_loot_result :: proc(ctx: ^Game_Context, data: ^JSON_Value) {
+	if data == nil do return
+	root := obj_of(data^)
+	if is_null(data^) do return
+
+	item := get_string(root, "itemName")
+	winner := get_string(root, "winnerName")
+	loot_id := get_string(root, "lootId")
+	if len(loot_id) > 0 {
+		i := 0
+		for i < len(ctx.party.rolls) {
+			if matches_name(ctx.party.rolls[i].loot_id[:], ctx.party.rolls[i].loot_len, loot_id) {
+				ordered_remove(&ctx.party.rolls, i)
+			} else {
+				i += 1
+			}
+		}
+	}
+	if len(winner) > 0 {
+		push_notification(ctx, fmt.tprintf("%s won %s", winner, item), "success")
+	} else if len(item) > 0 {
+		push_notification(ctx, fmt.tprintf("%s was not claimed", item), "info")
+	}
+}
+
+// ── friends / whisper ───────────────────────────────────────────────────────
+
+// FRIEND_LIST: {friends: [{characterId, name, level, online, ...}]}.
+handle_friend_list :: proc(ctx: ^Game_Context, data: ^JSON_Value) {
+	if data == nil do return
+	root := obj_of(data^)
+	if is_null(data^) do return
+
+	clear(&ctx.friends)
+	dyn := as_dyn(get_array(root, "friends"))
+	for i in 0 ..< len(dyn) {
+		o := obj_of(dyn[i])
+		f := Friend_Info {
+			level  = get_int(o, "level"),
+			online = get_bool(o, "online"),
+		}
+		copy_string_to_buffer(f.char_id[:], &f.id_len, get_string(o, "characterId"))
+		copy_string_to_buffer(f.name[:], &f.name_len, get_string(o, "name"))
+		append(&ctx.friends, f)
+	}
+}
+
+// FRIEND_ADD_RESULT: {success, message} — plain notification.
+handle_friend_add_result :: proc(ctx: ^Game_Context, data: ^JSON_Value) {
+	if data == nil do return
+	o := obj_of(data^)
+	if is_null(data^) do return
+	msg := get_string(o, "message")
+	if len(msg) > 0 {
+		push_notification(ctx, msg, get_bool(o, "success") ? "success" : "error")
+	}
+}
+
+// FRIEND_STATUS: {characterId, name, online} — update one entry in place and
+// surface a "[name] came online / went offline" line.
+handle_friend_status :: proc(ctx: ^Game_Context, data: ^JSON_Value) {
+	if data == nil do return
+	o := obj_of(data^)
+	if is_null(data^) do return
+
+	id := get_string(o, "characterId")
+	online := get_bool(o, "online")
+	name := get_string(o, "name")
+
+	for i in 0 ..< len(ctx.friends) {
+		if !matches_name(ctx.friends[i].char_id[:], ctx.friends[i].id_len, id) do continue
+		ctx.friends[i].online = online
+		break
+	}
+
+	if len(name) > 0 {
+		verb := online ? "came online." : "went offline."
+		push_notification(ctx, fmt.tprintf("%s %s", name, verb), "info")
+	}
+}
+
+// WHISPER (inbound echo + delivery): {fromName, toName, message}. Both sides
+// render "From/To name: message"; incoming whispers set the /r reply target.
+handle_whisper :: proc(ctx: ^Game_Context, data: ^JSON_Value) {
+	if data == nil do return
+	o := obj_of(data^)
+	if is_null(data^) do return
+
+	from_name := get_string(o, "fromName")
+	to_name := get_string(o, "toName")
+	message := get_string(o, "message")
+	if len(message) == 0 do return
+
+	self_id := character_id_string(ctx.player)
+	from_id := get_string(o, "from")
+	if from_id == self_id {
+		// Echo of our own whisper.
+		if len(to_name) > 0 {
+			chat_push(ctx.chat, .WHISPER, fmt.tprintf("To %s", to_name), message)
+		}
+		return
+	}
+
+	if len(from_name) > 0 {
+		copy_string_to_buffer(ctx.last_whisper[:], &ctx.last_whisper_len, from_name)
+		chat_push(ctx.chat, .WHISPER, fmt.tprintf("From %s", from_name), message)
+	}
+}
+
+// FRIEND_REQUEST: {characterId, name, level} — stored; gameplay opens the
+// accept/decline dialog while has_friend_req is set.
+handle_friend_request :: proc(ctx: ^Game_Context, data: ^JSON_Value) {
+	if data == nil do return
+	o := obj_of(data^)
+	if is_null(data^) do return
+
+	from := get_string(o, "characterId")
+	if len(from) == 0 do return
+	ctx.has_friend_req = true
+	copy_string_to_buffer(ctx.friend_req_from[:], &ctx.friend_req_len, from)
+	copy_string_to_buffer(ctx.friend_req_name[:], &ctx.friend_req_name_len, get_string(o, "name"))
+}
+
+// ── guild ───────────────────────────────────────────────────────────────────
+
+// GUILD_UPDATE: full guild state (or {guildId: null} when guildless). Fills
+// the Guild_State mirror, including the effective permissions for my rank.
+handle_guild_update :: proc(ctx: ^Game_Context, data: ^JSON_Value) {
+	if data == nil do return
+	root := obj_of(data^)
+	if is_null(data^) do return
+
+	g := &ctx.guild
+
+	// guildId absent/null → we left / were kicked / it disbanded.
+	guild_id := get_string(root, "guildId")
+	if len(guild_id) == 0 {
+		g.in_guild = false
+		g.guild_len = 0
+		g.name_len = 0
+		g.tag_len = 0
+		g.leader_len = 0
+		g.motd_len = 0
+		g.has_invite = false
+		clear(&g.members)
+		clear(&g.bank)
+		return
+	}
+
+	g.in_guild = true
+	copy_string_to_buffer(g.guild_id[:], &g.guild_len, guild_id)
+	copy_string_to_buffer(g.name[:], &g.name_len, get_string(root, "name"))
+	copy_string_to_buffer(g.tag[:], &g.tag_len, get_string(root, "tag"))
+	copy_string_to_buffer(g.leader_id[:], &g.leader_len, get_string(root, "leaderId"))
+	copy_string_to_buffer(g.motd[:], &g.motd_len, get_string(root, "motd"))
+	copy_string_to_buffer(g.my_rank[:], &g.rank_len, get_string(root, "myRank"))
+	g.level = get_int(root, "level", 1)
+	g.experience = get_int(root, "experience")
+	g.xp_to_next = get_int(root, "xpToNext", 1)
+	g.gold = get_int(root, "gold")
+
+	clear(&g.members)
+	members := as_dyn(get_array(root, "members"))
+	for i in 0 ..< len(members) {
+		if len(g.members) >= MAX_GUILD_MEMBERS do break
+		o := obj_of(members[i])
+		m := Guild_Member_Info {
+			level  = get_int(o, "level"),
+			online = get_bool(o, "online"),
+		}
+		copy_string_to_buffer(m.char_id[:], &m.id_len, get_string(o, "characterId"))
+		copy_string_to_buffer(m.name[:], &m.name_len, get_string(o, "name"))
+		copy_string_to_buffer(m.rank[:], &m.rank_len, get_string(o, "rank"))
+		append(&g.members, m)
+	}
+
+	clear(&g.bank)
+	bank := as_dyn(get_array(root, "bankItems"))
+	for i in 0 ..< len(bank) {
+		o := obj_of(bank[i])
+		b := Guild_Bank_Item {
+			quantity = get_int(o, "quantity", 1),
+		}
+		copy_string_to_buffer(b.item_id[:], &b.item_len, get_string(o, "itemId"))
+		copy_string_to_buffer(b.item_name[:], &b.name_len, get_string(o, "itemName"))
+		append(&g.bank, b)
+	}
+
+	// Effective permissions for my rank (server resolves defaults + overrides).
+	perms := get_object(root, "rankPerms")
+	mine := get_object(perms, string(g.my_rank[:g.rank_len]))
+	g.perms = Guild_Perms {
+		invite        = get_bool(mine, "invite"),
+		kick          = get_bool(mine, "kick"),
+		promote       = get_bool(mine, "promote"),
+		set_motd      = get_bool(mine, "setMotd"),
+		bank_withdraw = get_bool(mine, "bankWithdraw"),
+		bank_deposit  = get_bool(mine, "bankDeposit"),
+	}
+	// The leader implicitly has every permission.
+	self_id := character_id_string(ctx.player)
+	if matches_name(g.leader_id[:], g.leader_len, self_id) {
+		g.perms = Guild_Perms{true, true, true, true, true, true}
+	}
+}
+
+// GUILD_INVITE: {guildId, guildName, tag, inviterName} — stored; gameplay
+// opens the accept/decline dialog while has_invite is set.
+handle_guild_invite :: proc(ctx: ^Game_Context, data: ^JSON_Value) {
+	if data == nil do return
+	root := obj_of(data^)
+	if is_null(data^) do return
+
+	g := &ctx.guild
+	g.has_invite = true
+	copy_string_to_buffer(g.invite_guild_id[:], &g.invite_guild_len, get_string(root, "guildId"))
+	copy_string_to_buffer(g.invite_guild_name[:], &g.invite_name_len, get_string(root, "guildName"))
+	copy_string_to_buffer(g.invite_by[:], &g.invite_by_len, get_string(root, "inviterName"))
+}
+
+// ENTITY_GUILD_TAG: {entityId, guildTag} — live nameplate tag update when a
+// player joins/leaves a guild (empty tag clears it).
+handle_entity_guild_tag :: proc(ctx: ^Game_Context, data: ^JSON_Value) {
+	if data == nil do return
+	o := obj_of(data^)
+	if is_null(data^) do return
+
+	id := get_string(o, "entityId")
+	if len(id) == 0 do return
+	idx := find_index(ctx.scene, string_to_entity_id(id))
+	if idx < 0 do return // not visible to us (other zone / despawned)
+
+	copy_string_to_buffer(ctx.scene.ui[idx].guild_tag[:], &ctx.scene.ui[idx].tag_len, get_string(o, "guildTag"))
 }
 
 // ── ground loot bags ───────────────────────────────────────────────────────

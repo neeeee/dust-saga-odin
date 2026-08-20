@@ -162,6 +162,32 @@ Packet_Type :: enum u32 {
 	CUTSCENE_COMPLETE          = 187,
 	CUTSCENE_END               = 188,
 	FLOATING_TEXT              = 189,
+
+	// Friends
+	FRIEND_LIST_REQUEST        = 190,
+	FRIEND_LIST                = 191,
+	FRIEND_ADD                 = 192,
+	FRIEND_ADD_RESULT          = 193,
+	FRIEND_REMOVE              = 194,
+	FRIEND_STATUS              = 195,
+	WHISPER                    = 196,
+	FRIEND_REQUEST             = 197,
+	FRIEND_REQUEST_RESPONSE    = 198,
+
+	// Guild
+	GUILD_CREATE               = 200,
+	GUILD_INVITE               = 201,
+	GUILD_JOIN_REQUEST         = 202,
+	GUILD_LEAVE                = 203,
+	GUILD_KICK                 = 204,
+	GUILD_RANK_SET             = 205,
+	GUILD_RANK_PERMS           = 206,
+	GUILD_UPDATE               = 207,
+	GUILD_MOTD                 = 208,
+	GUILD_BANK_GOLD            = 209,
+	GUILD_BANK_ITEM            = 210,
+	GUILD_DISBAND              = 211,
+	ENTITY_GUILD_TAG           = 212,
 }
 
 // A decoded inbound packet. `data` is an owned (deep-cloned) JSON payload; the
@@ -517,11 +543,190 @@ send_skill_use_ground :: proc(nc: ^Network_Client, skill_name: string, x, y, z: 
 	send_object(nc, .SKILL_USE, fields[:])
 }
 
-send_chat :: proc(nc: ^Network_Client, message: string) {
-	fields := make([dynamic]JSON_Field, 0, 1)
+// Channel defaults to "zone"; "party"/"global"/"system" are routed server-side.
+send_chat :: proc(nc: ^Network_Client, message: string, channel: string = "zone") {
+	fields := make([dynamic]JSON_Field, 0, 2)
 	defer delete(fields)
 	append(&fields, JSON_Field{"message", json_str(message)})
+	if channel != "zone" {
+		append(&fields, JSON_Field{"channel", json_str(channel)})
+	}
 	send_object(nc, .CHAT_MESSAGE, fields[:])
+}
+
+// ── party ───────────────────────────────────────────────────────────────────
+
+// Create a party with `target_id` as the invited member (defaults: private,
+// FFA loot). Only valid when not already in a party.
+send_party_create :: proc(nc: ^Network_Client, target_id: string) {
+	fields := make([dynamic]JSON_Field, 0, 1)
+	defer delete(fields)
+	append(&fields, JSON_Field{"targetId", json_str(target_id)})
+	send_object(nc, .PARTY_CREATE_REQUEST, fields[:])
+}
+
+// Invite `target_id` to my existing party (leader only).
+send_party_invite :: proc(nc: ^Network_Client, target_id: string) {
+	fields := make([dynamic]JSON_Field, 0, 1)
+	defer delete(fields)
+	append(&fields, JSON_Field{"targetId", json_str(target_id)})
+	send_object(nc, .PARTY_INVITE_REQUEST, fields[:])
+}
+
+// Accept or decline a PARTY_INVITE by party id.
+send_party_join :: proc(nc: ^Network_Client, party_id: string, accept: bool) {
+	fields := make([dynamic]JSON_Field, 0, 2)
+	defer delete(fields)
+	append(&fields, JSON_Field{"partyId", json_str(party_id)})
+	if !accept {
+		append(&fields, JSON_Field{"accept", json.Boolean(false)})
+	}
+	send_object(nc, .PARTY_JOIN_REQUEST, fields[:])
+}
+
+send_party_kick :: proc(nc: ^Network_Client, target_id: string) {
+	fields := make([dynamic]JSON_Field, 0, 1)
+	defer delete(fields)
+	append(&fields, JSON_Field{"targetId", json_str(target_id)})
+	send_object(nc, .PARTY_KICK, fields[:])
+}
+
+send_party_promote :: proc(nc: ^Network_Client, target_id: string) {
+	fields := make([dynamic]JSON_Field, 0, 1)
+	defer delete(fields)
+	append(&fields, JSON_Field{"targetId", json_str(target_id)})
+	send_object(nc, .PARTY_PROMOTE, fields[:])
+}
+
+// Submit a need/greed/pass roll for a party-loot item.
+send_party_loot_submit :: proc(nc: ^Network_Client, loot_id: string, kind: string) {
+	fields := make([dynamic]JSON_Field, 0, 2)
+	defer delete(fields)
+	append(&fields, JSON_Field{"lootId", json_str(loot_id)})
+	append(&fields, JSON_Field{"kind", json_str(kind)})
+	send_object(nc, .PARTY_LOOT_ROLL_SUBMIT, fields[:])
+}
+
+// Claim a POOL-rule party-loot item (first-click wins).
+send_loot_take :: proc(nc: ^Network_Client, loot_id: string) {
+	fields := make([dynamic]JSON_Field, 0, 1)
+	defer delete(fields)
+	append(&fields, JSON_Field{"lootId", json_str(loot_id)})
+	send_object(nc, .LOOT_TAKE, fields[:])
+}
+
+// ── friends / whisper ───────────────────────────────────────────────────────
+
+send_friend_list_request :: proc(nc: ^Network_Client) {
+	send(nc, .FRIEND_LIST_REQUEST)
+}
+
+send_friend_add :: proc(nc: ^Network_Client, name: string) {
+	fields := make([dynamic]JSON_Field, 0, 1)
+	defer delete(fields)
+	append(&fields, JSON_Field{"name", json_str(name)})
+	send_object(nc, .FRIEND_ADD, fields[:])
+}
+
+send_friend_remove :: proc(nc: ^Network_Client, character_id: string) {
+	fields := make([dynamic]JSON_Field, 0, 1)
+	defer delete(fields)
+	append(&fields, JSON_Field{"characterId", json_str(character_id)})
+	send_object(nc, .FRIEND_REMOVE, fields[:])
+}
+
+// Accept or decline a pending FRIEND_REQUEST by the requester's character id.
+send_friend_request_response :: proc(nc: ^Network_Client, from_id: string, accept: bool) {
+	fields := make([dynamic]JSON_Field, 0, 2)
+	defer delete(fields)
+	append(&fields, JSON_Field{"characterId", json_str(from_id)})
+	if !accept {
+		append(&fields, JSON_Field{"accept", json.Boolean(false)})
+	}
+	send_object(nc, .FRIEND_REQUEST_RESPONSE, fields[:])
+}
+
+send_whisper :: proc(nc: ^Network_Client, to, message: string) {
+	fields := make([dynamic]JSON_Field, 0, 2)
+	defer delete(fields)
+	append(&fields, JSON_Field{"to", json_str(to)})
+	append(&fields, JSON_Field{"message", json_str(message)})
+	send_object(nc, .WHISPER, fields[:])
+}
+
+// ── guild ───────────────────────────────────────────────────────────────────
+
+send_guild_create :: proc(nc: ^Network_Client, name, tag: string) {
+	fields := make([dynamic]JSON_Field, 0, 2)
+	defer delete(fields)
+	append(&fields, JSON_Field{"name", json_str(name)})
+	append(&fields, JSON_Field{"tag", json_str(tag)})
+	send_object(nc, .GUILD_CREATE, fields[:])
+}
+
+send_guild_invite :: proc(nc: ^Network_Client, target_id: string) {
+	fields := make([dynamic]JSON_Field, 0, 1)
+	defer delete(fields)
+	append(&fields, JSON_Field{"targetId", json_str(target_id)})
+	send_object(nc, .GUILD_INVITE, fields[:])
+}
+
+// Accept or decline a GUILD_INVITE by guild id.
+send_guild_join :: proc(nc: ^Network_Client, guild_id: string, accept: bool) {
+	fields := make([dynamic]JSON_Field, 0, 2)
+	defer delete(fields)
+	append(&fields, JSON_Field{"guildId", json_str(guild_id)})
+	if !accept {
+		append(&fields, JSON_Field{"accept", json.Boolean(false)})
+	}
+	send_object(nc, .GUILD_JOIN_REQUEST, fields[:])
+}
+
+send_guild_leave :: proc(nc: ^Network_Client) {
+	send(nc, .GUILD_LEAVE)
+}
+
+send_guild_disband :: proc(nc: ^Network_Client) {
+	send(nc, .GUILD_DISBAND)
+}
+
+send_guild_kick :: proc(nc: ^Network_Client, character_id: string) {
+	fields := make([dynamic]JSON_Field, 0, 1)
+	defer delete(fields)
+	append(&fields, JSON_Field{"characterId", json_str(character_id)})
+	send_object(nc, .GUILD_KICK, fields[:])
+}
+
+send_guild_rank_set :: proc(nc: ^Network_Client, character_id, rank: string) {
+	fields := make([dynamic]JSON_Field, 0, 2)
+	defer delete(fields)
+	append(&fields, JSON_Field{"characterId", json_str(character_id)})
+	append(&fields, JSON_Field{"rank", json_str(rank)})
+	send_object(nc, .GUILD_RANK_SET, fields[:])
+}
+
+send_guild_motd :: proc(nc: ^Network_Client, motd: string) {
+	fields := make([dynamic]JSON_Field, 0, 1)
+	defer delete(fields)
+	append(&fields, JSON_Field{"motd", json_str(motd)})
+	send_object(nc, .GUILD_MOTD, fields[:])
+}
+
+// amount > 0 deposits, < 0 withdraws.
+send_guild_bank_gold :: proc(nc: ^Network_Client, amount: int) {
+	fields := make([dynamic]JSON_Field, 0, 1)
+	defer delete(fields)
+	append(&fields, JSON_Field{"amount", json.Integer(amount)})
+	send_object(nc, .GUILD_BANK_GOLD, fields[:])
+}
+
+// quantity > 0 deposits one, quantity < 0 withdraws one.
+send_guild_bank_item :: proc(nc: ^Network_Client, item_id: string, quantity: int) {
+	fields := make([dynamic]JSON_Field, 0, 2)
+	defer delete(fields)
+	append(&fields, JSON_Field{"itemId", json_str(item_id)})
+	append(&fields, JSON_Field{"quantity", json.Integer(quantity)})
+	send_object(nc, .GUILD_BANK_ITEM, fields[:])
 }
 
 send_enter_zone :: proc(nc: ^Network_Client, zone_id: string) {

@@ -11,3 +11,6 @@ src/client/skillbar_*.json
 
 # conversation screenshots
 2026-08-*.png
+
+# local ODIN_ROOT: symlink farm + restored raylib binaries (system vendor LFS fix)
+src/client/.odin-root/

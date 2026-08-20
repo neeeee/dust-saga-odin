@@ -12,6 +12,8 @@ import { registerHandlers as registerNPC } from './npcHandlers';
 import { registerHandlers as registerZone } from './zoneHandlers';
 import { registerHandlers as registerStat } from './statHandlers';
 import { registerHandlers as registerParty } from './partyHandlers';
+import { registerHandlers as registerFriend } from './friendHandlers';
+import { registerHandlers as registerGuild } from './guildHandlers';
 import { registerHandlers as registerDeath } from './deathHandlers';
 import { registerHandlers as registerEnhancement } from './enhancementHandlers';
 import { registerHandlers as registerTrade } from './tradeHandlers';
@@ -34,6 +36,8 @@ export function registerAllHandlers(): Map<PacketType, PacketHandler> {
   registerZone(registry);
   registerStat(registry);
   registerParty(registry);
+  registerFriend(registry);
+  registerGuild(registry);
   registerDeath(registry);
   registerEnhancement(registry);
   registerTrade(registry);

@@ -222,6 +222,8 @@ async function handleCharacterSelect(ctx, socket, data) {
             learnedRecipes: session.learnedRecipes || []
         }
     });
+    // Guild: load membership BEFORE the spawn broadcast so the tag ships with it.
+    await ctx.guildSys.loadForCharacter(session);
     ctx.sendZoneState(socket, session.zoneId);
     ctx.broadcastInZone(session.zoneId, {
         type: shared_1.PacketType.ENTITY_SPAWN,
@@ -231,9 +233,11 @@ async function handleCharacterSelect(ctx, socket, data) {
             type: 'player',
             position: session.position,
             rotation: session.rotation,
-            data: { name: session.characterName, class: session.jobId, race: session.race, jobId: session.jobId, level: session.stats.level, health: session.stats.health, maxHealth: session.stats.maxHealth, modelFile: shared_1.JOB_DEFINITIONS[session.jobId]?.modelFile, invisible: session.statusEffects?.some((e) => e.type === shared_1.StatusEffectType.INVISIBLE) || false, role: session.role }
+            data: { name: session.characterName, class: session.jobId, race: session.race, jobId: session.jobId, level: session.stats.level, health: session.stats.health, maxHealth: session.stats.maxHealth, modelFile: shared_1.JOB_DEFINITIONS[session.jobId]?.modelFile, invisible: session.statusEffects?.some((e) => e.type === shared_1.StatusEffectType.INVISIBLE) || false, role: session.role, guildTag: session.guildTag || '' }
         }
     });
+    // Friends: load the list + tell mutual friends this character is online.
+    void ctx.friendSys.onLogin(session);
 }
 async function handleCharacterDelete(ctx, socket, data) {
     const playerId = ctx.state.socketToPlayer.get(socket.id);
