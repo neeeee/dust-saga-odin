@@ -39,6 +39,10 @@ export interface PlayerSession {
     role: AccountRole;
     jobId: JobId;
     baseClass: BaseClass;
+    modelId?: string;
+    faceIndex?: number;
+    hairIndex?: number;
+    hairColor?: number;
     stats: PlayerStats;
     statPoints: StatPoints;
     baseStats: {

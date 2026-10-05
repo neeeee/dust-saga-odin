@@ -39,6 +39,10 @@ export interface MockCharacter {
   character_quests?: string;
   character_recipes?: string;
   character_unlocked_zones?: string;
+  model_id?: string;
+  face_index?: number;
+  hair_index?: number;
+  hair_color?: number;
 }
 
 export class AuthManager {
@@ -228,7 +232,7 @@ export class AuthManager {
 
     try {
       const result = await this.db.postgres!.query(
-        'SELECT id, name, class, race, racial_passive, job_id, level, position_x, position_y, position_z, zone_id, stat_points, unspent_stat_points, unspent_skill_points, skill_proficiencies, skill_adeptness, experience, nation, last_safe_zone_id, inventory, equipment, gold, character_quests, character_recipes, character_unlocked_zones FROM characters WHERE player_id = $1',
+        'SELECT id, name, class, race, racial_passive, model_id, face_index, hair_index, hair_color, job_id, level, position_x, position_y, position_z, zone_id, stat_points, unspent_stat_points, unspent_skill_points, skill_proficiencies, skill_adeptness, experience, nation, last_safe_zone_id, inventory, equipment, gold, character_quests, character_recipes, character_unlocked_zones FROM characters WHERE player_id = $1',
         [playerId]
       );
       return result.rows;
@@ -243,7 +247,8 @@ export class AuthManager {
     name: string,
     race: string,
     jobId: string,
-    racialPassive?: string
+    racialPassive?: string,
+    appearance?: { modelId: string; faceIndex: number; hairIndex: number; hairColor: number }
   ): Promise<{ success: boolean; characterId?: string; error?: string }> {
     if (!this.db.isPostgresConnected()) {
       const characters = this.mockCharacters.get(playerId) || [];
@@ -271,6 +276,10 @@ export class AuthManager {
         skill_adeptness: JSON.stringify(defaultAdeptness),
         experience: 0,
         racial_passive: racialPassive || null,
+        model_id: appearance?.modelId || '011',
+        face_index: appearance?.faceIndex ?? 0,
+        hair_index: appearance?.hairIndex ?? 0,
+        hair_color: appearance?.hairColor ?? 0,
       };
       characters.push(newChar);
       this.mockCharacters.set(playerId, characters);
@@ -291,9 +300,9 @@ export class AuthManager {
       const defaultSkills = createDefaultSkillProficiencies();
       const defaultAdeptness = createDefaultSkillAdeptness(getDesignJobId(jobId));
       const result = await this.db.postgres!.query(
-        `INSERT INTO characters (player_id, name, class, race, racial_passive, job_id, level, position_x, position_y, position_z, zone_id, stat_points, unspent_stat_points, unspent_skill_points, skill_proficiencies, skill_adeptness)
-         VALUES ($1, $2, $3, $4, $5, $6, 1, 0, 0, 0, $7, $8, 0, 0, $9, $10) RETURNING id`,
-        [playerId, name, jobId, race, racialPassive || null, jobId, 'starter_zone', JSON.stringify(defaultStats), JSON.stringify(defaultSkills), JSON.stringify(defaultAdeptness)]
+        `INSERT INTO characters (player_id, name, class, race, racial_passive, model_id, face_index, hair_index, hair_color, job_id, level, position_x, position_y, position_z, zone_id, stat_points, unspent_stat_points, unspent_skill_points, skill_proficiencies, skill_adeptness)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 1, 0, 0, 0, $11, $12, 0, 0, $13, $14) RETURNING id`,
+        [playerId, name, jobId, race, racialPassive || null, appearance?.modelId || '011', appearance?.faceIndex ?? 0, appearance?.hairIndex ?? 0, appearance?.hairColor ?? 0, jobId, 'starter_zone', JSON.stringify(defaultStats), JSON.stringify(defaultSkills), JSON.stringify(defaultAdeptness)]
       );
 
       return { success: true, characterId: result.rows[0].id };

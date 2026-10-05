@@ -485,12 +485,16 @@ send_character_list :: proc(nc: ^Network_Client) {
 	send(nc, .CHARACTER_LIST)
 }
 
-send_character_create :: proc(nc: ^Network_Client, name, character_class, race: string) {
-	fields := make([dynamic]JSON_Field, 0, 3)
+send_character_create :: proc(nc: ^Network_Client, name, character_class, race, model_id: string, face_index, hair_index, hair_color: int) {
+	fields := make([dynamic]JSON_Field, 0, 7)
 	defer delete(fields)
 	append(&fields, JSON_Field{"name", json_str(name)})
 	append(&fields, JSON_Field{"characterClass", json_str(character_class)})
 	append(&fields, JSON_Field{"race", json_str(race)})
+	append(&fields, JSON_Field{"modelId", json_str(model_id)})
+	append(&fields, JSON_Field{"faceIndex", json_int_v(face_index)})
+	append(&fields, JSON_Field{"hairIndex", json_int_v(hair_index)})
+	append(&fields, JSON_Field{"hairColor", json_int_v(hair_color)})
 	send_object(nc, .CHARACTER_CREATE, fields[:])
 }
 

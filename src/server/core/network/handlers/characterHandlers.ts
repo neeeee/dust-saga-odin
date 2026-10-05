@@ -33,7 +33,11 @@ async function handleCharacterList(ctx: NetworkContext, socket: Socket, _data: a
       jobId: c.job_id || c.class,
       level: c.level,
       zoneId: c.zone_id || 'starter_zone',
-      modelFile: jobDef?.modelFile || 'Adventurer.glb'
+      modelFile: jobDef?.modelFile || 'Adventurer.glb',
+      modelId: c.model_id || '011',
+      faceIndex: c.face_index ?? 0,
+      hairIndex: c.hair_index ?? 0,
+      hairColor: c.hair_color ?? 0
     };
   });
 
@@ -57,7 +61,14 @@ async function handleCharacterCreate(ctx: NetworkContext, socket: Socket, data: 
     return;
   }
 
-  const result = await ctx.auth.createCharacter(playerId, data.name, data.race || 'human', data.characterClass, data.racialPassive);
+  const appearance = {
+    modelId: typeof data.modelId === 'string' && /^[0-9A-Za-z]{1,10}$/.test(data.modelId) ? data.modelId : '011',
+    faceIndex: Number.isFinite(data.faceIndex) ? Math.max(0, Math.min(63, Math.floor(data.faceIndex))) : 0,
+    hairIndex: Number.isFinite(data.hairIndex) ? Math.max(0, Math.min(63, Math.floor(data.hairIndex))) : 0,
+    hairColor: Number.isFinite(data.hairColor) ? Math.max(0, Math.min(63, Math.floor(data.hairColor))) : 0
+  };
+
+  const result = await ctx.auth.createCharacter(playerId, data.name, data.race || 'human', data.characterClass, data.racialPassive, appearance);
 
   if (result.success) {
     const jobDef = JOB_DEFINITIONS[data.characterClass as JobId];
@@ -73,7 +84,11 @@ async function handleCharacterCreate(ctx: NetworkContext, socket: Socket, data: 
           jobId: data.characterClass,
           level: 1,
           zoneId: 'starter_zone',
-          modelFile: jobDef?.modelFile || 'Adventurer.glb'
+          modelFile: jobDef?.modelFile || 'Adventurer.glb',
+          modelId: appearance.modelId,
+          faceIndex: appearance.faceIndex,
+          hairIndex: appearance.hairIndex,
+          hairColor: appearance.hairColor
         }
       }
     });
@@ -184,6 +199,10 @@ async function handleCharacterSelect(ctx: NetworkContext, socket: Socket, data: 
     );
 
     session.zoneId = char.zone_id || 'starter_zone';
+    session.modelId = char.model_id || '011';
+    session.faceIndex = char.face_index ?? 0;
+    session.hairIndex = char.hair_index ?? 0;
+    session.hairColor = char.hair_color ?? 0;
     session.nation = (char.nation as 'varik' | 'pfelstein' | 'latugan' | null) || null;
     session.lastSafeZoneId = char.last_safe_zone_id || session.zoneId;
     session.gold = char.gold || 100;
@@ -269,7 +288,7 @@ async function handleCharacterSelect(ctx: NetworkContext, socket: Socket, data: 
       type: 'player',
       position: session.position,
       rotation: session.rotation,
-      data: { name: session.characterName, class: session.jobId, race: session.race, jobId: session.jobId, level: session.stats.level, health: session.stats.health, maxHealth: session.stats.maxHealth, modelFile: JOB_DEFINITIONS[session.jobId]?.modelFile, invisible: session.statusEffects?.some((e: any) => e.type === StatusEffectType.INVISIBLE) || false, role: session.role, guildTag: session.guildTag || '' }
+      data: { name: session.characterName, class: session.jobId, race: session.race, jobId: session.jobId, level: session.stats.level, health: session.stats.health, maxHealth: session.stats.maxHealth, modelFile: JOB_DEFINITIONS[session.jobId]?.modelFile, modelId: session.modelId || '011', faceIndex: session.faceIndex ?? 0, hairIndex: session.hairIndex ?? 0, hairColor: session.hairColor ?? 0, invisible: session.statusEffects?.some((e: any) => e.type === StatusEffectType.INVISIBLE) || false, role: session.role, guildTag: session.guildTag || '' }
     }
   });
 

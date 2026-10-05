@@ -241,12 +241,18 @@ draw_ground_reticle_hint :: proc() {
 
 draw_local_player :: proc() {
 	p := state.player.position
-	pos := rl.Vector3{p.x, p.y + 0.9, p.z}
 	axis, angle := sys.euler_y_to_raylib(state.player.yaw)
 	col := rl.Color{100, 180, 255, 255}
 	if state.player.is_resting do col = {120, 120, 180, 255}
 	if state.player.is_dead do col = {120, 120, 120, 255}
-	rl.DrawModelEx(state.scene.model_capsule, pos, axis, angle, {1, 1, 1}, col)
+	if av := state.local_avatar; av != nil {
+		rl.DrawModelEx(av.sub.model,
+			{p.x, p.y + av.lift, p.z},
+			axis, angle + sys.AVATAR_YAW_OFFSET_DEG, {av.scale, av.scale, av.scale}, col)
+	} else {
+		rl.DrawModelEx(state.scene.model_capsule,
+			{p.x, p.y + 0.9, p.z}, axis, angle, {1, 1, 1}, col)
+	}
 }
 
 // Overhead chat bubble over the local player's head (same anchor — y+2.5 —

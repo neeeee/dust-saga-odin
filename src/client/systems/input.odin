@@ -84,9 +84,11 @@ poll_input :: proc(chat_focused: bool, p: ^Local_Player, dt: f32) -> Input_State
 	if linalg.length(move_dir) > 0 {
 		move_dir = linalg.normalize(move_dir)
 
-		// Rotate movement vector by player's current yaw facing
-		sin_y := math.sin(p.yaw)
-		cos_y := math.cos(p.yaw)
+		// Movement is camera-relative: rotate by the ORBIT yaw, not the
+		// character yaw — the character yaw now follows the movement
+		// direction, and rotating by it would feed back into itself.
+		sin_y := math.sin(cam_control.yaw)
+		cos_y := math.cos(cam_control.yaw)
 
 		rotated_move := rl.Vector3 {
 			move_dir.x * cos_y + move_dir.z * sin_y,
@@ -95,6 +97,12 @@ poll_input :: proc(chat_focused: bool, p: ^Local_Player, dt: f32) -> Input_State
 		}
 
 		p.position += rotated_move * GAME.PLAYER_SPEED * dt
+
+		// Face the movement direction. The avatar carries a 180° render
+		// offset (models face +Z, the game forward is -Z), so the stored yaw
+		// is the reverse of the movement direction — same convention as
+		// click-to-move below and the RMB yaw assignment.
+		p.yaw = math.atan2(-rotated_move.x, -rotated_move.z)
 	}
 
 	state.sprint = bind_down(.Sprint)
@@ -181,8 +189,8 @@ update_camera :: proc(dt: f32, p: ^Local_Player, block_zoom: bool) {
 		cam_control.pitch += mouse_delta.y * cam_control.sensitivity
 		cam_control.pitch = clamp(cam_control.pitch, cam_control.min_pitch, cam_control.max_pitch)
 
-		// In WoW, holding RMB forces player to face camera direction immediately
-		p.yaw = cam_control.yaw
+		// Character facing follows movement (see the WASD block); orbiting the
+		// camera no longer snaps the character to the camera direction.
 	}
 
 	if rl.IsMouseButtonReleased(.RIGHT) {

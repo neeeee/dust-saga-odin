@@ -89,7 +89,7 @@ async function handleEnterZone(ctx: NetworkContext, socket: Socket, data: any): 
       type: 'player',
       position: session.position,
       rotation: session.rotation,
-      data: { name: session.characterName, class: session.jobId, race: session.race, jobId: session.jobId, level: session.stats.level, health: session.stats.health, maxHealth: session.stats.maxHealth, modelFile: JOB_DEFINITIONS[session.jobId]?.modelFile, invisible: session.statusEffects?.some((e: any) => e.type === StatusEffectType.INVISIBLE) || false, isResting: session.isResting }
+      data: { name: session.characterName, class: session.jobId, race: session.race, jobId: session.jobId, level: session.stats.level, health: session.stats.health, maxHealth: session.stats.maxHealth, modelFile: JOB_DEFINITIONS[session.jobId]?.modelFile, modelId: session.modelId || '011', faceIndex: session.faceIndex ?? 0, hairIndex: session.hairIndex ?? 0, hairColor: session.hairColor ?? 0, invisible: session.statusEffects?.some((e: any) => e.type === StatusEffectType.INVISIBLE) || false, isResting: session.isResting }
     }
   });
 

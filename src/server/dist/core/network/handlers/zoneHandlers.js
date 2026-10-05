@@ -79,7 +79,7 @@ async function handleEnterZone(ctx, socket, data) {
             type: 'player',
             position: session.position,
             rotation: session.rotation,
-            data: { name: session.characterName, class: session.jobId, race: session.race, jobId: session.jobId, level: session.stats.level, health: session.stats.health, maxHealth: session.stats.maxHealth, modelFile: shared_1.JOB_DEFINITIONS[session.jobId]?.modelFile, invisible: session.statusEffects?.some((e) => e.type === shared_1.StatusEffectType.INVISIBLE) || false, isResting: session.isResting }
+            data: { name: session.characterName, class: session.jobId, race: session.race, jobId: session.jobId, level: session.stats.level, health: session.stats.health, maxHealth: session.stats.maxHealth, modelFile: shared_1.JOB_DEFINITIONS[session.jobId]?.modelFile, modelId: session.modelId || '011', faceIndex: session.faceIndex ?? 0, hairIndex: session.hairIndex ?? 0, hairColor: session.hairColor ?? 0, invisible: session.statusEffects?.some((e) => e.type === shared_1.StatusEffectType.INVISIBLE) || false, isResting: session.isResting }
         }
     });
     ctx.sendZoneState(socket, data.zoneId, characterId);

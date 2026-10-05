@@ -1786,7 +1786,7 @@ class NetworkServer {
                 type: 'player',
                 position: player.position,
                 rotation: player.rotation,
-                data: { name: player.characterName, class: player.jobId, race: player.race, jobId: player.jobId, level: player.stats.level, health: player.stats.health, maxHealth: player.stats.maxHealth, modelFile: shared_1.JOB_DEFINITIONS[player.jobId]?.modelFile, invisible: player.statusEffects?.some(e => e.type === shared_1.StatusEffectType.INVISIBLE) || false, isResting: player.isResting, role: player.role, guildTag: player.guildTag || '' }
+                data: { name: player.characterName, class: player.jobId, race: player.race, jobId: player.jobId, level: player.stats.level, health: player.stats.health, maxHealth: player.stats.maxHealth, modelFile: shared_1.JOB_DEFINITIONS[player.jobId]?.modelFile, modelId: player.modelId || '011', faceIndex: player.faceIndex ?? 0, hairIndex: player.hairIndex ?? 0, hairColor: player.hairColor ?? 0, invisible: player.statusEffects?.some(e => e.type === shared_1.StatusEffectType.INVISIBLE) || false, isResting: player.isResting, role: player.role, guildTag: player.guildTag || '' }
             });
         });
         const summons = this.summonMgr.getSummonsInZone(zoneId);

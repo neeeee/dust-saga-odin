@@ -46,6 +46,8 @@ state: struct {
 	net:                    ^sys.Network_Client,
 	scene:                  ^sys.Scene,
 	player:                 ^sys.Local_Player,
+	local_avatar:           ^sys.Chara_Avatar,
+	cast_anim_active:       bool, // 0071 loop started for the current cast
 	chat:                   ^sys.Chat_Log,
 	status:                 State,
 
@@ -168,11 +170,22 @@ init :: proc(
 	scene: ^sys.Scene,
 	player: ^sys.Local_Player,
 	chat: ^sys.Chat_Log,
+	appearance: sys.Local_Appearance,
 ) {
 	state.net = net
 	state.scene = scene
 	state.player = player
 	state.chat = chat
+
+	// Local player's creator model (falls back to the capsule if the model
+	// can't load). avatar_create takes ownership of the acquired reference.
+	if len(appearance.model_id) > 0 {
+		cm := sys.chara_model_acquire(appearance.model_id)
+		if cm != nil {
+			state.local_avatar = sys.chara_avatar_create(cm, appearance.face_i, appearance.hair_i, appearance.color_i)
+			if state.local_avatar == nil do sys.chara_model_release(cm)
+		}
+	}
 	state.ctx = sys.game_context_init(net, scene, player, chat)
 
 	// Camera: third-person, looking down at the player from behind.
@@ -196,6 +209,10 @@ init :: proc(
 }
 
 shutdown :: proc() {
+	if state.local_avatar != nil {
+		sys.chara_avatar_destroy(state.local_avatar)
+		state.local_avatar = nil
+	}
 	if state.ctx != nil do sys.game_context_destroy(state.ctx)
 	state.ctx = nil
 	state.initialized = false
@@ -309,6 +326,7 @@ update :: proc(dt: f32) -> (requested: sys.App_State, has_request: bool) {
 	// 9. Update entity scene (culling + interpolation) and cooldowns.
 	ppos := [3]f32{state.player.position.x, state.player.position.y, state.player.position.z}
 	sys.update(state.scene, dt, f64(rl.GetTime()), ppos, int(rl.GetFPS()))
+	update_local_avatar(dt)
 	tick_cooldowns(dt)
 	tick_notifications(dt)
 	tick_floating(dt)
@@ -360,6 +378,7 @@ update_timers :: proc(dt: f32) {
 	tick_aoe_zones()
 	ppos := [3]f32{state.player.position.x, state.player.position.y, state.player.position.z}
 	sys.update(state.scene, dt, f64(rl.GetTime()), ppos, int(rl.GetFPS()))
+	update_local_avatar(dt)
 	sys.update_camera(dt, state.player, cursor_over_ui())
 }
 
@@ -393,7 +412,8 @@ follow_click_path :: proc(dt: f32) {
 		if speed > dist do speed = dist
 		state.player.position.x += (dx / dist) * speed
 		state.player.position.z += (dz / dist) * speed
-		state.player.yaw = math.atan2(dx, dz)
+		// 180° avatar render offset — stored yaw is reverse-of-movement.
+		state.player.yaw = math.atan2(-dx, -dz)
 	}
 }
 
@@ -745,8 +765,28 @@ tick_floating :: proc(dt: f32) {
 }
 
 tick_cast :: proc(dt: f32) {
-	if state.player.casting.active {
-		state.player.casting.elapsed += f64(dt * 1000.0)
+	c := &state.player.casting
+
+	if c.active {
+		c.elapsed += f64(dt * 1000.0)
+
+		// Cast channel: loop the cast clip while the cast runs.
+		if !state.cast_anim_active {
+			state.cast_anim_active = true
+			sys.chara_avatar_play_action(state.local_avatar, "0071", true)
+		}
+
+		// Local finish (the server's "used" also clears active).
+		if c.cast_time > 0 && c.elapsed >= c.cast_time {
+			c.active = false
+		}
+	}
+
+	// Cast over (finished, cancelled, or server-cleared): play the finish
+	// flourish once; the avatar returns to movement clips afterwards.
+	if state.cast_anim_active && !c.active {
+		state.cast_anim_active = false
+		sys.chara_avatar_play_action(state.local_avatar, "0072", false)
 	}
 }
 
@@ -978,4 +1018,28 @@ handle_skill_bar_input :: proc(inp: sys.Input_State) {
 // Component-wise lerp for Vector3 (avoids the deprecated Vector3Lerp wrapper).
 v3lerp :: proc "contextless" (a, b: rl.Vector3, t: f32) -> rl.Vector3 {
 	return {a.x + (b.x - a.x) * t, a.y + (b.y - a.y) * t, a.z + (b.z - a.z) * t}
+}
+
+
+// Animates the local player's avatar from its actual movement speed (same
+// thresholds as the entity avatars in ecs.update).
+update_local_avatar :: proc(dt: f32) {
+	av := state.local_avatar
+	if av == nil do return
+	p := state.player.position
+	if av.has_prev {
+		dx := p.x - av.prev_x
+		dz := p.z - av.prev_z
+		av.speed = math.sqrt(dx * dx + dz * dz) / max(dt, 0.0001)
+	}
+	av.prev_x = p.x
+	av.prev_z = p.z
+	av.has_prev = true
+	clip := sys.Chara_Clip.IDLE
+	if av.speed >= sys.AVATAR_RUN_SPEED {
+		clip = .RUN
+	} else if av.speed >= sys.AVATAR_WALK_SPEED {
+		clip = .WALK
+	}
+	sys.chara_avatar_update(av, clip, dt)
 }

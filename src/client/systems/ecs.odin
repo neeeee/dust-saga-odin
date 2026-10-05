@@ -28,6 +28,10 @@ Renderable :: struct {
 	height:         f32,   // visual height for the capsule/box
 	radius:         f32,   // visual radius
 	draw_wireframe: bool,
+	// When set (player entities with a creator model) the avatar's animated
+	// character model is drawn instead of the capsule. Owned: removed with
+	// the entity / on scene_clear.
+	avatar:         ^Chara_Avatar,
 }
 
 Interp_Point :: struct {
@@ -79,6 +83,16 @@ Entity_Effects :: struct {
 }
 
 MAX_ENTITIES :: 1024
+
+// Movement clip thresholds (world units / second) for character avatars.
+// Movement is run-only for now (walk == run threshold); a walk/run toggle
+// lands in a future session and will re-open the gap between the two.
+AVATAR_WALK_SPEED :: 0.5
+AVATAR_RUN_SPEED  :: 1
+
+// Creator models face +Z, the game's forward is the opposite way — without
+// this every avatar walks backwards.
+AVATAR_YAW_OFFSET_DEG :: 180.0
 
 // ── scene (SoA) ───────────────────────────────────────────────────────────
 
@@ -181,7 +195,12 @@ remove_entity :: proc(s: ^Scene, id: Entity_Id) {
 	idx := find_index(s, id)
 	if idx == -1 do return
 
-	// Swap-and-pop. No per-entity model to unload (shared meshes).
+	if s.renderables[idx].avatar != nil {
+		chara_avatar_destroy(s.renderables[idx].avatar)
+		s.renderables[idx].avatar = nil
+	}
+
+	// Swap-and-pop. Shared procedural models stay; avatars own their clones.
 	last_idx := s.count - 1
 	if idx != last_idx {
 		s.entity_ids[idx] = s.entity_ids[last_idx]
@@ -202,6 +221,12 @@ remove_entity :: proc(s: ^Scene, id: Entity_Id) {
 
 // Reset the scene (used on zone change / character-select return).
 scene_clear :: proc(s: ^Scene) {
+	for i in 0..<s.count {
+		if s.renderables[i].avatar != nil {
+			chara_avatar_destroy(s.renderables[i].avatar)
+			s.renderables[i].avatar = nil
+		}
+	}
 	s.count = 0
 	s.target_id = INVALID_ENTITY
 }
@@ -424,6 +449,27 @@ update :: proc(s: ^Scene, dt: f32, current_time: f64, player_pos: [3]f32, curren
 		if interp_pos[0] != 0 || interp_pos[1] != 0 || interp_pos[2] != 0 {
 			s.transforms[i].position = {interp_pos[0], interp_pos[1], interp_pos[2]}
 		}
+
+		// Animate character avatars from their actual movement speed.
+		av := s.renderables[i].avatar
+		if av != nil {
+			p := &s.transforms[i].position
+			if av.has_prev {
+				dx := p.x - av.prev_x
+				dz := p.z - av.prev_z
+				av.speed = math.sqrt(dx * dx + dz * dz) / max(dt, 0.0001)
+			}
+			av.prev_x = p.x
+			av.prev_z = p.z
+			av.has_prev = true
+			clip := Chara_Clip.IDLE
+			if av.speed >= AVATAR_RUN_SPEED {
+				clip = .RUN
+			} else if av.speed >= AVATAR_WALK_SPEED {
+				clip = .WALK
+			}
+			chara_avatar_update(av, clip, dt)
+		}
 	}
 }
 
@@ -448,7 +494,12 @@ render :: proc(s: ^Scene, camera: rl.Camera3D) {
 
 		#partial switch r.shape {
 		case .CAPSULE:
-			if r.draw_wireframe {
+			if r.avatar != nil {
+				av := r.avatar
+				rl.DrawModelEx(av.sub.model,
+					{t.position.x, t.position.y + av.lift, t.position.z},
+					axis, angle + AVATAR_YAW_OFFSET_DEG, {av.scale, av.scale, av.scale}, r.color)
+			} else if r.draw_wireframe {
 				rl.DrawModelWiresEx(s.model_capsule, pos, axis, angle, scl, r.color)
 			} else {
 				rl.DrawModelEx(s.model_capsule, pos, axis, angle, scl, r.color)

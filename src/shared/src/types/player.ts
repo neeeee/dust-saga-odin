@@ -51,6 +51,11 @@ export interface PlayerSession {
   role: AccountRole;
   jobId: JobId;
   baseClass: BaseClass;
+  // Character creator appearance (character model + face/hair/color picks)
+  modelId?: string;
+  faceIndex?: number;
+  hairIndex?: number;
+  hairColor?: number;
   stats: PlayerStats;
   statPoints: StatPoints;
   baseStats: { STA: number; STR: number; AGI: number; DEX: number; SPI: number; INT: number };

@@ -27,13 +27,19 @@ main :: proc() {
 	rl.SetExitKey(.KEY_NULL) // we handle ESC ourselves
 	defer rl.CloseWindow()
 
+	// Asset manager: needs the GL context, so it comes up right after the
+	// window. All texture/model loads go through its caches from here on.
+	sys.assets_init()
+	defer sys.assets_destroy()
+	defer sys.chara_shutdown()
+
 	// Custom image cursor: hide the OS cursor everywhere and draw this
 	// texture at the mouse position, topmost, every frame.
-	CURSOR_PATH :: "assets/images/cursor.png"
 	CURSOR_SIZE :: 64.0
-	cursor_tex := rl.LoadTexture(CURSOR_PATH)
-	defer rl.UnloadTexture(cursor_tex)
-	rl.SetTextureFilter(cursor_tex, .BILINEAR)
+	cursor_tex := sys.assets_texture("assets/images/cursor/C001.tga")
+	if cursor_tex.id > 0 {
+		rl.SetTextureFilter(cursor_tex, .BILINEAR)
+	}
 	rl.HideCursor()
 
 	frame_arena: mem.Dynamic_Arena
@@ -89,8 +95,9 @@ main :: proc() {
 			chosen_id, chose := character_select.update(dt)
 			if chose {
 				_ = chosen_id
+				appearance := character_select.selected_appearance()
 				state = .GAMEPLAY
-				gameplay.init(net, scene, &player, &chat)
+				gameplay.init(net, scene, &player, &chat, appearance)
 			}
 
 		case .GAMEPLAY:

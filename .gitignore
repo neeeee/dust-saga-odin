@@ -14,3 +14,12 @@ src/client/skillbar_*.json
 
 # local ODIN_ROOT: symlink farm + restored raylib binaries (system vendor LFS fix)
 src/client/.odin-root/
+
+# editor/agent session data
+.zcode/
+
+# local server secrets
+.env
+
+# client build output
+client.exe

@@ -518,6 +518,17 @@ spawn_one_entity :: proc(ctx: ^Game_Context, o: JSON_Object, kind: Entity_Kind) 
 		set_entity_name(ctx.scene, idx, get_string(d, "name"))
 		copy_string_to_buffer(ui.guild_tag[:], &ui.tag_len, get_string(d, "guildTag"))
 		meta.level = get_int(d, "level")
+
+		// Real creator model when the spawn carries appearance data; on any
+		// failure the entity falls back to its capsule.
+		model_id := get_string(d, "modelId")
+		if len(model_id) > 0 {
+			cm := chara_model_acquire(model_id)
+			if cm != nil {
+				r.avatar = chara_avatar_create(cm, get_int(d, "faceIndex"), get_int(d, "hairIndex"), get_int(d, "hairColor"))
+				if r.avatar == nil do chara_model_release(cm)
+			}
+		}
 	case .SUMMON:
 		r.color = {180, 120, 220, 255}
 		r.height = 1.5
@@ -573,6 +584,12 @@ handle_position_update :: proc(ctx: ^Game_Context, data: ^JSON_Value) {
 			pos := vec3_from(root, "position")
 			push_interp(ctx, idx, pos)
 			ctx.scene.metas[idx].is_invisible = get_bool(root, "invisible")
+			// Keep remote characters facing their movement: the server echoes
+			// the mover's rotation quaternion here.
+			if has_field(root, "rotation") {
+				rot := quat_from(root, "rotation")
+				ctx.scene.transforms[idx].rotation = {0, quat_to_yaw(rot), 0}
+			}
 		}
 	}
 }
