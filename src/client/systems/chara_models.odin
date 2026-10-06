@@ -59,6 +59,7 @@ Chara_Model :: struct {
 	bounds:      rl.BoundingBox, // bind-pose spatial extent (camera framing)
 	anims:       [^]rl.ModelAnimation,
 	anim_count:  int,
+	clips:       map[string]int, // animation code ("0001") -> anim index
 	idle_anim:   int,          // index of the idle clip (..._0001), -1 = none
 	walk_anim:   int,          // ..._0015
 	run_anim:    int,          // ..._0018
@@ -227,14 +228,19 @@ chara_model_load :: proc(id: string) -> ^Chara_Model {
 	cm.idle_anim = -1
 	cm.walk_anim = -1
 	cm.run_anim = -1
+	cm.clips = make(map[string]int, cm.anim_count)
 	for i in 0..<cm.anim_count {
 		name := chara_anim_name(&anims[i])
-		rl.TraceLog(.INFO, "chara: %s animation %d = %s", assets_cstring(id), i, assets_cstring(name))
-		if cm.idle_anim < 0 && strings.ends_with(name, "0001") do cm.idle_anim = i
-		if cm.walk_anim < 0 && strings.ends_with(name, "0015") do cm.walk_anim = i
-		if cm.run_anim < 0 && strings.ends_with(name, "0018") do cm.run_anim = i
+		code := chara_code_of(name)
+		if len(code) > 0 {
+			if _, dup := cm.clips[code]; !dup do cm.clips[code] = i
+		}
+		if cm.idle_anim < 0 && strings.ends_with(name, CLIP_CODE_IDLE) do cm.idle_anim = i
+		if cm.walk_anim < 0 && strings.ends_with(name, CLIP_CODE_WALK) do cm.walk_anim = i
+		if cm.run_anim < 0 && strings.ends_with(name, CLIP_CODE_RUN) do cm.run_anim = i
 	}
 	if cm.idle_anim < 0 && cm.anim_count > 0 do cm.idle_anim = 0
+	chara_dump_animations(cm)
 
 	rl.TraceLog(.INFO, "chara: %s ready (%d faces, %d hairs, %d colors, %d anims, idle %d)",
 		assets_cstring(id), len(cm.faces), len(cm.hairs), len(cm.hair_colors),
@@ -412,6 +418,10 @@ chara_model_free :: proc(cm: ^Chara_Model) {
 	}
 	delete(cm.hair_tex)
 	delete(cm.is_variant)
+	for key in cm.clips {
+		delete(key)
+	}
+	delete(cm.clips)
 	delete(cm.glb_path)
 	delete(cm.id)
 	if cm.anims != nil {
@@ -553,6 +563,8 @@ Chara_Clip :: enum {
 // raylib bakes glTF clips to keyframes; playback rate tuned by eye.
 CHARA_ANIM_FPS :: 60.0
 
+ANIM_DUMP_PATH :: "chara_animations.txt"
+
 // In-game characters stand at capsule-ish scale: 011 measures 1.80 posed
 // units, which is the capsule height, so world scale is 1.0. Each race keeps
 // its art height (lapin stays small, enkidu big).
@@ -637,14 +649,53 @@ chara_avatar_create :: proc(cm: ^Chara_Model, face_i, hair_i, color_i: int) -> ^
 	return av
 }
 
-// Index of the animation whose name ends with `code` (e.g. "0071"), -1 if
-// absent. Clip codes are the numeric suffixes on the glb animation names.
+// Clip codes are the numeric suffix on each animation name
+// (CA_00_011_00_000_0071 -> "0071") and are consistent across all character
+// models — the shared semantic namespace. Gameplay slots reference codes;
+// `cm.clips` resolves them to indices in O(1).
+CLIP_CODE_IDLE      :: "0001"
+CLIP_CODE_WALK      :: "0015"
+CLIP_CODE_RUN       :: "0018"
+CLIP_CODE_CAST_LOOP :: "0071"
+CLIP_CODE_CAST_END  :: "0072"
+
 chara_clip :: proc(cm: ^Chara_Model, code: string) -> int {
 	if cm == nil do return -1
-	for i in 0..<cm.anim_count {
-		if strings.ends_with(chara_anim_name(&cm.anims[i]), code) do return i
+	idx, ok := cm.clips[code]
+	if !ok do return -1
+	return idx
+}
+
+// Last '_'-separated token of an animation name (the clip code).
+chara_code_of :: proc(name: string) -> string {
+	last := -1
+	for i in 0..<len(name) {
+		if name[i] == '_' do last = i
 	}
-	return -1
+	if last < 0 || last + 1 >= len(name) do return ""
+	return name[last + 1:]
+}
+
+// One-time reference dump: every animation of every loaded model as
+// "<model>	<code>	<name>" in chara_animations.txt (gitignored), for
+// cataloguing clip codes against gameplay meanings.
+chara_dump_animations :: proc(cm: ^Chara_Model) {
+	if cm == nil do return
+	existing, err := os.read_entire_file_from_path(ANIM_DUMP_PATH, allocator = context.temp_allocator)
+	sb := strings.builder_make(context.temp_allocator)
+	if err == nil {
+		strings.write_string(&sb, string(existing))
+	}
+	for i in 0..<cm.anim_count {
+		name := chara_anim_name(&cm.anims[i])
+		strings.write_string(&sb, cm.id)
+		strings.write_byte(&sb, '\t')
+		strings.write_string(&sb, chara_code_of(name))
+		strings.write_byte(&sb, '\t')
+		strings.write_string(&sb, name)
+		strings.write_byte(&sb, '\n')
+	}
+	_ = os.write_entire_file_from_string(ANIM_DUMP_PATH, strings.to_string(sb))
 }
 
 // Starts an action clip override by name code ("0071", "0072", ...). Looping
