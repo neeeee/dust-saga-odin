@@ -468,7 +468,7 @@ update :: proc(s: ^Scene, dt: f32, current_time: f64, player_pos: [3]f32, curren
 			} else if av.speed >= AVATAR_WALK_SPEED {
 				clip = .WALK
 			}
-			chara_avatar_update(av, clip, dt)
+			chara_avatar_update(av, clip, dt, false)
 		}
 	}
 }

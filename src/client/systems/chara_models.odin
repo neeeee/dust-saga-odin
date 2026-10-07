@@ -563,6 +563,10 @@ Chara_Clip :: enum {
 // raylib bakes glTF clips to keyframes; playback rate tuned by eye.
 CHARA_ANIM_FPS :: 60.0
 
+// Cross-fade duration when the playing clip changes (swing → drawn idle,
+// idle → walk, ...). Short enough to stay snappy, long enough to hide the cut.
+CHARA_BLEND_TIME :: 0.25
+
 ANIM_DUMP_PATH :: "chara_animations.txt"
 
 // In-game characters stand at capsule-ish scale: 011 measures 1.80 posed
@@ -591,6 +595,15 @@ Chara_Avatar :: struct {
 	current_clip: int,  // index into cm.anims, -1 until first update
 	action_clip: int,   // action override (cast, emote, ...), -1 = none
 	action_loop: bool,  // loop the action until cleared vs one-shot
+	attack_cycle: int,  // swings played — cycles the family's attack_1/2/3
+	combat_idle:  int,  // weapon drawn idle (xx01) while fighting, -1 = none
+	// pose blending: when the playing clip changes, cross-fade from the pose
+	// actually on screen (applied_*) into the new clip over CHARA_BLEND_TIME
+	applied_clip:  int,  // clip of the last applied pose, -1 = none yet
+	applied_frame: f32,  // frame of the last applied pose
+	blend_from:    int,  // clip being blended away, -1 = not blending
+	blend_frame:   f32,  // frozen frame of blend_from
+	blend_t:       f32,  // seconds since the blend started
 	anim_time:   f64,
 	scale:       f32,
 	lift:        f32,   // world-space feet offset from the posed bounds
@@ -646,6 +659,9 @@ chara_avatar_create :: proc(cm: ^Chara_Model, face_i, hair_i, color_i: int) -> ^
 	av.scale = AVATAR_HEIGHT / CHARA_REF_HEIGHT
 	av.current_clip = -1
 	av.action_clip = -1
+	av.combat_idle = -1
+	av.applied_clip = -1
+	av.blend_from = -1
 	return av
 }
 
@@ -653,11 +669,47 @@ chara_avatar_create :: proc(cm: ^Chara_Model, face_i, hair_i, color_i: int) -> ^
 // (CA_00_011_00_000_0071 -> "0071") and are consistent across all character
 // models — the shared semantic namespace. Gameplay slots reference codes;
 // `cm.clips` resolves them to indices in O(1).
-CLIP_CODE_IDLE      :: "0001"
-CLIP_CODE_WALK      :: "0015"
-CLIP_CODE_RUN       :: "0018"
-CLIP_CODE_CAST_LOOP :: "0071"
-CLIP_CODE_CAST_END  :: "0072"
+CLIP_CODE_IDLE            :: "0001"
+CLIP_CODE_WALK            :: "0015"
+CLIP_CODE_RUN             :: "0018"
+CLIP_CODE_CAST_LOOP       :: "0071"
+CLIP_CODE_CAST_END        :: "0072"
+CLIP_CODE_CAST_END_ATTACK :: "0073"
+
+// Auto-attack clip codes per weapon kind: every family animates its basic
+// swings as three ..._drawn_attack one-shots (codes f055/f056/f057). The
+// castable families are shared by the whole castable weapon set — 1h sword,
+// club, wand and axe ride 1h_castable; 2h rod and hammer ride 2h_castable.
+// The remaining kinds map to their like-named family (2h axe has no family of
+// its own and borrows the 2h_hammer swings). No weapon falls back to unarmed.
+Chara_Weapon_Family :: struct {
+	idle:               string, // weapon drawn idle (xx01)
+	a1, a2, a3:         string, // basic swings (xx55..xx57)
+	cast_start:         string, // cast channel loop; "" ⇒ family has none
+	cast_finish:        string, // buff/debuff cast finish
+	cast_finish_attack: string, // attack cast finish
+}
+
+chara_weapon_family :: proc(kind: Weapon_Kind) -> (f: Chara_Weapon_Family) {
+	switch kind {
+	case .DAGGER:           return {idle = "1101", a1 = "1155", a2 = "1156", a3 = "1157"}
+	case .SWORD, .AXE, .BLUNT, .WAND:
+	                        return {idle = "1201", a1 = "1255", a2 = "1256", a3 = "1257",
+	                                cast_start = "1271", cast_finish = "1272", cast_finish_attack = "1273"}
+	case .SPEAR:            return {idle = "1301", a1 = "1355", a2 = "1356", a3 = "1357"}
+	case .TWO_HANDED_SWORD: return {idle = "1401", a1 = "1455", a2 = "1456", a3 = "1457"}
+	case .TWO_HANDED_AXE:   return {idle = "1501", a1 = "1555", a2 = "1556", a3 = "1557"}
+	case .TWO_HANDED_SPEAR: return {idle = "1601", a1 = "1655", a2 = "1656", a3 = "1657"}
+	case .STAFF, .TWO_HANDED_BLUNT:
+	                        return {idle = "1701", a1 = "1755", a2 = "1756", a3 = "1757",
+	                                cast_start = "1771", cast_finish = "1772", cast_finish_attack = "1773"}
+	case .BOW:              return {idle = "1801", a1 = "1855", a2 = "1856", a3 = "1857"}
+	case .CROSSBOW:         return {idle = "1901", a1 = "1955", a2 = "1956", a3 = "1957"}
+	case .KNUCKLES:         return {idle = "2001", a1 = "2055", a2 = "2056", a3 = "2057"}
+	case .NONE:             return {idle = "1001", a1 = "1055", a2 = "1056", a3 = "1057"}
+	}
+	return {idle = "1001", a1 = "1055", a2 = "1056", a3 = "1057"} // unreachable: every kind covered
+}
 
 chara_clip :: proc(cm: ^Chara_Model, code: string) -> int {
 	if cm == nil do return -1
@@ -703,16 +755,63 @@ chara_dump_animations :: proc(cm: ^Chara_Model) {
 // movement clip when they finish. No-op if the model lacks the clip.
 chara_avatar_play_action :: proc(av: ^Chara_Avatar, code: string, loop: bool) {
 	if av == nil do return
-	av.action_clip = chara_clip(av.cm, code)
+	chara_avatar_play_action_index(av, chara_clip(av.cm, code), loop)
+}
+
+// As play_action, but plays the first code the model actually ships —
+// family clip first, neutral fallback last (see CLIP_CODE_*).
+chara_avatar_play_action_any :: proc(av: ^Chara_Avatar, loop: bool, codes: ..string) {
+	if av == nil do return
+	for c in codes {
+		idx := chara_clip(av.cm, c)
+		if idx >= 0 {
+			chara_avatar_play_action_index(av, idx, loop)
+			return
+		}
+	}
+}
+
+chara_avatar_play_action_index :: proc(av: ^Chara_Avatar, clip_idx: int, loop: bool) {
+	av.action_clip = clip_idx
 	av.action_loop = loop
 	av.anim_time = 0
 	av.current_clip = -1 // movement clip restarts fresh after the action
+}
+
+// Tracks the equipped weapon's animation family so combat idles use the
+// family drawn idle (xx01) instead of the neutral stance. Cheap enough to
+// call every frame (one map lookup) — equipment swaps then apply instantly.
+chara_avatar_set_weapon_kind :: proc(av: ^Chara_Avatar, kind: Weapon_Kind) {
+	if av == nil do return
+	fam := chara_weapon_family(kind)
+	av.combat_idle = chara_clip(av.cm, fam.idle)
 }
 
 chara_avatar_stop_action :: proc(av: ^Chara_Avatar) {
 	if av == nil do return
 	av.action_clip = -1
 	av.anim_time = 0
+}
+
+// Plays one weapon attack swing on the avatar: the kind's family clips from
+// chara_weapon_family, cycled 1→2→3 across consecutive swings. Clips the
+// model lacks are skipped (the bow/crossbow sets ship only attack_1/2);
+// no-op when the model has none of the family's clips at all.
+chara_avatar_play_attack :: proc(av: ^Chara_Avatar, kind: Weapon_Kind) {
+	if av == nil do return
+	fam := chara_weapon_family(kind)
+	family := [3]string{fam.a1, fam.a2, fam.a3}
+	codes: [3]string
+	n := 0
+	for c in family {
+		if chara_clip(av.cm, c) >= 0 {
+			codes[n] = c
+			n += 1
+		}
+	}
+	if n == 0 do return
+	chara_avatar_play_action(av, codes[av.attack_cycle % n], false)
+	av.attack_cycle += 1
 }
 
 chara_avatar_destroy :: proc(av: ^Chara_Avatar) {
@@ -743,13 +842,14 @@ chara_avatar_destroy :: proc(av: ^Chara_Avatar) {
 	free(av)
 }
 
-// Advances the avatar's animation for one frame toward `clip` and, on the
-// first call, measures the posed bounds for the ground lift.
-chara_avatar_update :: proc(av: ^Chara_Avatar, clip: Chara_Clip, dt: f32) {
+// Advances the avatar's animation for one frame toward `clip` — toward the
+// weapon drawn idle instead while `combat` — blending across clip changes,
+// and, on the first call, measures the posed bounds for the ground lift.
+chara_avatar_update :: proc(av: ^Chara_Avatar, clip: Chara_Clip, dt: f32, combat: bool) {
 	if av == nil || av.cm == nil || av.cm.idle_anim < 0 do return
 
-	// Action override (cast loop, cast finish, ...) wins over movement clips;
-	// one-shots auto-clear back to movement when they run out.
+	// Action override (cast loop, cast finish, attack swing, ...) wins over
+	// movement clips; one-shots auto-clear back to movement when they run out.
 	clip_idx := -1
 	if av.action_clip >= 0 {
 		clip_idx = av.action_clip
@@ -769,6 +869,9 @@ chara_avatar_update :: proc(av: ^Chara_Avatar, clip: Chara_Clip, dt: f32) {
 			if av.cm.walk_anim >= 0 do clip_idx = av.cm.walk_anim
 		case .RUN:
 			if av.cm.run_anim >= 0 do clip_idx = av.cm.run_anim
+		case .IDLE:
+			// In combat the character holds the weapon family's drawn stance.
+			if combat && av.combat_idle >= 0 do clip_idx = av.combat_idle
 		case:
 		}
 		if clip_idx != av.current_clip {
@@ -781,12 +884,36 @@ chara_avatar_update :: proc(av: ^Chara_Avatar, clip: Chara_Clip, dt: f32) {
 		av.anim_time += f64(dt)
 	}
 
+	// When the clip on screen changes, cross-fade from the last applied pose
+	// into the new clip (UpdateModelAnimationEx) over CHARA_BLEND_TIME.
+	if clip_idx != av.applied_clip {
+		av.blend_from = av.applied_clip
+		av.blend_frame = av.applied_frame
+		av.blend_t = 0
+	}
+
 	anim := &av.cm.anims[clip_idx]
 	frames := f32(anim.keyframeCount)
 	if frames > 0 && anim.keyframePoses != nil {
 		f := f32(av.anim_time) * CHARA_ANIM_FPS
 		frame := f - f32(i32(f / frames)) * frames
-		rl.UpdateModelAnimation(av.sub.model, anim^, frame)
+		blending := av.blend_from >= 0 && av.blend_from != clip_idx
+		if blending {
+			av.blend_t += dt
+			if av.blend_t < CHARA_BLEND_TIME {
+				rl.UpdateModelAnimationEx(av.sub.model,
+					av.cm.anims[av.blend_from], av.blend_frame,
+					anim^, frame, av.blend_t / CHARA_BLEND_TIME)
+			} else {
+				blending = false
+			}
+		}
+		if !blending {
+			av.blend_from = -1
+			rl.UpdateModelAnimation(av.sub.model, anim^, frame)
+		}
+		av.applied_clip = clip_idx
+		av.applied_frame = frame
 	}
 
 	if !av.measured {

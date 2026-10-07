@@ -37,7 +37,6 @@ apply_combat :: proc(inp: sys.Input_State) {
 			dx, dz, aim_dist := aim_direction()
 			sys.send_manual_attack(state.net, math.atan2(dx, dz))
 			state.player.last_manual_attack_ms = state.clock_ms
-			state.player.attack_anim_until_ms = state.clock_ms + 300
 			if player_weapon_is_ranged() {
 				spawn_arrow_tracer(dx, dz, aim_dist)
 			}
@@ -64,14 +63,20 @@ aim_direction :: proc() -> (dx, dz, dist: f32) {
 	return -math.sin(state.player.yaw), -math.cos(state.player.yaw), 0.0
 }
 
+// Weapon_Kind of the equipped weapon (.NONE when the slot is empty or the
+// item id is unknown client-side).
+equipped_weapon_kind :: proc() -> sys.Weapon_Kind {
+	w := &state.player.inventory.equipment[sys.EQUIP_SLOT.WAPON]
+	if w.item_id_len == 0 do return .NONE
+	if def, ok := sys.item_def(sys.item_id_string(w)); ok do return def.weapon_type
+	return .NONE
+}
+
 // True when the equipped weapon is a bow/crossbow (ranged manual attack —
 // server-authoritative; this only picks the client-side attack visuals).
 player_weapon_is_ranged :: proc() -> bool {
-	w := &state.player.inventory.equipment[sys.EQUIP_SLOT.WAPON]
-	if w.item_id_len == 0 do return false
-	def, ok := sys.item_def(sys.item_id_string(w))
-	if !ok do return false
-	return def.weapon_type == .BOW || def.weapon_type == .CROSSBOW
+	k := equipped_weapon_kind()
+	return k == .BOW || k == .CROSSBOW
 }
 
 // Visual arrow for a ranged manual attack: a short-lived tracer from the
@@ -93,8 +98,20 @@ spawn_arrow_tracer :: proc(dx, dz: f32, aim_dist: f32) {
 	})
 }
 
+// Fires the next auto-attack swing when the cooldown allows AND the target is
+// in range for the weapon (the server silently drops out-of-range attacks, so
+// gate the send here — no attack, no animation, when too far).
 try_auto_attack :: proc() {
 	if state.player.target_id == sys.INVALID_ENTITY do return
+	idx := sys.find_index(state.scene, state.player.target_id)
+	if idx < 0 do return
+	t := state.scene.transforms[idx].position
+	dx := state.player.position.x - t.x
+	dz := state.player.position.z - t.z
+	max_range := sys.GAME.ATTACK_RANGE
+	if player_weapon_is_ranged() do max_range = sys.GAME.RANGED_ATTACK_RANGE
+	if math.sqrt(dx * dx + dz * dz) > max_range do return
+
 	cd := sys.COMBAT.AUTO_ATTACK_BASE_COOLDOWN
 	if state.player.stats.cast_speed > 0 {
 		cd = math.max(
@@ -105,7 +122,9 @@ try_auto_attack :: proc() {
 	if f64(state.clock_ms - state.player.last_auto_attack_ms) >= cd {
 		sys.send_attack(state.net, target_string_id())
 		state.player.last_auto_attack_ms = state.clock_ms
-		state.player.attack_anim_until_ms = state.clock_ms + 300
+		// Local swing animation for the equipped weapon family (local avatar
+		// only — other entities' attacks have no client-visible event).
+		sys.chara_avatar_play_attack(state.local_avatar, equipped_weapon_kind())
 	}
 }
 

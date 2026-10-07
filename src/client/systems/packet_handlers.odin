@@ -1528,6 +1528,11 @@ handle_cooldown :: proc(ctx: ^Game_Context, data: ^JSON_Value) {
 		ctx.player.casting.active = false
 	case "used":
 		ctx.player.casting.active = false
+		// Server confirmed the skill executed (and range-checked it) — flag
+		// the execution animation, resolved against the skill def in
+		// gameplay's tick_cast.
+		ctx.player.casting.used_pending = true
+		copy_string_to_buffer(ctx.player.casting.skill_name[:], &ctx.player.casting.name_len, skill)
 		// Track remaining cooldown for the HUD.
 		remaining := get_f64(o, "cooldownRemaining")
 		found := false

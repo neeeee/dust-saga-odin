@@ -298,6 +298,7 @@ Cast_State :: struct {
 	cast_time:  f64, // total cast duration (ms)
 	elapsed:    f64, // time since cast_start (ms)
 	active:     bool,
+	used_pending: bool, // server confirmed execution — play the skill animation
 }
 
 Skill_Cooldown :: struct {
@@ -381,7 +382,6 @@ Local_Player :: struct {
 	// combat timers (client-side cooldown gating; server is authoritative)
 	last_auto_attack_ms:   u64,
 	last_manual_attack_ms: u64,
-	attack_anim_until_ms:  u64,
 
 	// cast / skills
 	casting:               Cast_State,

@@ -767,13 +767,26 @@ tick_floating :: proc(dt: f32) {
 tick_cast :: proc(dt: f32) {
 	c := &state.player.casting
 
+	// Server-confirmed execution ("used" arrives only after the server's own
+	// range/cooldown checks passed): play the execution animation — a weapon
+	// family swing for physical damage, the cast finish flourish otherwise.
+	if c.used_pending {
+		c.used_pending = false
+		c.active = false
+		state.cast_anim_active = false
+		play_skill_execution(string(c.skill_name[:c.name_len]))
+	}
+
 	if c.active {
 		c.elapsed += f64(dt * 1000.0)
 
-		// Cast channel: loop the cast clip while the cast runs.
+		// Cast channel: loop the cast clip while the cast runs — the weapon
+		// family's cast stance when it has one, the neutral cast otherwise.
 		if !state.cast_anim_active {
 			state.cast_anim_active = true
-			sys.chara_avatar_play_action(state.local_avatar, "0071", true)
+			fam := sys.chara_weapon_family(equipped_weapon_kind())
+			sys.chara_avatar_play_action_any(state.local_avatar, true,
+				fam.cast_start, sys.CLIP_CODE_CAST_LOOP)
 		}
 
 		// Local finish (the server's "used" also clears active).
@@ -782,11 +795,34 @@ tick_cast :: proc(dt: f32) {
 		}
 	}
 
-	// Cast over (finished, cancelled, or server-cleared): play the finish
+	// Cast over (finished or cancelled without execution): play the finish
 	// flourish once; the avatar returns to movement clips afterwards.
 	if state.cast_anim_active && !c.active {
 		state.cast_anim_active = false
-		sys.chara_avatar_play_action(state.local_avatar, "0072", false)
+		fam := sys.chara_weapon_family(equipped_weapon_kind())
+		sys.chara_avatar_play_action_any(state.local_avatar, false,
+			fam.cast_finish, sys.CLIP_CODE_CAST_END)
+	}
+}
+
+// Execution animation for a server-confirmed skill: physical damage swings
+// the equipped weapon family, magical damage plays the attack cast finish,
+// support skills the plain cast finish. The server already range-checked the
+// skill (rejected casts never reach "used"), so out-of-range never animates.
+play_skill_execution :: proc(skill: string) {
+	av := state.local_avatar
+	if av == nil do return
+	kind := equipped_weapon_kind()
+	fam := sys.chara_weapon_family(kind)
+	sk := sys.get_skill(skill)
+	if sk != nil && sk.kind == .DAMAGE_PHYSICAL {
+		sys.chara_avatar_play_attack(av, kind)
+	} else if sk != nil && sk.kind == .DAMAGE_MAGICAL {
+		sys.chara_avatar_play_action_any(av, false,
+			fam.cast_finish_attack, sys.CLIP_CODE_CAST_END_ATTACK)
+	} else {
+		sys.chara_avatar_play_action_any(av, false,
+			fam.cast_finish, sys.CLIP_CODE_CAST_END)
 	}
 }
 
@@ -1022,7 +1058,8 @@ v3lerp :: proc "contextless" (a, b: rl.Vector3, t: f32) -> rl.Vector3 {
 
 
 // Animates the local player's avatar from its actual movement speed (same
-// thresholds as the entity avatars in ecs.update).
+// thresholds as the entity avatars in ecs.update). While auto-attack is
+// engaged the character holds the equipped weapon's drawn idle (xx01).
 update_local_avatar :: proc(dt: f32) {
 	av := state.local_avatar
 	if av == nil do return
@@ -1035,11 +1072,14 @@ update_local_avatar :: proc(dt: f32) {
 	av.prev_x = p.x
 	av.prev_z = p.z
 	av.has_prev = true
+	// Weapon stance follows the equipped kind (one map lookup per frame, so
+	// equipment swaps apply instantly).
+	sys.chara_avatar_set_weapon_kind(av, equipped_weapon_kind())
 	clip := sys.Chara_Clip.IDLE
 	if av.speed >= sys.AVATAR_RUN_SPEED {
 		clip = .RUN
 	} else if av.speed >= sys.AVATAR_WALK_SPEED {
 		clip = .WALK
 	}
-	sys.chara_avatar_update(av, clip, dt)
+	sys.chara_avatar_update(av, clip, dt, state.auto_attack_active)
 }
