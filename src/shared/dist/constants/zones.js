@@ -645,6 +645,22 @@ exports.ZONE_DATABASE = {
         ],
         environmentObjects: [],
         isPvpEnabled: false
+    },
+    'performance_test': {
+        id: 'performance_test',
+        name: 'Performance Test Arena',
+        description: 'A flat dev arena for stress-testing the renderer with a crowd of fully skinned, attacking test players. Use "warp performance_test" to get here.',
+        type: ZoneType.SAFE,
+        levelRange: [1, 99],
+        groundColor: { r: 0.28, g: 0.29, b: 0.32 },
+        fogColor: { r: 0.55, g: 0.58, b: 0.65 },
+        fogDensity: 0.0008,
+        size: 120,
+        playerSpawn: { x: 0, y: 0, z: -20 },
+        connections: ['astir_central'],
+        spawns: [],
+        environmentObjects: [],
+        isPvpEnabled: false
     }
 };
 function getZoneDefinition(id) {

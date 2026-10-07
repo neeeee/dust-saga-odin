@@ -122,9 +122,10 @@ try_auto_attack :: proc() {
 	if f64(state.clock_ms - state.player.last_auto_attack_ms) >= cd {
 		sys.send_attack(state.net, target_string_id())
 		state.player.last_auto_attack_ms = state.clock_ms
-		// Local swing animation for the equipped weapon family (local avatar
-		// only — other entities' attacks have no client-visible event).
-		sys.chara_avatar_play_attack(state.local_avatar, equipped_weapon_kind())
+		// Local swing via the model's battle script (motion/se/hit timeline)
+		// when one ships for this attack code; plain family swing otherwise.
+		// Remote swings are driven by the server's ENTITY_ANIMATION packet.
+		sys.battle_script_start_attack(state.local_avatar, equipped_weapon_kind())
 	}
 }
 

@@ -32,6 +32,11 @@ Renderable :: struct {
 	// character model is drawn instead of the capsule. Owned: removed with
 	// the entity / on scene_clear.
 	avatar:         ^Chara_Avatar,
+	// Enemy entities: when the monster's glb loaded, it is drawn instead of
+	// the capsule (animated idle — see monster_models.odin). Not owned: the
+	// monster cache holds the reference for the session.
+	monster:        ^Monster_Model,
+	model_scale:    f32,
 }
 
 Interp_Point :: struct {
@@ -123,6 +128,9 @@ Scene :: struct {
 	models_loaded:     bool,
 
 	dynamic_avatar_cap: int,
+	// Performance arena: render every avatar regardless of FPS so crowd
+	// stress tests measure the full cost instead of self-throttling.
+	no_avatar_cap:     bool,
 	player_id:          Entity_Id,
 	target_id:          Entity_Id, // selection indicator
 	count:              int,
@@ -499,6 +507,10 @@ render :: proc(s: ^Scene, camera: rl.Camera3D) {
 				rl.DrawModelEx(av.sub.model,
 					{t.position.x, t.position.y + av.lift, t.position.z},
 					axis, angle + AVATAR_YAW_OFFSET_DEG, {av.scale, av.scale, av.scale}, r.color)
+			} else if r.monster != nil {
+				monster_model_draw(r.monster,
+					{t.position.x, t.position.y, t.position.z},
+					t.rotation.y, r.color, r.model_scale)
 			} else if r.draw_wireframe {
 				rl.DrawModelWiresEx(s.model_capsule, pos, axis, angle, scl, r.color)
 			} else {

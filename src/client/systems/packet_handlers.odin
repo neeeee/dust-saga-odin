@@ -343,6 +343,8 @@ handle_packet :: proc(ctx: ^Game_Context, p: ^Packet, free_after: bool) {
 		handle_batch_combat(ctx, p.data)
 	case .NPC_DIALOG:
 		handle_npc_dialog(ctx, p.data)
+	case .ENTITY_ANIMATION:
+		handle_entity_animation(ctx, p.data)
 	case .QUEST_ACCEPT:
 		handle_quest_accept(ctx, p.data)
 	case .QUEST_PROGRESS:
@@ -414,9 +416,16 @@ handle_world_state :: proc(ctx: ^Game_Context, data: ^JSON_Value) {
 	ctx.zone_loaded = true
 	ctx.engine_ready = true
 
+	// Zone music: stable hash pick until a real zone→BGM table appears.
+	audio_play_bgm(audio_zone_bgm(zone_id))
+
 	// Reset the entity scene and spawn everything from the snapshot.
 	scene_clear(ctx.scene)
 	ctx.scene.player_id = string_to_entity_id(character_id_string(ctx.player))
+
+	// The performance arena renders every avatar regardless of FPS (crowd
+	// stress testing) — see no_avatar_cap in ecs.odin / culling.odin.
+	ctx.scene.no_avatar_cap = zone_id == "performance_test"
 
 	// Zone transition: drop all ground AOE telegraphs and the local song aura.
 	clear(&ctx.aoe_zones)
@@ -506,6 +515,17 @@ spawn_one_entity :: proc(ctx: ^Game_Context, o: JSON_Object, kind: Entity_Kind) 
 		meta.level = get_int(d, "level")
 		set_entity_state(ctx.scene, idx, get_string(d, "state"))
 		set_entity_name(ctx.scene, idx, get_string(d, "name"))
+
+		// Shipped monster glb when one exists for this type; capsule
+		// otherwise (acquire negative-caches misses).
+		model_file := get_string(d, "modelFile")
+		if len(model_file) > 0 {
+			m := monster_model_acquire(model_file)
+			if m.valid {
+				r.monster = m
+				r.model_scale = get_f32(d, "modelScale", 1.0)
+			}
+		}
 	case .NPC:
 		r.color = {80, 180, 220, 255}
 		r.height = 1.7
@@ -538,6 +558,28 @@ spawn_one_entity :: proc(ctx: ^Game_Context, o: JSON_Object, kind: Entity_Kind) 
 	}
 
 	ui.health_ratio = meta.max_health > 0 ? meta.health / meta.max_health : 0.0
+}
+
+handle_entity_animation :: proc(ctx: ^Game_Context, data: ^JSON_Value) {
+	if data == nil do return
+	root := obj_of(data^)
+	if is_null(data^) do return
+
+	// "UnarmedAttack": the performance arena's test players. "Attack": live
+	// remote swings (auto-attacks and skill executions). Remote entities
+	// carry no weapon data yet, so both play the unarmed family — the
+	// closest approximation until equipment reaches the spawn packet.
+	anim := get_string(root, "animation")
+	if anim != "UnarmedAttack" && anim != "Attack" do return
+
+	id_str := get_string(root, "entityId")
+	if len(id_str) == 0 do return
+	idx := find_index(ctx.scene, string_to_entity_id(id_str))
+	if idx < 0 do return
+
+	av := ctx.scene.renderables[idx].avatar
+	if av == nil do return
+	chara_avatar_play_attack(av, .NONE)
 }
 
 handle_position_update :: proc(ctx: ^Game_Context, data: ^JSON_Value) {
@@ -1196,6 +1238,16 @@ handle_damage :: proc(ctx: ^Game_Context, data: ^JSON_Value) {
 	} else if target_id == character_id_string(ctx.player) {
 		world_pos = ctx.player.position
 		ctx.player.stats.health -= f32(amount)
+	}
+
+	// Impact feedback (fixed ese picks until an audio table exists): a short
+	// hit on real damage, a heavier sound on crits; misses stay silent.
+	if !missed {
+		if is_crit {
+			audio_play("sound/SE/ese/ese_063.wav", 0.8)
+		} else {
+			audio_play("sound/SE/ese/ese_067.wav", 0.5)
+		}
 	}
 
 	col := rl.Color{255, 80, 80, 255}
@@ -1922,6 +1974,14 @@ push_notification :: proc(ctx: ^Game_Context, message, kind: string) {
 	append(&ctx.notifications, n)
 	if len(ctx.notifications) > 6 {
 		_ = pop_front(&ctx.notifications)
+	}
+
+	// Feedback chimes (fixed picks from the interface-SE pool): success and
+	// error only — info notifications stay silent.
+	if kind == "success" {
+		audio_play("sound/SE/ise/ise_000.wav", 0.6)
+	} else if kind == "error" {
+		audio_play("sound/SE/ise/ise_018.wav", 0.6)
 	}
 }
 

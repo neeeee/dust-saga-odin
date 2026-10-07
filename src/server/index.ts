@@ -5,6 +5,7 @@ import { join } from 'path';
 import { NetworkServer } from './core/network/NetworkServer';
 import { DatabaseManager } from './core/database/DatabaseManager';
 import { createApiRouter } from './core/api';
+import { loadShippedContent } from './core/data/contentLoader';
 
 const app = express();
 const httpServer = createServer(app);
@@ -48,6 +49,18 @@ async function startServer() {
     await networkServer.questSys.initialize(db);
     await networkServer.cutsceneSys.initialize(db);
     await networkServer.itemSys.initialize(db);
+
+    // ── Shipped game data ──────────────────────────────────────────────────
+    // item.csv / soul.csv / monster.csv from the client's assets: every
+    // shipped item (equipment, souls, consumables, materials) and the full
+    // monster roster register before the world spawns. Must run before
+    // getSpawnManager().initialize() below.
+    try {
+      const shipped = await loadShippedContent(networkServer.itemSys);
+      console.log(`[Content] Shipped data: ${shipped.items} new items (${shipped.souls} soul types), ${shipped.monsters} monsters, ${shipped.skipped} rows skipped`);
+    } catch (err) {
+      console.error('[Content] Shipped data loading failed (continuing without it):', err);
+    }
 
     // ── HTTP API ───────────────────────────────────────────────────────────
     // All gameplay/admin REST routes live under packages/server/src/core/api.

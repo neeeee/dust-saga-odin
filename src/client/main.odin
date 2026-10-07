@@ -32,6 +32,13 @@ main :: proc() {
 	sys.assets_init()
 	defer sys.assets_destroy()
 	defer sys.chara_shutdown()
+	defer sys.monster_models_shutdown()
+
+	// Audio (SE cache + one BGM stream) and the battle-script interpreter
+	// (attack/skill timelines driving animations and sounds).
+	sys.audio_init()
+	defer sys.audio_shutdown()
+	defer sys.battle_script_shutdown()
 
 	// Custom image cursor: hide the OS cursor everywhere and draw this
 	// texture at the mouse position, topmost, every frame.
@@ -75,6 +82,19 @@ main :: proc() {
 		// All transient per-frame allocations land in the frame arena.
 		context.temp_allocator = mem.dynamic_arena_allocator(&frame_arena)
 		dt := rl.GetFrameTime()
+
+		// Audio: stream the BGM every frame; pick the scene's track (zones
+		// switch tracks themselves in handle_world_state, gameplay leaves it).
+		sys.audio_update(dt)
+		#partial switch state {
+		case .TITLE:
+			sys.audio_play_bgm(sys.BGM_TITLE)
+		case .LOGIN:
+			sys.audio_play_bgm(sys.BGM_LOGIN)
+		case .CHARACTER_SELECT:
+			sys.audio_play_bgm(sys.BGM_SELECT)
+		case:
+		}
 
 		#partial switch state {
 		case .TITLE:

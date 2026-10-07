@@ -25,6 +25,7 @@ import {
   ZoneType,
   normalizeEquipment,
   getEnemyDefinition, getZoneDefinition, NPC_DATABASE, getNPCsInZone,
+  ENEMY_DATABASE,
   SpatialEntry,
   SUMMON_STATS, BANISH_RADIUS,
   getGloomRecoilRate,
@@ -1806,7 +1807,8 @@ export class NetworkServer implements NetworkContext {
             maxHealth: enemy.maxHealth,
             level: enemy.level,
             state: enemy.state,
-            modelFile: def?.modelFile || 'Enemy Small.glb'
+            modelFile: def?.modelFile || 'Enemy Small.glb',
+            modelScale: def?.modelScale ?? 1
           }
         }
       });
@@ -1984,7 +1986,8 @@ export class NetworkServer implements NetworkContext {
             maxHealth: enemy.maxHealth,
             level: enemy.level,
             state: enemy.state,
-            modelFile: def?.modelFile || 'Enemy Small.glb'
+            modelFile: def?.modelFile || 'Enemy Small.glb',
+            modelScale: def?.modelScale ?? 1
           }
         });
       }
@@ -4050,6 +4053,67 @@ export class NetworkServer implements NetworkContext {
 
   spawnDummy(session: PlayerSession): void {
     this.dummyMgr.spawnDummy(session);
+  }
+
+  spawnPerformanceDummies(count: number, session: PlayerSession): void {
+    this.dummyMgr.spawnPerformanceDummies(session, count);
+  }
+
+  despawnPerformanceDummies(session: PlayerSession): void {
+    this.dummyMgr.despawnPerformanceDummies(session);
+  }
+
+  /**
+   * GM monster spawner (/spawn_monster): resolves the query against the
+   * enemy database (exact id, then exact name, then first name substring —
+   * all case-insensitive), spawns up to 20 in a ring around the caller and
+   * broadcasts the spawns. Returns the number spawned, or -1 when the query
+   * matches nothing.
+   */
+  spawnMonster(session: PlayerSession, query: string, count: number): number {
+    const q = query.toLowerCase();
+    let def = getEnemyDefinition(query) ?? Object.values(ENEMY_DATABASE).find(
+      d => d.name.toLowerCase() === q
+    ) ?? Object.values(ENEMY_DATABASE).find(
+      d => d.name.toLowerCase().includes(q)
+    );
+    if (!def) return -1;
+
+    const n = Math.max(1, Math.min(count, 20));
+    const now = Date.now();
+    for (let i = 0; i < n; i++) {
+      const angle = (Math.PI * 2 * i) / n + Math.random() * 0.5;
+      const radius = 2.5 + Math.random() * 1.5;
+      const position = {
+        x: session.position.x + Math.cos(angle) * radius,
+        y: session.position.y,
+        z: session.position.z + Math.sin(angle) * radius,
+      };
+      const enemy = this.spawnMgr.spawnEnemyAt(session.zoneId, def!.id, position);
+      if (!enemy) continue;
+      this.insertEnemySpatial(enemy);
+      this.broadcastInZone(session.zoneId, {
+        type: PacketType.ENTITY_SPAWN,
+        timestamp: now,
+        data: {
+          id: enemy.id,
+          type: 'enemy',
+          position: enemy.position,
+          rotation: { x: 0, y: enemy.rotation, z: 0, w: 1 },
+          data: {
+            enemyType: def!.id,
+            name: def!.name,
+            health: enemy.health,
+            maxHealth: enemy.maxHealth,
+            level: enemy.level,
+            state: enemy.state,
+            modelFile: def!.modelFile,
+            modelScale: def!.modelScale ?? 1,
+          },
+        },
+      });
+    }
+    return n;
   }
 
   despawnDummy(dummyId: string, session: PlayerSession): void {

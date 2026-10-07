@@ -13,11 +13,15 @@ cull_and_sort :: proc(s: ^Scene, player_pos: [3]f32, current_fps: int) {
 		s.dist_sq_to_player[i] = dx * dx + dz * dz
 	}
 
-	// 2. Adaptive Avatar Cap (Direct translation of TS logic)
-	if current_fps < 58 {
-		s.dynamic_avatar_cap = max(24, s.dynamic_avatar_cap - 2)
-	} else if current_fps > 60 {
-		s.dynamic_avatar_cap = min(150, s.dynamic_avatar_cap + 1)
+	// 2. Adaptive Avatar Cap (Direct translation of TS logic). Skipped in the
+	// performance arena (no_avatar_cap): the crowd must stay fully rendered
+	// even when FPS drops, or the test would just measure its own throttle.
+	if !s.no_avatar_cap {
+		if current_fps < 58 {
+			s.dynamic_avatar_cap = max(24, s.dynamic_avatar_cap - 2)
+		} else if current_fps > 60 {
+			s.dynamic_avatar_cap = min(150, s.dynamic_avatar_cap + 1)
+		}
 	}
 
 	// 3. Apply Culling flags
@@ -44,7 +48,7 @@ cull_and_sort :: proc(s: ^Scene, player_pos: [3]f32, current_fps: int) {
 		s.casts_shadow[i] = (dist_sq < SHADOW_RADIUS_SQ) || is_player
 
 		// Avatar Cap Culling
-		if !is_player {
+		if !is_player && !s.no_avatar_cap {
 			if avatars_rendered >= s.dynamic_avatar_cap {
 				s.is_frozen[i] = true // Freeze meshes outside the cap
 				continue

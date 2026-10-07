@@ -4,6 +4,8 @@ export interface EnemyDefinition {
   id: string;
   name: string;
   modelFile: string;
+  /** Multiplier applied to the monster's glb model (monster.csv model scale / 100). */
+  modelScale?: number;
   level: number;
   health: number;
   attack: number;
@@ -508,4 +510,15 @@ export const ENEMY_DATABASE: Record<string, EnemyDefinition> = {
 
 export function getEnemyDefinition(id: string): EnemyDefinition | undefined {
   return ENEMY_DATABASE[id];
+}
+
+/**
+ * Registers an enemy definition at boot (used by the server's shipped-content
+ * loader for the monster.csv roster). Existing entries are never overwritten,
+ * so hand-authored definitions always win.
+ */
+export function registerEnemyDefinition(def: EnemyDefinition): boolean {
+  if (!def?.id || ENEMY_DATABASE[def.id]) return false;
+  ENEMY_DATABASE[def.id] = def;
+  return true;
 }

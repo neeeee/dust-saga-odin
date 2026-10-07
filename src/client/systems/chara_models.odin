@@ -22,6 +22,7 @@ import "core:os"
 import "core:strings"
 import rl "vendor:raylib"
 
+
 // Character model per race + sex. The numeric codes on disk are race/gender
 // pairs: 11/12 human m/f, 21/22 elf m/f, 31 dwarf, 42 myrine, 51 enkidu,
 // 63 lapin. has_sex tells the UI whether to offer a male/female choice.
@@ -377,7 +378,7 @@ chara_skeleton_bounds :: proc(model: rl.Model) -> rl.BoundingBox {
 	return bounds
 }
 
-// T*R*S matrix from a pose transform. Native matrices use raylib layout:
+// T*R*S matrix from a pose transforl. Native matrices use raylib layout:
 // element [row, col] with memory row-major, so column c is [0,c],[1,c],[2,c].
 chara_pose_matrix :: proc(t: rl.Transform) -> rl.Matrix {
 	m := rl.QuaternionToMatrix(t.rotation)
@@ -926,4 +927,115 @@ chara_avatar_update :: proc(av: ^Chara_Avatar, clip: Chara_Clip, dt: f32, combat
 anim_keyframe_count :: proc(av: ^Chara_Avatar, clip_idx: int) -> i32 {
 	if clip_idx < 0 || clip_idx >= av.cm.anim_count do return 0
 	return av.cm.anims[clip_idx].keyframeCount
+}
+
+// ── held-item attachment ─────────────────────────────────────────────────
+// The shipped rigs are classic Bip01 skeletons; the right hand is the weapon
+// grip. raylib composes keyframePoses AND the bind pose into GLOBAL
+// model-space transforms when loading a glb (BuildPoseFromParentJoints in
+// rmodels.c), and UpdateModelAnimation keeps the interpolated global pose of
+// the last applied clip in model.currentPose — the same pose the deformed
+// vertices wear (v_anim = v_bind·bind⁻¹·anim, all global-space). The attach
+// matrix is therefore just currentPose[hand] composed as a matrix — NO
+// parent-chain walk (the poses are already global; chaining them again was
+// the held-item "floating + flailing" bug).
+//
+// NOTE: currentPose/boneMatrices are shared per BASE model (the subset copy
+// re-points at them), so this reads the pose of whichever avatar updated
+// last. True for the local player — update_local_avatar runs after the scene
+// update — which is the only holder today. Remote held items will need a
+// per-avatar pose snapshot.
+
+CHARA_HAND_BONE :: "Bip01 R Hand"
+
+chara_bone_name :: proc "contextless" (b: ^rl.BoneInfo) -> string {
+	for i in 0..<len(b.name) {
+		if b.name[i] == 0 do return string(b.name[:i])
+	}
+	return string(b.name[:])
+}
+
+// Global (model-space) matrix of `bone_name` in the avatar's currently
+// applied pose. False when the rig lacks the bone or nothing has been posed.
+chara_avatar_bone_matrix :: proc(av: ^Chara_Avatar, bone_name: string) -> (rl.Matrix, bool) {
+	identity := rl.Matrix {
+		1, 0, 0, 0,
+		0, 1, 0, 0,
+		0, 0, 1, 0,
+		0, 0, 0, 1,
+	}
+	if av == nil || av.cm == nil do return identity, false
+
+	skel := &av.sub.model.skeleton
+	if skel.bones == nil || av.sub.model.currentPose == nil do return identity, false
+	bone_count := int(skel.boneCount)
+
+	bidx := -1
+	for i in 0..<bone_count {
+		if chara_bone_name(&skel.bones[i]) == bone_name {
+			bidx = i
+			break
+		}
+	}
+	if bidx < 0 do return identity, false
+
+	// Column-vector TRS compose (verified against raylib's deformed vertices
+	// in tools/bone_test.odin: translation outermost, Vector3Transform = M·v).
+	t := av.sub.model.currentPose[bidx]
+	return rl.MatrixTranslate(t.translation.x, t.translation.y, t.translation.z) *
+		rl.QuaternionToMatrix(t.rotation) *
+		rl.MatrixScale(t.scale.x, t.scale.y, t.scale.z), true
+}
+
+// The engine's weapon seat: item models are authored grip-at-origin and the
+// game bolts them onto N-bone sockets under the hand bones — the N52 family
+// (N52/N53/N54/N55/N58 share one local) for the right hand, N62 for the
+// left; N50 is the same seat rolled 180°. Locals measured from the shipped
+// master skeleton def CM_00_011_00_000.dxg (PandoraSaga/cpp/socket_probe.cpp
+// = lbind[N52] of the def's inverse binds), conjugated into the exporter's
+// X-flipped, 1/100-scaled glTF space (quat (x,-y,-z,w), translation
+// (-x,y,z)/100). At idle this seats a staff's head behind the back at hip
+// height and its shaft past the front hip — the shipped viewer's placement.
+CHARA_GRIP_R_T :: rl.Vector3{-0.0926, -0.0025, 0.0344}
+CHARA_GRIP_R_Q :: rl.Quaternion(quaternion(x = 0.6827, y = 0.1390, z = -0.1286, w = 0.7057))
+CHARA_GRIP_L_T :: rl.Vector3{-0.0926, 0.0025, 0.0344}
+CHARA_GRIP_L_Q :: rl.Quaternion(quaternion(x = -0.6871, y = 0.1384, z = 0.1085, w = 0.7050))
+
+chara_grip_matrix :: proc "contextless" (left: bool) -> rl.Matrix {
+	t := CHARA_GRIP_R_T
+	q := CHARA_GRIP_R_Q
+	if left {
+		t = CHARA_GRIP_L_T
+		q = CHARA_GRIP_L_Q
+	}
+	return rl.MatrixTranslate(t.x, t.y, t.z) * rl.QuaternionToMatrix(q)
+}
+
+// Draw a held-item model (weapons — see items.odin held_model_for_item)
+// attached to the avatar's right-hand bone. The world matrix mirrors what
+// DrawModelEx gives the avatar (avatar scale, yaw + the +Z-pipeline 180°
+// offset, position+lift) composed around the bone's model-space attach
+// matrix and the N52 grip seat, column-vector style: (T·R·S·bone·grip)·v —
+// the grip applies first, the way the engine bolts items onto N-bones.
+chara_avatar_draw_held :: proc(
+	av:        ^Chara_Avatar,
+	entry:     ^Model_Entry,
+	position:  rl.Vector3,
+	yaw_rad:   f32,
+	tint:      rl.Color,
+) {
+	if av == nil || entry == nil do return
+	bone, ok := chara_avatar_bone_matrix(av, CHARA_HAND_BONE)
+	if !ok do return
+
+	m := rl.MatrixTranslate(position.x, position.y + av.lift, position.z) *
+		rl.MatrixRotate({0, 1, 0}, yaw_rad + AVATAR_YAW_OFFSET_DEG * 0.017453293)
+	m = m * rl.MatrixScale(av.scale, av.scale, av.scale)
+	m = m * bone
+	m = m * chara_grip_matrix(false)
+
+	for i in 0..<int(entry.model.meshCount) {
+		mat_idx := int(entry.model.meshMaterial[i])
+		rl.DrawMesh(entry.model.meshes[i], entry.model.materials[mat_idx], m)
+	}
 }

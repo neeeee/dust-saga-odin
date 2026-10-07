@@ -71,6 +71,42 @@ class ItemSystem {
     getAllItemDefinitions() {
         return [...this.itemCache.values()];
     }
+    /**
+     * Bulk-registers shipped-content items (item.csv/soul.csv, see
+     * core/data/contentLoader.ts). Cache entries and DB rows that already exist
+     * are left untouched (insert-if-absent), so hand-authored items and admin
+     * edits always win over the generated definitions. Returns the number of
+     * newly registered items.
+     */
+    async registerShippedItems(defs) {
+        const fresh = defs.filter(d => !this.itemCache.has(d.id));
+        if (fresh.length === 0)
+            return 0;
+        if (this.db && this.dbAvailable) {
+            const CHUNK = 200;
+            for (let start = 0; start < fresh.length; start += CHUNK) {
+                const chunk = fresh.slice(start, start + CHUNK);
+                const values = [];
+                const params = [];
+                chunk.forEach((def, i) => {
+                    const base = i * 17;
+                    values.push(`($${base + 1}, $${base + 2}, $${base + 3}, $${base + 4}, $${base + 5}, $${base + 6}, $${base + 7}, $${base + 8}, $${base + 9}, $${base + 10}, $${base + 11}, $${base + 12}, $${base + 13}, $${base + 14}, $${base + 15}, $${base + 16}, $${base + 17})`);
+                    params.push(def.id, def.name, def.description || '', def.type, def.rarity, JSON.stringify(def.stats || {}), def.icon || null, def.maxStack ?? 1, def.sellPrice ?? 0, def.requiredLevel ?? 1, def.equipmentSlot || null, def.weaponType || null, def.soulSlots ?? null, def.onHitProcs ? JSON.stringify(def.onHitProcs) : null, def.innateProcs ? JSON.stringify(def.innateProcs) : null, def.teachesRecipe || null, def.obeliskBuff === true);
+                });
+                try {
+                    await this.db.postgres.query(`INSERT INTO item_definitions (id, name, description, type, rarity, stats, icon, max_stack, sell_price, required_level, equipment_slot, weapon_type, soul_slots, on_hit_procs, innate_procs, teaches_recipe, obelisk_buff)
+             VALUES ${values.join(', ')}
+             ON CONFLICT (id) DO NOTHING`, params);
+                }
+                catch (error) {
+                    console.error('[ItemSystem] registerShippedItems DB write failed:', error);
+                }
+            }
+        }
+        for (const def of fresh)
+            this.itemCache.set(def.id, def);
+        return fresh.length;
+    }
     async createItem(def) {
         const validation = this.validateDefinition(def);
         if (!validation.valid)

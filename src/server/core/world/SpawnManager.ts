@@ -91,6 +91,49 @@ export class SpawnManager {
     return this.spawnedEnemies.get(zoneId) || new Map();
   }
 
+  /**
+   * Dynamically spawns one enemy of `enemyType` at a fixed position (GM
+   * command /spawn_monster). Mirrors spawnZoneEnemies' instance shape; the
+   * caller broadcasts ENTITY_SPAWN and inserts into the spatial hash.
+   */
+  spawnEnemyAt(zoneId: string, enemyType: string, position: { x: number; y: number; z: number }): EnemyInstance | null {
+    const enemyDef = getEnemyDefinition(enemyType);
+    if (!enemyDef) return null;
+
+    let enemies = this.spawnedEnemies.get(zoneId);
+    if (!enemies) {
+      enemies = new Map();
+      this.spawnedEnemies.set(zoneId, enemies);
+    }
+
+    const id = `enemy_${zoneId}_${enemyType}_gm_${Date.now()}_${Math.floor(Math.random() * 10000)}`;
+    const patrolPoints = this.generatePatrolPoints(position, 5, {
+      centerX: position.x, centerZ: position.z, radius: 6,
+    });
+
+    const enemy: EnemyInstance = {
+      id,
+      enemyType,
+      position: { ...position },
+      rotation: Math.random() * Math.PI * 2,
+      health: enemyDef.health,
+      maxHealth: enemyDef.health,
+      level: enemyDef.level,
+      state: 'idle',
+      targetId: null,
+      spawnPosition: { ...position },
+      lastAttackTime: 0,
+      deathTime: 0,
+      patrolPoints,
+      currentPatrolIndex: 0,
+      statusEffects: [],
+    };
+
+    enemies.set(id, enemy);
+    this.enemyZoneIndex.set(id, zoneId);
+    return enemy;
+  }
+
   getZoneIds(): string[] {
     return [...this.spawnedEnemies.keys()];
   }

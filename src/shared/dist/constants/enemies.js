@@ -2,6 +2,7 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.ENEMY_DATABASE = void 0;
 exports.getEnemyDefinition = getEnemyDefinition;
+exports.registerEnemyDefinition = registerEnemyDefinition;
 exports.ENEMY_DATABASE = {
     'green_slime': {
         id: 'green_slime',
@@ -477,4 +478,15 @@ exports.ENEMY_DATABASE = {
 };
 function getEnemyDefinition(id) {
     return exports.ENEMY_DATABASE[id];
+}
+/**
+ * Registers an enemy definition at boot (used by the server's shipped-content
+ * loader for the monster.csv roster). Existing entries are never overwritten,
+ * so hand-authored definitions always win.
+ */
+function registerEnemyDefinition(def) {
+    if (!def?.id || exports.ENEMY_DATABASE[def.id])
+        return false;
+    exports.ENEMY_DATABASE[def.id] = def;
+    return true;
 }

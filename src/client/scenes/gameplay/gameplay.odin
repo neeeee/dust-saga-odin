@@ -326,11 +326,13 @@ update :: proc(dt: f32) -> (requested: sys.App_State, has_request: bool) {
 	// 9. Update entity scene (culling + interpolation) and cooldowns.
 	ppos := [3]f32{state.player.position.x, state.player.position.y, state.player.position.z}
 	sys.update(state.scene, dt, f64(rl.GetTime()), ppos, int(rl.GetFPS()))
+	sys.monster_models_update(dt)
 	update_local_avatar(dt)
 	tick_cooldowns(dt)
 	tick_notifications(dt)
 	tick_floating(dt)
 	tick_cast(dt)
+	sys.battle_script_update(state.local_avatar, dt)
 	tick_arrows(dt)
 	tick_aoe_zones()
 
@@ -815,6 +817,13 @@ play_skill_execution :: proc(skill: string) {
 	kind := equipped_weapon_kind()
 	fam := sys.chara_weapon_family(kind)
 	sk := sys.get_skill(skill)
+
+	// Battle script first: when it carries a playable motion it replaces the
+	// default execution animation entirely; motionless scripts (fx/se/hit
+	// timing only, e.g. Provoke) layer on top of the default instead.
+	script := sys.battle_script_start_skill(av, skill)
+	if script != nil && sys.battle_script_has_motion(script, av) do return
+
 	if sk != nil && sk.kind == .DAMAGE_PHYSICAL {
 		sys.chara_avatar_play_attack(av, kind)
 	} else if sk != nil && sk.kind == .DAMAGE_MAGICAL {

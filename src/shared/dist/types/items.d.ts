@@ -14,7 +14,9 @@ export declare enum ItemType {
     CONSUMABLE = "consumable",
     MATERIAL = "material",
     RECIPE = "recipe",
-    QUEST = "quest"
+    QUEST = "quest",
+    /** Socketed into equipment soul slots (shipped soul.csv content). */
+    SOUL = "soul"
 }
 export declare enum WeaponType {
     SWORD = "sword",

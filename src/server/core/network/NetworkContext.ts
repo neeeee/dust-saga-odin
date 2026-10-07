@@ -132,6 +132,10 @@ export interface NetworkContext {
 
   spawnDummy(session: PlayerSession): void;
   despawnDummy(dummyId: string, session: PlayerSession): void;
+  spawnPerformanceDummies(count: number, session: PlayerSession): void;
+  despawnPerformanceDummies(session: PlayerSession): void;
+  /** GM monster spawner — returns number spawned, or -1 when unresolved. */
+  spawnMonster(session: PlayerSession, query: string, count: number): number;
   setDummyProperty(dummyId: string, prop: string, value: string, session: PlayerSession): void;
   setDummyClass(dummyId: string, jobIdStr: string, session: PlayerSession): void;
   setDummyGear(dummyId: string, preset: string, session: PlayerSession): void;

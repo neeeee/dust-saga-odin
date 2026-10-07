@@ -23,3 +23,7 @@ src/client/.odin-root/
 
 # client build output
 client.exe
+
+# build artifacts / shipped binaries
+*.exe
+src/client/raylib.dll

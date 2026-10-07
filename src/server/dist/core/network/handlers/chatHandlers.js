@@ -24,6 +24,9 @@ const COMMAND_MIN_ROLE = {
     '/dummy_walk': shared_1.AccountRole.GM,
     '/dummy_party': shared_1.AccountRole.GM,
     '/dummy_list': shared_1.AccountRole.GM,
+    '/warp': shared_1.AccountRole.GM,
+    '/spawn_monster': shared_1.AccountRole.GM,
+    '/monster_list': shared_1.AccountRole.GM,
 };
 function chatSenderLabel(session) {
     if (session.role === shared_1.AccountRole.ADMIN)
@@ -44,6 +47,12 @@ function handleChatMessage(ctx, socket, data) {
         return;
     if (message.startsWith('/')) {
         handleChatCommand(ctx, socket, session, message);
+        return;
+    }
+    // Bare "warp <zone>" (no slash) is accepted as a shortcut for /warp.
+    const lower = message.toLowerCase();
+    if (lower === 'warp' || lower.startsWith('warp ')) {
+        handleChatCommand(ctx, socket, session, `/${message.trim()}`);
         return;
     }
     const channel = data.channel || 'zone';
@@ -204,6 +213,15 @@ function handleChatCommand(ctx, socket, session, message) {
     }
     else if (cmd === '/return') {
         handleReturn(ctx, socket, session);
+    }
+    else if (cmd === '/warp') {
+        handleWarp(ctx, socket, session, parts);
+    }
+    else if (cmd === '/spawn_monster') {
+        handleSpawnMonster(ctx, session, parts);
+    }
+    else if (cmd === '/monster_list') {
+        handleMonsterList(ctx, session, parts);
     }
 }
 function handleLevelUp(ctx, session) {
@@ -502,13 +520,14 @@ function handleResetSkills(ctx, session) {
 }
 function handleGiveItem(ctx, session, parts) {
     const itemId = parts[1];
-    const quantity = parseInt(parts[2]) || 1;
+    const quantity = parseInt(parts[2], 10) || 1;
     if (!itemId || !ctx.itemSys.getItemDefinition(itemId)) {
-        const itemNames = ctx.itemSys.getAllItemDefinitions().map(i => i.id).join(', ');
+        const all = ctx.itemSys.getAllItemDefinitions();
+        const sample = all.slice(0, 50).map(i => i.id).join(', ');
         ctx.sendToPlayer(session.characterId, {
             type: shared_1.PacketType.CHAT_MESSAGE,
             timestamp: Date.now(),
-            data: { sender: 'System', message: `Unknown item "${itemId || ''}". Available: ${itemNames}`, channel: 'system' }
+            data: { sender: 'System', message: `Unknown item "${itemId || ''}". ${all.length} items registered — sample: ${sample} … (full list via the admin API /api/items)`, channel: 'system' }
         });
         return;
     }
@@ -595,5 +614,110 @@ function handleReturn(ctx, socket, session) {
         type: shared_1.PacketType.CHAT_MESSAGE,
         timestamp: Date.now(),
         data: { sender: 'System', message: 'Returned to spawn.', channel: 'system' }
+    });
+}
+/** GM: spawn shipped-roster monsters around the caller. */
+function handleSpawnMonster(ctx, session, parts) {
+    const count = parseInt(parts[2], 10) || 1;
+    if (!parts[1]) {
+        ctx.sendToPlayer(session.characterId, { type: shared_1.PacketType.CHAT_MESSAGE, timestamp: Date.now(), data: { sender: 'System', message: 'Usage: /spawn_monster <id|name> [count] — /monster_list <search> to find ids', channel: 'system' } });
+        return;
+    }
+    const query = parts.slice(1, parts[2] && !isNaN(parseInt(parts[2], 10)) ? parts.length - 1 : parts.length).join(' ');
+    const spawned = ctx.spawnMonster(session, query, count);
+    if (spawned < 0) {
+        ctx.sendToPlayer(session.characterId, { type: shared_1.PacketType.CHAT_MESSAGE, timestamp: Date.now(), data: { sender: 'System', message: `No monster matches "${query}". Try /monster_list <search>.`, channel: 'system' } });
+        return;
+    }
+    ctx.sendToPlayer(session.characterId, { type: shared_1.PacketType.CHAT_MESSAGE, timestamp: Date.now(), data: { sender: 'System', message: `Spawned ${spawned} monster(s).`, channel: 'system' } });
+}
+/** GM: search the enemy database (id, name or substring). */
+function handleMonsterList(ctx, session, parts) {
+    const query = parts[1] ? parts.slice(1).join(' ').toLowerCase() : '';
+    const entries = Object.values(shared_1.ENEMY_DATABASE)
+        .filter(d => !query || d.id === query || d.name.toLowerCase().includes(query))
+        .sort((a, b) => parseInt(a.id, 10) - parseInt(b.id, 10))
+        .slice(0, 20)
+        .map(d => `${d.id} ${d.name} Lv${d.level}`);
+    const total = Object.keys(shared_1.ENEMY_DATABASE).length;
+    const header = query ? `Monster matches for "${query}"` : 'Monsters (first 20)';
+    ctx.sendToPlayer(session.characterId, { type: shared_1.PacketType.CHAT_MESSAGE, timestamp: Date.now(), data: { sender: 'System', message: `${header} — ${entries.join(' | ') || 'none'}${!query || entries.length === 20 ? ` … (${total} total, refine with /monster_list <search>)` : ''}`, channel: 'system' } });
+}
+/** GM teleport to any zone: /warp <zoneId> or /warp <zone name>. */
+function handleWarp(ctx, socket, session, parts) {
+    if (!parts[1]) {
+        ctx.sendToPlayer(session.characterId, {
+            type: shared_1.PacketType.CHAT_MESSAGE,
+            timestamp: Date.now(),
+            data: { sender: 'System', message: `Usage: /warp <zoneId or zone name>. Zones: ${Object.keys(shared_1.ZONE_DATABASE).join(', ')}`, channel: 'system' }
+        });
+        return;
+    }
+    const query = parts.slice(1).join(' ');
+    let target = (0, shared_1.getZoneDefinition)(parts[1]);
+    if (!target) {
+        target = Object.values(shared_1.ZONE_DATABASE).find(z => z.id.toLowerCase() === query || z.name.toLowerCase() === query);
+    }
+    if (!target) {
+        ctx.sendToPlayer(session.characterId, {
+            type: shared_1.PacketType.CHAT_MESSAGE,
+            timestamp: Date.now(),
+            data: { sender: 'System', message: `Unknown zone "${query}". Zones: ${Object.keys(shared_1.ZONE_DATABASE).join(', ')}`, channel: 'system' }
+        });
+        return;
+    }
+    if (target.id === session.zoneId) {
+        ctx.sendToPlayer(session.characterId, {
+            type: shared_1.PacketType.CHAT_MESSAGE,
+            timestamp: Date.now(),
+            data: { sender: 'System', message: `You are already in ${target.name}.`, channel: 'system' }
+        });
+        return;
+    }
+    // Release the old zone's resources (summons, owned dummies, ...) before
+    // the move, mirroring handleEnterZone.
+    ctx.cleanupPlayerZoneResources(session);
+    ctx.broadcastInZone(session.zoneId, {
+        type: shared_1.PacketType.ENTITY_DESPAWN,
+        timestamp: Date.now(),
+        data: { entityId: session.characterId }
+    });
+    session.position = { ...target.playerSpawn };
+    session.statusEffects = [];
+    session.activeCast = null;
+    ctx.playerSys.recalcStats(session);
+    session.zoneId = target.id;
+    ctx.movePlayerToZone(session.characterId, target.id);
+    ctx.broadcastInZone(target.id, {
+        type: shared_1.PacketType.ENTITY_SPAWN,
+        timestamp: Date.now(),
+        data: {
+            id: session.characterId,
+            type: 'player',
+            position: session.position,
+            rotation: session.rotation,
+            data: {
+                name: session.characterName, class: session.jobId, race: session.race, jobId: session.jobId,
+                level: session.stats.level, health: session.stats.health, maxHealth: session.stats.maxHealth,
+                modelId: session.modelId || '011', faceIndex: session.faceIndex ?? 0,
+                hairIndex: session.hairIndex ?? 0, hairColor: session.hairColor ?? 0
+            }
+        }
+    });
+    ctx.sendZoneState(socket, target.id, session.characterId);
+    ctx.sendToPlayer(session.characterId, {
+        type: shared_1.PacketType.PLAYER_REVIVED,
+        timestamp: Date.now(),
+        data: { characterId: session.characterId, zoneId: target.id, position: session.position, health: session.stats.health, maxHealth: session.stats.maxHealth }
+    });
+    ctx.sendToPlayer(session.characterId, {
+        type: shared_1.PacketType.STATUS_EFFECT_UPDATE,
+        timestamp: Date.now(),
+        data: { effects: session.statusEffects }
+    });
+    ctx.sendToPlayer(session.characterId, {
+        type: shared_1.PacketType.CHAT_MESSAGE,
+        timestamp: Date.now(),
+        data: { sender: 'System', message: `Warped to ${target.name}.`, channel: 'system' }
     });
 }

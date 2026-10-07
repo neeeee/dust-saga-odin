@@ -249,6 +249,16 @@ draw_local_player :: proc() {
 		rl.DrawModelEx(av.sub.model,
 			{p.x, p.y + av.lift, p.z},
 			axis, angle + sys.AVATAR_YAW_OFFSET_DEG, {av.scale, av.scale, av.scale}, col)
+
+		// Held weapon: the equipped item's glb (item.csv RDR-SID →
+		// item/EM_*.glb) attached to the rig's right-hand bone, so it
+		// tracks swings. Remote players don't broadcast equipment yet.
+		w := &state.player.inventory.equipment[sys.EQUIP_SLOT.WAPON]
+		if w.item_id_len > 0 {
+			if held := sys.held_model_for_item(sys.item_id_string(w)); held != nil {
+				sys.chara_avatar_draw_held(av, held, p, state.player.yaw, rl.WHITE)
+			}
+		}
 	} else {
 		rl.DrawModelEx(state.scene.model_capsule,
 			{p.x, p.y + 0.9, p.z}, axis, angle, {1, 1, 1}, col)

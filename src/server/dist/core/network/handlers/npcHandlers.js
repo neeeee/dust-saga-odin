@@ -33,6 +33,11 @@ function handleNPCInteract(ctx, socket, data) {
         handleAdvancementAction(ctx, characterId, session, npc, data.dialogId);
         return;
     }
+    // Performance arena dialog actions: "perf:spawn:<count>" / "perf:clear"
+    if (typeof data.dialogId === 'string' && data.dialogId.startsWith('perf:')) {
+        handlePerfArenaAction(ctx, characterId, session, npc, data.dialogId);
+        return;
+    }
     const talkProgress = ctx.questSys.onTalk(session, data.npcId);
     if (talkProgress.progressed.length > 0) {
         const msgs = talkProgress.completed.map(qid => {
@@ -294,4 +299,27 @@ function serveDialog(ctx, characterId, npc, dialogId) {
             activeQuests: [],
         }
     });
+}
+/**
+ * Performance arena dialog actions. The client sends NPC_INTERACT with
+ * dialogId = "perf:<action>" and the server executes it, then re-serves the
+ * greeting page so the crowd can be scaled up or cleared without reopening
+ * the dialog.
+ *
+ * Flow:
+ *   perf:spawn:<count> → spawn <count> fully rendered attacking test players
+ *   perf:clear         → despawn all dummies owned by this player
+ */
+function handlePerfArenaAction(ctx, characterId, session, npc, dialogId) {
+    const arg = dialogId.slice('perf:'.length);
+    if (arg.startsWith('spawn:')) {
+        const count = parseInt(arg.slice('spawn:'.length), 10);
+        if (!isNaN(count) && count > 0) {
+            ctx.spawnPerformanceDummies(count, session);
+        }
+    }
+    else if (arg === 'clear') {
+        ctx.despawnPerformanceDummies(session);
+    }
+    serveDialog(ctx, characterId, npc, 'greeting');
 }

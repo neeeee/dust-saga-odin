@@ -20,6 +20,8 @@ var ItemType;
     ItemType["MATERIAL"] = "material";
     ItemType["RECIPE"] = "recipe";
     ItemType["QUEST"] = "quest";
+    /** Socketed into equipment soul slots (shipped soul.csv content). */
+    ItemType["SOUL"] = "soul";
 })(ItemType || (exports.ItemType = ItemType = {}));
 var WeaponType;
 (function (WeaponType) {

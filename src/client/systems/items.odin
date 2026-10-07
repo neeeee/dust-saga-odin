@@ -1,10 +1,16 @@
 package systems
 
+import "core:fmt"
+import "core:os"
+import "core:strconv"
+import "core:strings"
 import rl "vendor:raylib"
 
-// Client-side item definitions (57 items, sourced from the server's admin API).
-// The server is authoritative for stats/effects; these are for display (names,
-// types, equippability, weapon-type for skill-req feedback).
+// Client-side item definitions. The bundled 57 entries mirror the server's
+// hand-authored database; everything else (the ~2,400 shipped items with
+// numeric ids) loads from assets/item.csv — the same table the server
+// registers at boot — so names/types/slots/weapon kinds stay in sync without
+// shipping numbers over the wire. The server stays authoritative for stats.
 
 Item_Type :: enum u8 {
 	WEAPON,
@@ -23,6 +29,7 @@ Item_Type :: enum u8 {
 	QUEST,
 	RECIPE,
 	ACCESSORY,
+	SOUL,
 }
 
 Weapon_Kind :: enum u8 {
@@ -50,6 +57,9 @@ Item_Def :: struct {
 	weapon_type:     Weapon_Kind, // .NONE for non-weapons
 	rarity:          string, // "common", "uncommon", "rare", "epic", "legendary"
 	required_level:  int,
+	// Held-item glb ("item/EM_002904_20_000.glb"), weapons only, from the
+	// RDR-SID column; empty = no model ships.
+	model:           string,
 }
 
 item_defs: map[string]Item_Def
@@ -113,6 +123,173 @@ init_item_defs :: proc() {
 	item_defs["poison_vial"] = Item_Def{name="Poison Vial", type=.CONSUMABLE, equipment_slot="", weapon_type=.NONE, rarity="uncommon", required_level=1}
 	item_defs["antidote"] = Item_Def{name="Antidote", type=.CONSUMABLE, equipment_slot="", weapon_type=.NONE, rarity="uncommon", required_level=1}
 	item_defs["mysterious_potion"] = Item_Def{name="Mysterious Potion", type=.CONSUMABLE, equipment_slot="", weapon_type=.NONE, rarity="rare", required_level=1}
+
+	// Everything shipped (numeric ids) — see load_item_csv below.
+	load_item_csv()
+}
+
+// ── shipped item.csv ──────────────────────────────────────────────────────
+// Loads every shipped item (numeric ids) for display metadata. Rarity and
+// required level use the same deterministic id-derived rules as the server's
+// content loader (core/data/contentLoader.ts), so both sides agree even
+// though item.csv carries no combat numbers.
+
+csv_flag :: proc(line: string, idx: int) -> bool {
+	return csv_field_at(line, idx) == "1"
+}
+
+shipped_weapon_kind :: proc(type_str: string) -> (Weapon_Kind, bool) {
+	switch type_str {
+	case "1H_SWORD": return .SWORD, true
+	case "2H_SWORD": return .TWO_HANDED_SWORD, true
+	case "1H_AXE": return .AXE, true
+	case "2H_AXE": return .TWO_HANDED_AXE, true
+	case "1H_BLUNT_WEAPON", "1H_TRUMP_WEAPON": return .BLUNT, true
+	case "2H_BLUNT_WEAPON", "2H_TRUMP_WEAPON": return .TWO_HANDED_BLUNT, true
+	case "BOW": return .BOW, true
+	case "CROSSBOW": return .CROSSBOW, true
+	case "STAFF": return .STAFF, true
+	case "WAND": return .WAND, true
+	case "POLE_ARM": return .TWO_HANDED_SPEAR, true
+	case "LANCE": return .SPEAR, true
+	}
+	return .NONE, false
+}
+
+// Equipment slot from the 装備箇所 one-hot columns (3..17). Mirrors the
+// server's slotFromColumns: weapons come from R Hand, L Hand is the shield
+// slot, cloak rides armor.
+shipped_slot :: proc(line: string, is_weapon: bool) -> (string, bool) {
+	if is_weapon && csv_flag(line, 3) do return "weapon", true
+	if csv_flag(line, 4) do return "shield", true
+	if csv_flag(line, 5) do return "helmet", true
+	if csv_flag(line, 6) do return "armor", true
+	if csv_flag(line, 7) do return "gloves", true
+	if csv_flag(line, 8) do return "legs", true
+	if csv_flag(line, 9) do return "boots", true
+	if csv_flag(line, 10) do return "armor", true // cloak → torso slot
+	if csv_flag(line, 11) do return "ring_1", true
+	if csv_flag(line, 12) do return "necklace", true
+	if csv_flag(line, 13) do return "belt", true
+	if csv_flag(line, 14) do return "earring_1", true
+	return "", false
+}
+
+shipped_item_type :: proc(type_str: string, slot: string) -> Item_Type {
+	switch slot {
+	case "helmet": return .HELMET
+	case "armor": return .ARMOR
+	case "legs": return .LEGS
+	case "gloves": return .GLOVES
+	case "boots": return .BOOTS
+	case "shield": return .SHIELD
+	case "ring_1": return .RING
+	case "necklace": return .NECKLACE
+	case "belt": return .BELT
+	case "earring_1": return .EARRING
+	case "weapon": return .WEAPON
+	case:
+	}
+	switch type_str {
+	case "POTION", "BALM": return .CONSUMABLE
+	case "SOUL": return .SOUL
+	}
+	return .MATERIAL
+}
+
+// Same deterministic roll as the server's contentLoader (itemRarity).
+shipped_rarity :: proc(id: int, equippable: bool) -> string {
+	if !equippable do return "common"
+	roll := (id * 31) % 100
+	switch {
+	case roll >= 98: return "legendary"
+	case roll >= 92: return "epic"
+	case roll >= 80: return "rare"
+	case roll >= 55: return "uncommon"
+	}
+	return "common"
+}
+
+shipped_required_level :: proc(id: int, equippable: bool) -> int {
+	if !equippable do return 1
+	return 1 + (id / 11) % 40
+}
+
+load_item_csv :: proc() {
+	data, err := os.read_entire_file_from_path("assets/item.csv", allocator = context.allocator)
+	if err != nil {
+		rl.TraceLog(.WARNING, "items: missing assets/item.csv — shipped items show as raw ids")
+		return
+	}
+	defer delete(data)
+	text := decode_utf16_file(data)
+	defer delete(text)
+
+	count := 0
+	pos := 0
+	for {
+		line, next_pos, ok := battle_next_line(text, pos)
+		if !ok do break
+		pos = next_pos
+		if len(line) == 0 || line[0] == '#' do continue
+
+		id_str := csv_field_at(line, 0)
+		name := csv_field_at(line, 1)
+		type_str := csv_field_at(line, 2)
+		id, valid := strconv.parse_int(id_str, 10)
+		if !valid || len(name) == 0 || len(type_str) == 0 do continue
+		if _, exists := item_defs[id_str]; exists do continue
+
+		weapon_kind, is_weapon := shipped_weapon_kind(type_str)
+		slot, equippable := shipped_slot(line, is_weapon)
+
+		// Weapons: held-item glb keyed by the RDR-SID column (field 21),
+		// e.g. sid 2904 → item/EM_002904_20_000.glb.
+		model := ""
+		if is_weapon {
+			sid := csv_field_at(line, 21)
+			sid_n, sid_ok := strconv.parse_int(sid, 10)
+			if sid_ok && sid_n > 0 {
+				model = strings.clone(fmt.tprintf("item/EM_%06d_20_000.glb", sid_n))
+			}
+		}
+
+		def := Item_Def{
+			name = strings.clone(name),
+			type = shipped_item_type(type_str, slot),
+			equipment_slot = slot,
+			weapon_type = weapon_kind,
+			rarity = shipped_rarity(id, equippable),
+			required_level = shipped_required_level(id, equippable),
+			model = model,
+		}
+		key := strings.clone(id_str)
+		item_defs[key] = def
+		count += 1
+	}
+	rl.TraceLog(.INFO, "items: %d shipped items loaded from item.csv", count)
+}
+
+// Held-item models: assets-cache handles keyed by the model path. Failed
+// loads are negatively cached (nil value) so per-frame lookups never retry.
+// The map holds the references for the session — assets_destroy unloads the
+// world at shutdown regardless of refcounts.
+held_models: map[string]^Model_Entry
+
+held_model_acquire :: proc(model: string) -> ^Model_Entry {
+	if len(model) == 0 do return nil
+	if e, ok := held_models[model]; ok do return e
+	e := assets_model_acquire(fmt.tprintf("assets/%s", model))
+	key := strings.clone(model)
+	held_models[key] = e // nil = known missing
+	return e
+}
+
+// Resolve the equipped weapon's held model for an inventory item id.
+held_model_for_item :: proc(item_id: string) -> ^Model_Entry {
+	def, ok := item_def(item_id)
+	if !ok do return nil
+	return held_model_acquire(def.model)
 }
 
 // Lookup helpers — call after init_item_defs (wired into init_game_data).

@@ -2,6 +2,11 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.DummyManager = void 0;
 const shared_1 = require("@dust-saga/shared");
+// Creator models cycled through by performance dummies (human m/f, elf m/f,
+// dwarf, myrine, enkidu, lapin) so the crowd exercises every cached model.
+const PERF_MODELS = ['011', '012', '021', '022', '031', '042', '051', '063'];
+// Hard ceiling for one spawn wave — the arena is sized for this.
+const MAX_PERF_DUMMIES = 200;
 class DummyManager {
     constructor(deps) {
         this.deps = deps;
@@ -105,6 +110,128 @@ class DummyManager {
             }
         });
         this.gm(session.characterId, `SPAWNED ${dummyId}`);
+    }
+    /**
+     * Performance arena: spawn a grid of fully rendered test players in front
+     * of the zone's spawn point. Each carries creator appearance data (model /
+     * face / hair / hair color) so clients build real skinned avatars, and is
+     * driven to loop the three unarmed attack animations by tick().
+     */
+    spawnPerformanceDummies(session, count) {
+        const n = Math.max(1, Math.min(count, MAX_PERF_DUMMIES));
+        const zoneDef = (0, shared_1.getZoneDefinition)(session.zoneId);
+        const spawn = zoneDef?.playerSpawn || session.position;
+        // Grid: 10 columns wide, rows marching away from the spawn point.
+        const columns = 10;
+        const spacing = 3.2;
+        const startX = spawn.x - ((columns - 1) / 2) * spacing;
+        const startZ = spawn.z + 14;
+        const now = Date.now();
+        for (let i = 0; i < n; i++) {
+            this.counter++;
+            const dummyId = `dummy_${now}_${this.counter}`;
+            const col = i % columns;
+            const row = Math.floor(i / columns);
+            const position = { x: startX + col * spacing, y: spawn.y, z: startZ + row * spacing };
+            // Face the spectator at the spawn point.
+            const dirX = spawn.x - position.x;
+            const dirZ = spawn.z - position.z;
+            const yaw = Math.atan2(dirX, dirZ);
+            const rotation = { x: 0, y: Math.sin(yaw / 2), z: 0, w: Math.cos(yaw / 2) };
+            const modelId = PERF_MODELS[this.counter % PERF_MODELS.length];
+            const faceIndex = this.counter % 3;
+            const hairIndex = this.counter % 4;
+            const hairColor = this.counter % 6;
+            const dummySession = {
+                playerId: 'gm_dummy',
+                socketId: '',
+                username: 'gm_dummy',
+                characterId: dummyId,
+                characterName: `Perf_${this.counter}`,
+                race: 'human',
+                jobId: shared_1.JobId.WARRIOR,
+                baseClass: shared_1.BaseClass.WARRIOR,
+                stats: { health: 100, maxHealth: 100, mana: 50, maxMana: 50, attack: 10, defense: 5, speed: 1, speedMultiplier: 1, magicAttack: 5, critChance: 0.05, castSpeed: 1, level: 1, experience: 0, experienceToNext: 100 },
+                statPoints: { STR: 5, AGI: 5, INT: 5, SPI: 5, DEX: 5, STA: 5 },
+                baseStats: { STR: 5, AGI: 5, INT: 5, SPI: 5, DEX: 5, STA: 5 },
+                unspentStatPoints: 0,
+                unspentSkillPoints: 0,
+                skillProficiencies: (0, shared_1.createDefaultSkillProficiencies)(),
+                skillAdeptness: (0, shared_1.createDefaultSkillAdeptness)((0, shared_1.getDesignJobId)(shared_1.JobId.WARRIOR)),
+                position,
+                rotation,
+                zoneId: session.zoneId,
+                targetId: null,
+                lastAttackTime: 0,
+                lastManualAttackTime: 0,
+                lastRegenTick: 0,
+                invulnerableUntil: Date.now() + 999999999,
+                isDead: false,
+                isResting: false,
+                restStartedAt: 0,
+                currentNpcId: null,
+                deathTime: 0,
+                nation: null,
+                lastSafeZoneId: session.zoneId,
+                skillCooldowns: [],
+                activeCast: null,
+                statusEffects: [],
+                statBreakdown: null,
+                effectiveStats: null,
+                inventory: [],
+                gold: 0,
+                equipment: (0, shared_1.normalizeEquipment)(null),
+                quests: [],
+                role: shared_1.AccountRole.PLAYER,
+                modelId,
+                faceIndex,
+                hairIndex,
+                hairColor,
+            };
+            this.deps.getPlayers().set(dummyId, dummySession);
+            this.deps.registerPlayerInZone(dummyId, session.zoneId);
+            this.dummyMeta.set(dummyId, {
+                ownerId: session.characterId,
+                isPvp: false,
+                isWalking: false,
+                walkPoints: [],
+                walkIndex: 0,
+                walkDir: 1,
+                inParty: false,
+                attackIntervalMs: 1200 + (i % 5) * 100,
+                nextAttackAt: now + (i % 10) * 120,
+            });
+            this.deps.broadcastInZone(session.zoneId, {
+                type: shared_1.PacketType.ENTITY_SPAWN,
+                timestamp: now,
+                data: {
+                    id: dummyId,
+                    type: 'player',
+                    position,
+                    rotation,
+                    data: {
+                        name: dummySession.characterName,
+                        class: dummySession.jobId,
+                        race: dummySession.race,
+                        jobId: dummySession.jobId,
+                        level: dummySession.stats.level,
+                        health: dummySession.stats.health,
+                        maxHealth: dummySession.stats.maxHealth,
+                        modelFile: shared_1.JOB_DEFINITIONS[dummySession.jobId]?.modelFile || 'Adventurer.glb',
+                        modelId,
+                        faceIndex,
+                        hairIndex,
+                        hairColor,
+                    }
+                }
+            });
+        }
+        this.gm(session.characterId, `SPAWNED ${n} PERFORMANCE TEST PLAYERS (unarmed attack loop)`);
+    }
+    /** Despawn every dummy owned by the session (performance arena clear). */
+    despawnPerformanceDummies(session) {
+        this.cleanupOwner(session.characterId, session.zoneId);
+        this.gm(session.characterId, 'DESPAWNED ALL TEST PLAYERS');
     }
     despawnDummy(dummyId, session) {
         if (this.notFound(dummyId, session))
@@ -374,6 +501,22 @@ class DummyManager {
                     position: dummy.position,
                     rotation: dummy.rotation
                 }
+            });
+        }
+        // Performance-arena dummies: keep looping the unarmed attack cycle.
+        // 'UnarmedAttack' is distinct from live combat's 'Attack' broadcast so
+        // the client can opt into this without changing normal gameplay visuals.
+        for (const [dummyId, meta] of this.dummyMeta) {
+            if (!meta.attackIntervalMs || now < (meta.nextAttackAt ?? 0))
+                continue;
+            const dummy = this.deps.getPlayers().get(dummyId);
+            if (!dummy)
+                continue;
+            meta.nextAttackAt = now + meta.attackIntervalMs;
+            this.deps.broadcastInZone(dummy.zoneId, {
+                type: shared_1.PacketType.ENTITY_ANIMATION,
+                timestamp: now,
+                data: { entityId: dummyId, animation: 'UnarmedAttack' }
             });
         }
     }

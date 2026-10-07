@@ -219,6 +219,31 @@ exports.NPC_DATABASE = {
     'latugan_blacksmith': craftNpc('latugan_blacksmith', 'Hassan Scorpionsbane', 'latugan_empire', recipes_1.CraftProfession.BLACKSMITH, { x: -10, y: 0, z: 5 }),
     'latugan_alchemist': craftNpc('latugan_alchemist', 'Zahra the Herbalist', 'latugan_empire', recipes_1.CraftProfession.ALCHEMIST, { x: 10, y: 0, z: 5 }),
     'latugan_enchanter': craftNpc('latugan_enchanter', 'Khalid gem-Etcher', 'latugan_empire', recipes_1.CraftProfession.ENCHANTER, { x: 0, y: 0, z: 15 }),
+    // ── Performance test arena ─────────────────────────────────────────────
+    // Dialog options route through the "perf:" dialogId prefix, intercepted
+    // server-side in npcHandlers (same pattern as "cutscene:"/"adv:").
+    'perf_test_controller': {
+        id: 'perf_test_controller',
+        name: 'Arena Engineer',
+        type: npc_1.NPCType.GENERIC,
+        modelFile: 'Casual Character.glb',
+        position: { x: 4, y: 0, z: -18 },
+        rotation: -2.03,
+        zoneId: 'performance_test',
+        dialogs: [
+            {
+                id: 'greeting',
+                text: 'Welcome to the performance arena. I can summon a crowd of fully rendered test players — they will stand in the arena and cycle the three unarmed attack animations. What would you like?',
+                options: [
+                    { text: 'Spawn 100 test players', nextDialogId: 'perf:spawn:100' },
+                    { text: 'Spawn 50 test players', nextDialogId: 'perf:spawn:50' },
+                    { text: 'Spawn 25 test players', nextDialogId: 'perf:spawn:25' },
+                    { text: 'Despawn all test players', nextDialogId: 'perf:clear' },
+                    { text: 'Nothing, just looking.', action: 'close' }
+                ]
+            }
+        ]
+    },
 };
 function craftNpc(id, name, zoneId, profession, position) {
     const professionLabel = profession === recipes_1.CraftProfession.BLACKSMITH
