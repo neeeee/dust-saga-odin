@@ -1,0 +1,40 @@
+{Version
+	(major int16[1] 1)
+	(minor int16[1] 0)
+}
+{Target
+	(type int32[1] 0)
+	(extend_visible int8[1] 1)
+	(extend_pos int8[1] 1)
+	(extend_rot int8[1] 1)
+	(extend_scale int8[1] 1)
+	(center_pos int8[1] 0)
+	(find_bone int8[1] 0)
+	(find_socket int8[1] 0)
+	(owner_name string[1] "")
+	(goal_name string[1] "")
+	(move_frame float[1] 0.000000)
+	(move_vel float[1] 0.000000)
+	(move_acl float[1] 0.000000)
+}
+{Header
+	(frame int16[1] 60)
+	(loop int8[1] 1)
+	(loop_ratio float[1] 0.000000)
+	(plug_end_wait int8[1] 0)
+}
+{Plug
+	(name string[1] "Plug")
+	(start float[1] 0.000000)
+	(end float[1] 1.000000)
+	(loop int8[1] 0)
+	{Object
+		{Model
+			(name string[1] "wall")
+			(file string[1] "fx/10/attr/EZ_10_600_00.vra")
+			(billboard_x int8[1] 0)
+			(billboard_y int8[1] 0)
+			(billboard_z int8[1] 0)
+		}
+	}
+}

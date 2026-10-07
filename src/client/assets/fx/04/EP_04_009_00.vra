@@ -1,0 +1,132 @@
+{Version
+	(major int16[1] 1)
+	(minor int16[1] 0)
+}
+{Target
+	(type int32[1] 2)
+	(extend_visible int8[1] 1)
+	(extend_pos int8[1] 1)
+	(extend_rot int8[1] 0)
+	(extend_scale int8[1] 1)
+	(center_pos int8[1] 0)
+	(find_bone int8[1] 1)
+	(find_socket int8[1] 0)
+	(owner_name string[1] "Bip01 Head")
+	(goal_name string[1] "")
+	(move_frame float[1] 0.000000)
+	(move_vel float[1] 0.000000)
+	(move_acl float[1] 0.000000)
+}
+{Header
+	(frame int16[1] 60)
+	(loop int8[1] 1)
+	(loop_ratio float[1] 0.000000)
+	(plug_end_wait int8[1] 0)
+}
+{Plug
+	(name string[1] "Wave")
+	(start float[1] 0.000000)
+	(end float[1] 1.000000)
+	(loop int8[1] 0)
+	{Object
+		{Model
+			(name string[1] "Model")
+			(file string[1] "fx/04/attr/EZ_04_009_00.vra")
+			(billboard_x int8[1] 0)
+			(billboard_y int8[1] 0)
+			(billboard_z int8[1] 0)
+		}
+	}
+	{Work
+		{Scale
+			(type int32[1] 1)
+			(ratio float[2] 
+				0.000000, 1.000000)
+			(scale vector3[2] 
+				0.200000, 0.200000, 0.200000, 
+				1.000000, 1.000000, 1.000000)
+			(scale_rnd vector3[2] 
+				0.000000, 0.000000, 0.000000, 
+				0.000000, 0.000000, 0.000000)
+		}
+		{Color
+			(ratio float[3] 
+				0.000000, 0.200000, 1.000000)
+			(color vector4[3] 
+				0.000000, 0.000000, 0.000000, 1.000000, 
+				1.000000, 1.000000, 1.000000, 1.000000, 
+				0.000000, 0.000000, 0.000000, 1.000000)
+		}
+	}
+}
+{Plug
+	(name string[1] "Wave1")
+	(start float[1] 0.500000)
+	(end float[1] 1.000000)
+	(loop int8[1] 0)
+	{Object
+		{Model
+			(name string[1] "Model")
+			(file string[1] "fx/04/attr/EZ_04_009_00.vra")
+			(billboard_x int8[1] 0)
+			(billboard_y int8[1] 0)
+			(billboard_z int8[1] 0)
+		}
+	}
+	{Work
+		{Scale
+			(type int32[1] 1)
+			(ratio float[2] 
+				0.000000, 1.000000)
+			(scale vector3[2] 
+				0.200000, 0.200000, 0.200000, 
+				0.600000, 0.600000, 0.600000)
+			(scale_rnd vector3[2] 
+				0.000000, 0.000000, 0.000000, 
+				0.000000, 0.000000, 0.000000)
+		}
+		{Color
+			(ratio float[3] 
+				0.000000, 0.200000, 1.000000)
+			(color vector4[3] 
+				0.000000, 0.000000, 0.000000, 1.000000, 
+				1.000000, 1.000000, 1.000000, 1.000000, 
+				1.000000, 1.000000, 1.000000, 1.000000)
+		}
+	}
+}
+{Plug
+	(name string[1] "Wave2")
+	(start float[1] 0.000000)
+	(end float[1] 0.500000)
+	(loop int8[1] 0)
+	{Object
+		{Model
+			(name string[1] "Model")
+			(file string[1] "fx/04/attr/EZ_04_009_00.vra")
+			(billboard_x int8[1] 0)
+			(billboard_y int8[1] 0)
+			(billboard_z int8[1] 0)
+		}
+	}
+	{Work
+		{Scale
+			(type int32[1] 1)
+			(ratio float[2] 
+				0.000000, 1.000000)
+			(scale vector3[2] 
+				0.600000, 0.600000, 0.600000, 
+				1.000000, 1.000000, 1.000000)
+			(scale_rnd vector3[2] 
+				0.000000, 0.000000, 0.000000, 
+				0.000000, 0.000000, 0.000000)
+		}
+		{Color
+			(ratio float[2] 
+				0.000000, 1.000000)
+			(color vector4[2] 
+				1.000000, 1.000000, 1.000000, 1.000000, 
+				0.000000, 0.000000, 0.000000, 1.000000)
+		}
+	}
+}

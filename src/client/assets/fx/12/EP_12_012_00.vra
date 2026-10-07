@@ -1,0 +1,411 @@
+{Version
+	(major int16[1] 1)
+	(minor int16[1] 0)
+}
+{Target
+	(type int32[1] 1)
+	(extend_visible int8[1] 1)
+	(extend_pos int8[1] 1)
+	(extend_rot int8[1] 1)
+	(extend_scale int8[1] 1)
+	(center_pos int8[1] 0)
+	(find_bone int8[1] 0)
+	(find_socket int8[1] 1)
+	(owner_name string[1] "T02")
+	(goal_name string[1] "")
+	(move_frame float[1] 0.000000)
+	(move_vel float[1] 0.000000)
+	(move_acl float[1] 0.000000)
+}
+{Header
+	(frame int16[1] 60)
+	(loop int8[1] 1)
+	(loop_ratio float[1] 0.000000)
+	(plug_end_wait int8[1] 0)
+}
+{Plug
+	(name string[1] "WEPONFX")
+	(start float[1] 0.000000)
+	(end float[1] 1.000000)
+	(loop int8[1] 0)
+	{Plug
+		(name string[1] "Smorke")
+		(start float[1] 0.000000)
+		(end float[1] 1.000000)
+		(loop int8[1] 0)
+		{Object
+			{Particle
+				(name string[1] "Particle1")
+				(emit_type int32[1] 4)
+				(move_type int32[1] 2)
+				(emit_size vector3[1] 5.000000, 5.000000, 5.000000)
+				(emit_count int32[1] 1)
+				(emit_cycle float[1] 12.000000)
+				(life float[1] 60.000000)
+				(life_rnd float[1] 0.000000)
+				(fade_in float[1] 0.500000)
+				(fade_in_rnd float[1] 0.100000)
+				(fade_out float[1] 0.600000)
+				(fade_out_rnd float[1] 0.100000)
+				(move vector3[1] 0.000000, 1.000000, 0.000000)
+				(move_vel float[1] 0.300000)
+				(move_acl float[1] -0.005000)
+				(edge int8[1] 1)
+				(under int8[1] 0)
+				(move_rev int8[1] 1)
+				(tgt_del int8[1] 0)
+				(emt_world int8[1] 0)
+				(file string[1] "fx/image/ET_10_100_00.tga")
+				(dims vector2[1] 10.000000, 10.000000)
+				(color vector4[1] 1.000000, 1.000000, 1.000000, 1.000000)
+				(billboard int8[1] 1)
+				(base_x int8[1] 0)
+				(base_y int8[1] 0)
+				(reverse_x int8[1] 0)
+				(reverse_y int8[1] 0)
+				(blend int32[1] 3)
+				(anim_type int32[1] 0)
+				(anim_uv vector2[1] 0.000000, 0.000000)
+				(pos vector3[1] 5.000000, 0.000000, 0.000000)
+				(pos_rnd vector3[1] 0.000000, 0.000000, 0.000000)
+				(pos_vel vector3[1] 0.000000, 0.000000, 0.000000)
+				(pos_vel_rnd vector3[1] 0.000000, 0.000000, 0.000000)
+				(pos_acl vector3[1] 0.000000, 0.000000, 0.000000)
+				(pos_acl_rnd vector3[1] 0.000000, 0.000000, 0.000000)
+				(rot vector3[1] 0.000000, 0.000000, 0.000000)
+				(rot_rnd vector3[1] 0.000000, 0.000000, 180.000000)
+				(rot_vel vector3[1] 0.000000, 0.000000, 0.000000)
+				(rot_vel_rnd vector3[1] 0.000000, 0.000000, 0.600000)
+				(rot_acl vector3[1] 0.000000, 0.000000, 0.000000)
+				(rot_acl_rnd vector3[1] 0.000000, 0.000000, 0.000000)
+				(scale vector3[1] 1.000000, 1.000000, 1.000000)
+				(scale_rnd vector3[1] 0.000000, 0.000000, 0.000000)
+				(scale_vel vector3[1] 0.020000, 0.020000, 0.000000)
+				(scale_vel_rnd vector3[1] 0.000000, 0.000000, 0.000000)
+				(scale_acl vector3[1] 0.000000, 0.000000, 0.000000)
+				(scale_acl_rnd vector3[1] 0.000000, 0.000000, 0.000000)
+			}
+		}
+		{Work
+			{Color
+				(ratio float[2] 
+					0.000000, 1.000000)
+				(color vector4[2] 
+					0.500000, 0.700000, 1.000000, 1.000000, 
+					0.500000, 0.700000, 1.000000, 1.000000)
+			}
+		}
+	}
+	{Plug
+		(name string[1] "Ice")
+		(start float[1] 0.000000)
+		(end float[1] 1.000000)
+		(loop int8[1] 0)
+		{Object
+			{Particle
+				(name string[1] "Particle1")
+				(emit_type int32[1] 4)
+				(move_type int32[1] 2)
+				(emit_size vector3[1] 15.000000, 10.000000, 10.000000)
+				(emit_count int32[1] 1)
+				(emit_cycle float[1] 15.000000)
+				(life float[1] 40.000000)
+				(life_rnd float[1] 0.000000)
+				(fade_in float[1] 0.200000)
+				(fade_in_rnd float[1] 0.100000)
+				(fade_out float[1] 0.600000)
+				(fade_out_rnd float[1] 0.000000)
+				(move vector3[1] 0.000000, 1.000000, 0.000000)
+				(move_vel float[1] 0.100000)
+				(move_acl float[1] 0.000000)
+				(edge int8[1] 1)
+				(under int8[1] 0)
+				(move_rev int8[1] 1)
+				(tgt_del int8[1] 1)
+				(emt_world int8[1] 1)
+				(file string[1] "fx/image/ES_12_000_00.spr")
+				(dims vector2[1] 5.000000, 5.000000)
+				(color vector4[1] 1.000000, 1.000000, 1.000000, 1.000000)
+				(billboard int8[1] 1)
+				(base_x int8[1] 0)
+				(base_y int8[1] 0)
+				(reverse_x int8[1] 0)
+				(reverse_y int8[1] 0)
+				(blend int32[1] 1)
+				(anim_type int32[1] 0)
+				(anim_uv vector2[1] 0.000000, 0.000000)
+				(pos vector3[1] 5.000000, 0.000000, 0.000000)
+				(pos_rnd vector3[1] 0.000000, 0.000000, 0.000000)
+				(pos_vel vector3[1] 0.000000, 0.000000, 0.000000)
+				(pos_vel_rnd vector3[1] 0.000000, 0.000000, 0.000000)
+				(pos_acl vector3[1] 0.000000, 0.000000, 0.000000)
+				(pos_acl_rnd vector3[1] 0.000000, 0.000000, 0.000000)
+				(rot vector3[1] 0.000000, 0.000000, 0.000000)
+				(rot_rnd vector3[1] 0.000000, 0.000000, 180.000000)
+				(rot_vel vector3[1] 0.000000, 0.000000, 0.000000)
+				(rot_vel_rnd vector3[1] 0.000000, 0.000000, 0.600000)
+				(rot_acl vector3[1] 0.000000, 0.000000, 0.000000)
+				(rot_acl_rnd vector3[1] 0.000000, 0.000000, 0.000000)
+				(scale vector3[1] 1.000000, 1.000000, 1.000000)
+				(scale_rnd vector3[1] 0.000000, 0.000000, 0.000000)
+				(scale_vel vector3[1] 0.000000, 0.000000, 0.000000)
+				(scale_vel_rnd vector3[1] 0.000000, 0.000000, 0.000000)
+				(scale_acl vector3[1] 0.000000, 0.000000, 0.000000)
+				(scale_acl_rnd vector3[1] 0.000000, 0.000000, 0.000000)
+			}
+			{Particle
+				(name string[1] "Particle2")
+				(emit_type int32[1] 4)
+				(move_type int32[1] 2)
+				(emit_size vector3[1] 15.000000, 10.000000, 10.000000)
+				(emit_count int32[1] 1)
+				(emit_cycle float[1] 7.000000)
+				(life float[1] 40.000000)
+				(life_rnd float[1] 0.000000)
+				(fade_in float[1] 0.200000)
+				(fade_in_rnd float[1] 0.100000)
+				(fade_out float[1] 0.600000)
+				(fade_out_rnd float[1] 0.000000)
+				(move vector3[1] 0.000000, 1.000000, 0.000000)
+				(move_vel float[1] 0.100000)
+				(move_acl float[1] 0.000000)
+				(edge int8[1] 1)
+				(under int8[1] 0)
+				(move_rev int8[1] 1)
+				(tgt_del int8[1] 0)
+				(emt_world int8[1] 0)
+				(file string[1] "fx/image/ES_12_000_00.spr")
+				(dims vector2[1] 3.000000, 3.000000)
+				(color vector4[1] 1.000000, 1.000000, 1.000000, 1.000000)
+				(billboard int8[1] 1)
+				(base_x int8[1] 0)
+				(base_y int8[1] 0)
+				(reverse_x int8[1] 0)
+				(reverse_y int8[1] 0)
+				(blend int32[1] 1)
+				(anim_type int32[1] 0)
+				(anim_uv vector2[1] 0.000000, 0.000000)
+				(pos vector3[1] 5.000000, 0.000000, 0.000000)
+				(pos_rnd vector3[1] 0.000000, 0.000000, 0.000000)
+				(pos_vel vector3[1] 0.000000, 0.000000, 0.000000)
+				(pos_vel_rnd vector3[1] 0.000000, 0.000000, 0.000000)
+				(pos_acl vector3[1] 0.000000, 0.000000, 0.000000)
+				(pos_acl_rnd vector3[1] 0.000000, 0.000000, 0.000000)
+				(rot vector3[1] 0.000000, 0.000000, 0.000000)
+				(rot_rnd vector3[1] 0.000000, 0.000000, 180.000000)
+				(rot_vel vector3[1] 0.000000, 0.000000, 0.000000)
+				(rot_vel_rnd vector3[1] 0.000000, 0.000000, 0.600000)
+				(rot_acl vector3[1] 0.000000, 0.000000, 0.000000)
+				(rot_acl_rnd vector3[1] 0.000000, 0.000000, 0.000000)
+				(scale vector3[1] 1.000000, 1.000000, 1.000000)
+				(scale_rnd vector3[1] 0.000000, 0.000000, 0.000000)
+				(scale_vel vector3[1] 0.010000, 0.010000, 0.000000)
+				(scale_vel_rnd vector3[1] 0.000000, 0.000000, 0.000000)
+				(scale_acl vector3[1] 0.000000, 0.000000, 0.000000)
+				(scale_acl_rnd vector3[1] 0.000000, 0.000000, 0.000000)
+			}
+			{Particle
+				(name string[1] "Particle3")
+				(emit_type int32[1] 4)
+				(move_type int32[1] 1)
+				(emit_size vector3[1] 7.000000, 15.000000, 15.000000)
+				(emit_count int32[1] 1)
+				(emit_cycle float[1] 3.000000)
+				(life float[1] 30.000000)
+				(life_rnd float[1] 0.000000)
+				(fade_in float[1] 0.100000)
+				(fade_in_rnd float[1] 0.000000)
+				(fade_out float[1] 0.900000)
+				(fade_out_rnd float[1] 0.000000)
+				(move vector3[1] 0.000000, 1.000000, 0.000000)
+				(move_vel float[1] 0.100000)
+				(move_acl float[1] -0.010000)
+				(edge int8[1] 0)
+				(under int8[1] 0)
+				(move_rev int8[1] 1)
+				(tgt_del int8[1] 1)
+				(emt_world int8[1] 1)
+				(file string[1] "fx/image/ES_12_000_01.spr")
+				(dims vector2[1] 1.000000, 1.000000)
+				(color vector4[1] 1.000000, 1.000000, 1.000000, 1.000000)
+				(billboard int8[1] 0)
+				(base_x int8[1] 0)
+				(base_y int8[1] 0)
+				(reverse_x int8[1] 0)
+				(reverse_y int8[1] 0)
+				(blend int32[1] 3)
+				(anim_type int32[1] 0)
+				(anim_uv vector2[1] 0.000000, 0.000000)
+				(pos vector3[1] 5.000000, 0.000000, 0.000000)
+				(pos_rnd vector3[1] 0.000000, 0.000000, 0.000000)
+				(pos_vel vector3[1] 0.000000, 0.000000, 0.000000)
+				(pos_vel_rnd vector3[1] 0.000000, 0.300000, 0.300000)
+				(pos_acl vector3[1] 0.000000, 0.000000, 0.000000)
+				(pos_acl_rnd vector3[1] 0.000000, 0.000000, 0.000000)
+				(rot vector3[1] 0.000000, 0.000000, 0.000000)
+				(rot_rnd vector3[1] 180.000000, 180.000000, 180.000000)
+				(rot_vel vector3[1] 0.000000, 0.000000, 0.000000)
+				(rot_vel_rnd vector3[1] 12.000000, 12.000000, 12.000000)
+				(rot_acl vector3[1] 0.000000, 0.000000, 0.000000)
+				(rot_acl_rnd vector3[1] 0.000000, 0.000000, 0.000000)
+				(scale vector3[1] 1.000000, 1.000000, 1.000000)
+				(scale_rnd vector3[1] 1.000000, 1.000000, 1.000000)
+				(scale_vel vector3[1] 0.000000, 0.000000, 0.000000)
+				(scale_vel_rnd vector3[1] 0.000000, 0.000000, 0.000000)
+				(scale_acl vector3[1] 0.000000, 0.000000, 0.000000)
+				(scale_acl_rnd vector3[1] 0.000000, 0.000000, 0.000000)
+			}
+		}
+		{Work
+		}
+	}
+	{Plug
+		(name string[1] "Model")
+		(start float[1] 0.000000)
+		(end float[1] 1.000000)
+		(loop int8[1] 0)
+		{Work
+			{Rot
+				(ratio float[2] 
+					0.000000, 1.000000)
+				(type int32[1] 0)
+				(rot vector3[1] 0.000000, 90.000000, 0.000000)
+				(rot_rnd vector3[1] 0.000000, 0.000000, 0.000000)
+			}
+		}
+		{Plug
+			(name string[1] "model3")
+			(start float[1] 0.000000)
+			(end float[1] 1.000000)
+			(loop int8[1] 0)
+			{Object
+				{Model
+					(name string[1] "Model")
+					(file string[1] "fx/12/attr/EZ_12_000_02.vra")
+					(billboard_x int8[1] 0)
+					(billboard_y int8[1] 0)
+					(billboard_z int8[1] 0)
+				}
+			}
+			{Work
+				{Rot
+					(type int32[1] 2)
+					(ratio float[2] 
+						0.000000, 1.000000)
+					(rot vector3[2] 
+						0.000000, 0.000000, 0.000000, 
+						0.000000, 0.000000, 0.000000)
+					(rot_rnd vector3[2] 
+						0.000000, 0.000000, 0.000000, 
+						0.000000, 0.000000, 0.000000)
+					(rot_vel vector3[2] 
+						0.000000, 0.000000, 6.000000, 
+						0.000000, 0.000000, 0.000000)
+					(rot_vel_rnd vector3[2] 
+						0.000000, 0.000000, 0.000000, 
+						0.000000, 0.000000, 0.000000)
+					(rot_acl vector3[2] 
+						0.000000, 0.000000, 0.000000, 
+						0.000000, 0.000000, 0.000000)
+					(rot_acl_rnd vector3[2] 
+						0.000000, 0.000000, 0.000000, 
+						0.000000, 0.000000, 0.000000)
+				}
+				{Scale
+					(ratio float[2] 
+						0.000000, 1.000000)
+					(type int32[1] 0)
+					(scale vector3[1] 0.700000, 0.700000, 1.000000)
+					(scale_rnd vector3[1] 0.000000, 0.000000, 0.000000)
+				}
+				{Pos
+					(ratio float[2] 
+						0.000000, 1.000000)
+					(type int32[1] 0)
+					(pos vector3[1] 0.000000, 0.000000, 25.000000)
+					(pos_rnd vector3[1] 0.000000, 0.000000, 0.000000)
+				}
+			}
+		}
+		{Plug
+			(name string[1] "model4")
+			(start float[1] 0.000000)
+			(end float[1] 1.000000)
+			(loop int8[1] 0)
+			{Object
+				{Model
+					(name string[1] "Model")
+					(file string[1] "fx/12/attr/EZ_12_012_00.vra")
+					(billboard_x int8[1] 0)
+					(billboard_y int8[1] 0)
+					(billboard_z int8[1] 0)
+				}
+			}
+			{Work
+				{Rot
+					(ratio float[2] 
+						0.000000, 1.000000)
+					(type int32[1] 0)
+					(rot vector3[1] 0.000000, 0.000000, 90.000000)
+					(rot_rnd vector3[1] 0.000000, 0.000000, 0.000000)
+				}
+			}
+		}
+		{Plug
+			(name string[1] "model2")
+			(start float[1] 0.000000)
+			(end float[1] 1.000000)
+			(loop int8[1] 0)
+			{Object
+				{Model
+					(name string[1] "Model")
+					(file string[1] "fx/12/attr/EZ_12_000_01.vra")
+					(billboard_x int8[1] 0)
+					(billboard_y int8[1] 0)
+					(billboard_z int8[1] 0)
+				}
+			}
+			{Work
+				{Rot
+					(type int32[1] 2)
+					(ratio float[2] 
+						0.000000, 1.000000)
+					(rot vector3[2] 
+						0.000000, 180.000000, 135.000000, 
+						0.000000, 0.000000, 0.000000)
+					(rot_rnd vector3[2] 
+						0.000000, 0.000000, 0.000000, 
+						0.000000, 0.000000, 0.000000)
+					(rot_vel vector3[2] 
+						0.000000, 0.000000, 6.000000, 
+						0.000000, 0.000000, 0.000000)
+					(rot_vel_rnd vector3[2] 
+						0.000000, 0.000000, 0.000000, 
+						0.000000, 0.000000, 0.000000)
+					(rot_acl vector3[2] 
+						0.000000, 0.000000, 0.000000, 
+						0.000000, 0.000000, 0.000000)
+					(rot_acl_rnd vector3[2] 
+						0.000000, 0.000000, 0.000000, 
+						0.000000, 0.000000, 0.000000)
+				}
+				{Scale
+					(ratio float[2] 
+						0.000000, 1.000000)
+					(type int32[1] 0)
+					(scale vector3[1] 1.000000, 1.000000, 0.500000)
+					(scale_rnd vector3[1] 0.000000, 0.000000, 0.000000)
+				}
+				{Pos
+					(ratio float[2] 
+						0.000000, 1.000000)
+					(type int32[1] 0)
+					(pos vector3[1] 0.000000, 0.000000, 0.000000)
+					(pos_rnd vector3[1] 0.000000, 0.000000, 0.000000)
+				}
+			}
+		}
+	}
+	{Object
+	}
+}

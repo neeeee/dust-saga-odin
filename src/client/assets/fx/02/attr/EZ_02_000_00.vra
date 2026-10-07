@@ -1,0 +1,74 @@
+{geometry
+    {mesh
+        (name string[1]
+            "EM_02_000_00", 
+        )
+        {lod0
+            (material_id int32[1]
+                0, 
+            )
+            {param_block
+            }
+        }
+    }
+}
+{material_set
+    {material
+        (id int32[1]
+            0, 
+        )
+        {texture
+            {diffuse
+                (fname string[1]
+                    "fx\02\tex\ET_02_000_13.tga", 
+                )
+            }
+        }
+        {param_block
+            (twoSided int32[1]
+                0, 
+            )
+            (ambient vector3[1]
+                0.784314, 0.784314, 0.784314, 
+            )
+            (diffuse vector3[1]
+                0.000000, 0.000000, 0.000000, 
+            )
+            (fx_fname string[1]
+                "shader/pandora.fx", 
+            )
+            (fx_technique string[1]
+                "RigidColorTex", 
+            )
+            (fog_enable int32[1]
+                0, 
+            )
+            (alpha_test_enable int32[1]
+                0, 
+            )
+            (alpha_ref int32[1]
+                0, 
+            )
+            (alpha_func string[1]
+                "Greater", 
+            )
+            (alpha_blend_enable int32[1]
+                1, 
+            )
+            (dest_blend string[1]
+                "SrcAlpha", 
+            )
+            (src_blend string[1]
+                "InvSrcAlpha", 
+            )
+            (draw_priority int32[1]
+                0, 
+            )
+        }
+    }
+}
+{attribute
+    (Geometry string[1]
+        "fx\02\model\EM_02_000_00.dxg", 
+    )
+}

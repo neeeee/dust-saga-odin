@@ -1,0 +1,104 @@
+{Version
+	(major int16[1] 1)
+	(minor int16[1] 0)
+}
+{Target
+	(type int32[1] 1)
+	(extend_visible int8[1] 1)
+	(extend_pos int8[1] 1)
+	(extend_rot int8[1] 1)
+	(extend_scale int8[1] 1)
+	(center_pos int8[1] 0)
+	(find_bone int8[1] 0)
+	(find_socket int8[1] 1)
+	(owner_name string[1] "T01")
+	(goal_name string[1] "")
+	(move_frame float[1] 0.000000)
+	(move_vel float[1] 0.000000)
+	(move_acl float[1] 0.000000)
+}
+{Header
+	(frame int16[1] 30)
+	(loop int8[1] 0)
+	(loop_ratio float[1] 0.000000)
+	(plug_end_wait int8[1] 1)
+}
+{Plug
+	(name string[1] "Spilal")
+	(start float[1] 0.000000)
+	(end float[1] 1.000000)
+	(loop int8[1] 0)
+	{Object
+		{Model
+			(name string[1] "Model")
+			(file string[1] "fx/01/attr/EZ_01_007_00.vra")
+			(billboard_x int8[1] 0)
+			(billboard_y int8[1] 0)
+			(billboard_z int8[1] 0)
+		}
+	}
+	{Work
+		{Rot
+			(ratio float[2] 
+				0.000000, 1.000000)
+			(type int32[1] 0)
+			(rot vector3[1] 0.000000, 90.000000, 0.000000)
+			(rot_rnd vector3[1] 0.000000, 0.000000, 180.000000)
+		}
+		{Pos
+			(type int32[1] 2)
+			(ratio float[2] 
+				0.000000, 1.000000)
+			(pos vector3[2] 
+				0.000000, 0.000000, 0.000000, 
+				0.000000, 0.000000, 0.000000)
+			(pos_rnd vector3[2] 
+				0.000000, 0.000000, 0.000000, 
+				0.000000, 0.000000, 0.000000)
+			(pos_vel vector3[2] 
+				-0.500000, 0.000000, 0.000000, 
+				0.000000, 0.000000, 0.000000)
+			(pos_vel_rnd vector3[2] 
+				0.000000, 0.000000, 0.000000, 
+				0.000000, 0.000000, 0.000000)
+			(pos_acl vector3[2] 
+				0.000000, 0.000000, 0.000000, 
+				0.000000, 0.000000, 0.000000)
+			(pos_acl_rnd vector3[2] 
+				0.000000, 0.000000, 0.000000, 
+				0.000000, 0.000000, 0.000000)
+		}
+		{Color
+			(ratio float[4] 
+				0.000000, 0.400000, 0.900000, 1.000000)
+			(color vector4[4] 
+				0.000000, 0.000000, 0.000000, 1.000000, 
+				1.000000, 1.000000, 1.000000, 1.000000, 
+				0.000000, 0.000000, 0.000000, 1.000000, 
+				0.000000, 0.000000, 0.000000, 1.000000)
+		}
+		{Scale
+			(type int32[1] 2)
+			(ratio float[2] 
+				0.000000, 1.000000)
+			(scale vector3[2] 
+				5.000000, 5.000000, 1.000000, 
+				1.000000, 1.000000, 1.000000)
+			(scale_rnd vector3[2] 
+				0.000000, 0.000000, 0.000000, 
+				0.000000, 0.000000, 0.000000)
+			(scale_vel vector3[2] 
+				0.000000, 0.000000, 0.000000, 
+				0.000000, 0.000000, 0.000000)
+			(scale_vel_rnd vector3[2] 
+				0.000000, 0.000000, 0.000000, 
+				0.000000, 0.000000, 0.000000)
+			(scale_acl vector3[2] 
+				-0.010000, -0.010000, 0.040000, 
+				0.000000, 0.000000, 0.000000)
+			(scale_acl_rnd vector3[2] 
+				0.000000, 0.000000, 0.000000, 
+				0.000000, 0.000000, 0.000000)
+		}
+	}
+}

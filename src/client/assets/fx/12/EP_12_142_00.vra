@@ -1,0 +1,213 @@
+{Version
+	(major int16[1] 1)
+	(minor int16[1] 0)
+}
+{Target
+	(type int32[1] 1)
+	(extend_visible int8[1] 1)
+	(extend_pos int8[1] 1)
+	(extend_rot int8[1] 1)
+	(extend_scale int8[1] 1)
+	(center_pos int8[1] 0)
+	(find_bone int8[1] 0)
+	(find_socket int8[1] 1)
+	(owner_name string[1] "T01")
+	(goal_name string[1] "")
+	(move_frame float[1] 0.000000)
+	(move_vel float[1] 0.000000)
+	(move_acl float[1] 0.000000)
+}
+{Header
+	(frame int16[1] 120)
+	(loop int8[1] 1)
+	(loop_ratio float[1] 0.000000)
+	(plug_end_wait int8[1] 0)
+}
+{Plug
+	(name string[1] "Plug")
+	(start float[1] 0.000000)
+	(end float[1] 1.000000)
+	(loop int8[1] 0)
+	{Plug
+		(name string[1] "LightSet")
+		(start float[1] 0.000000)
+		(end float[1] 1.000000)
+		(loop int8[1] 0)
+		{Plug
+			(name string[1] "Out")
+			(start float[1] 0.000000)
+			(end float[1] 1.000000)
+			(loop int8[1] 0)
+			{Object
+				{Model
+					(name string[1] "Model")
+					(file string[1] "fx\12\attr\EZ_12_142_00.vra")
+					(billboard_x int8[1] 0)
+					(billboard_y int8[1] 0)
+					(billboard_z int8[1] 0)
+				}
+			}
+			{Work
+				{Rot
+					(ratio float[2] 
+						0.000000, 1.000000)
+					(type int32[1] 0)
+					(rot vector3[1] 0.000000, 90.000000, 90.000000)
+					(rot_rnd vector3[1] 0.000000, 0.000000, 0.000000)
+				}
+			}
+		}
+		{Plug
+			(name string[1] "LightBelt")
+			(start float[1] 0.000000)
+			(end float[1] 1.000000)
+			(loop int8[1] 0)
+			{Object
+				{Model
+					(name string[1] "Model")
+					(file string[1] "fx\12\attr\EZ_12_142_01.vra")
+					(billboard_x int8[1] 0)
+					(billboard_y int8[1] 0)
+					(billboard_z int8[1] 0)
+				}
+			}
+			{Work
+				{Rot
+					(ratio float[2] 
+						0.000000, 1.000000)
+					(type int32[1] 0)
+					(rot vector3[1] 0.000000, 90.000000, 90.000000)
+					(rot_rnd vector3[1] 0.000000, 0.000000, 0.000000)
+				}
+				{Color
+					(ratio float[3] 
+						0.000000, 0.500000, 1.000000)
+					(color vector4[3] 
+						1.000000, 1.000000, 1.000000, 1.000000, 
+						0.500000, 0.500000, 0.800000, 1.000000, 
+						1.000000, 1.000000, 1.000000, 1.000000)
+				}
+			}
+		}
+		{Plug
+			(name string[1] "In")
+			(start float[1] 0.000000)
+			(end float[1] 1.000000)
+			(loop int8[1] 0)
+			{Object
+				{Model
+					(name string[1] "Model")
+					(file string[1] "fx\12\attr\EZ_12_142_02.vra")
+					(billboard_x int8[1] 0)
+					(billboard_y int8[1] 0)
+					(billboard_z int8[1] 0)
+				}
+			}
+			{Work
+				{Rot
+					(ratio float[2] 
+						0.000000, 1.000000)
+					(type int32[1] 0)
+					(rot vector3[1] 0.000000, 90.000000, 90.000000)
+					(rot_rnd vector3[1] 0.000000, 0.000000, 0.000000)
+				}
+			}
+		}
+		{Plug
+			(name string[1] "LightBelt_ShortA")
+			(start float[1] 0.100000)
+			(end float[1] 0.400000)
+			(loop int8[1] 0)
+			{Object
+				{Model
+					(name string[1] "Model")
+					(file string[1] "fx\12\attr\EZ_12_142_01.vra")
+					(billboard_x int8[1] 0)
+					(billboard_y int8[1] 0)
+					(billboard_z int8[1] 0)
+				}
+			}
+			{Work
+				{Rot
+					(ratio float[2] 
+						0.000000, 1.000000)
+					(type int32[1] 0)
+					(rot vector3[1] 0.000000, 90.000000, 90.000000)
+					(rot_rnd vector3[1] 0.000000, 0.000000, 0.000000)
+				}
+				{Color
+					(ratio float[3] 
+						0.000000, 0.500000, 1.000000)
+					(color vector4[3] 
+						0.050000, 0.000000, 0.050000, 0.500000, 
+						0.100000, 0.050000, 0.150000, 0.500000, 
+						0.050000, 0.000000, 0.050000, 0.500000)
+				}
+			}
+		}
+		{Plug
+			(name string[1] "LightBelt_ShortB")
+			(start float[1] 0.400000)
+			(end float[1] 0.650000)
+			(loop int8[1] 0)
+			{Object
+				{Model
+					(name string[1] "Model")
+					(file string[1] "fx\12\attr\EZ_12_142_01.vra")
+					(billboard_x int8[1] 0)
+					(billboard_y int8[1] 0)
+					(billboard_z int8[1] 0)
+				}
+			}
+			{Work
+				{Rot
+					(ratio float[2] 
+						0.000000, 1.000000)
+					(type int32[1] 0)
+					(rot vector3[1] 0.000000, 90.000000, 90.000000)
+					(rot_rnd vector3[1] 0.000000, 0.000000, 0.000000)
+				}
+				{Color
+					(ratio float[3] 
+						0.000000, 0.500000, 1.000000)
+					(color vector4[3] 
+						0.000000, 0.000000, 0.100000, 0.300000, 
+						0.000000, 0.000000, 0.150000, 0.300000, 
+						0.000000, 0.000000, 0.100000, 0.300000)
+				}
+			}
+		}
+		{Plug
+			(name string[1] "LightBelt_ShortC")
+			(start float[1] 0.800000)
+			(end float[1] 0.950000)
+			(loop int8[1] 0)
+			{Object
+				{Model
+					(name string[1] "Model")
+					(file string[1] "fx\12\attr\EZ_12_142_01.vra")
+					(billboard_x int8[1] 0)
+					(billboard_y int8[1] 0)
+					(billboard_z int8[1] 0)
+				}
+			}
+			{Work
+				{Rot
+					(ratio float[2] 
+						0.000000, 1.000000)
+					(type int32[1] 0)
+					(rot vector3[1] 0.000000, 90.000000, 90.000000)
+					(rot_rnd vector3[1] 0.000000, 0.000000, 0.000000)
+				}
+				{Color
+					(ratio float[3] 
+						0.000000, 0.500000, 1.000000)
+					(color vector4[3] 
+						0.100000, 0.150000, 0.000000, 0.200000, 
+						0.200000, 0.100000, 0.100000, 0.200000, 
+						0.100000, 0.150000, 0.000000, 0.200000)
+				}
+			}
+		}
+	}
+}

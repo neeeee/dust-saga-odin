@@ -1,0 +1,2219 @@
+{Version
+	(major int16[1] 1)
+	(minor int16[1] 0)
+}
+{Target
+	(type int32[1] 2)
+	(extend_visible int8[1] 1)
+	(extend_pos int8[1] 1)
+	(extend_rot int8[1] 0)
+	(extend_scale int8[1] 1)
+	(center_pos int8[1] 0)
+	(find_bone int8[1] 0)
+	(find_socket int8[1] 0)
+	(owner_name string[1] "")
+	(goal_name string[1] "")
+	(move_frame float[1] 0.000000)
+	(move_vel float[1] 0.000000)
+	(move_acl float[1] 0.000000)
+}
+{Header
+	(frame int16[1] 60)
+	(loop int8[1] 0)
+	(loop_ratio float[1] 0.000000)
+	(plug_end_wait int8[1] 0)
+}
+{Plug
+	(name string[1] "AlowA")
+	(start float[1] 0.000000)
+	(end float[1] 0.500000)
+	(loop int8[1] 0)
+	{Work
+		{Rot
+			(ratio float[2] 
+				0.000000, 1.000000)
+			(type int32[1] 0)
+			(rot vector3[1] 0.000000, 0.000000, 0.000000)
+			(rot_rnd vector3[1] 10.000000, 180.000000, 0.000000)
+		}
+		{Pos
+			(ratio float[2] 
+				0.000000, 1.000000)
+			(type int32[1] 0)
+			(pos vector3[1] 0.000000, 1500.000000, 0.000000)
+			(pos_rnd vector3[1] 600.000000, 0.000000, 600.000000)
+		}
+	}
+	{Plug
+		(name string[1] "Alow")
+		(start float[1] 0.000000)
+		(end float[1] 0.500000)
+		(loop int8[1] 0)
+		{Object
+			{Model
+				(name string[1] "Model")
+				(file string[1] "fx/02/attr/EZ_02_009_00.vra")
+				(billboard_x int8[1] 0)
+				(billboard_y int8[1] 0)
+				(billboard_z int8[1] 0)
+			}
+			{Model
+				(name string[1] "Model1")
+				(file string[1] "fx/02/attr/EZ_02_009_01.vra")
+				(billboard_x int8[1] 0)
+				(billboard_y int8[1] 0)
+				(billboard_z int8[1] 0)
+			}
+		}
+		{Work
+			{Pos
+				(type int32[1] 1)
+				(ratio float[2] 
+					0.000000, 1.000000)
+				(pos vector3[2] 
+					0.000000, 0.000000, 0.000000, 
+					0.000000, -1700.000000, 0.000000)
+				(pos_rnd vector3[2] 
+					0.000000, 0.000000, 0.000000, 
+					0.000000, 0.000000, 0.000000)
+			}
+			{Rot
+				(ratio float[2] 
+					0.000000, 1.000000)
+				(type int32[1] 0)
+				(rot vector3[1] 90.000000, 0.000000, 0.000000)
+				(rot_rnd vector3[1] 0.000000, 0.000000, 0.000000)
+			}
+		}
+		{Plug
+			(name string[1] "Line")
+			(start float[1] 0.000000)
+			(end float[1] 1.000000)
+			(loop int8[1] 0)
+			{Object
+				{Trail
+					(name string[1] "Trail")
+					(file string[1] "fx/image/ET_13_007_00.tga")
+					(cycle float[1] 1.000000)
+					(life float[1] 30.000000)
+					(fade_in float[1] 0.000000)
+					(fade_out float[1] 0.500000)
+					(width float[1] 4.000000)
+					(complement_param float[1] 20.000000)
+					(blend int32[1] 2)
+					(type int32[1] 0)
+					(uv_type int32[1] 0)
+					(complement int32[1] 1)
+					(center int8[1] 1)
+				}
+			}
+			{Work
+				{Rot
+					(ratio float[2] 
+						0.000000, 1.000000)
+					(type int32[1] 0)
+					(rot vector3[1] 0.000000, 0.000000, 90.000000)
+					(rot_rnd vector3[1] 0.000000, 0.000000, 0.000000)
+				}
+			}
+		}
+		{Plug
+			(name string[1] "Line1")
+			(start float[1] 0.000000)
+			(end float[1] 1.000000)
+			(loop int8[1] 0)
+			{Object
+				{Trail
+					(name string[1] "Trail")
+					(file string[1] "fx/image/ET_13_007_00.tga")
+					(cycle float[1] 1.000000)
+					(life float[1] 30.000000)
+					(fade_in float[1] 0.000000)
+					(fade_out float[1] 0.500000)
+					(width float[1] 4.000000)
+					(complement_param float[1] 20.000000)
+					(blend int32[1] 2)
+					(type int32[1] 0)
+					(uv_type int32[1] 0)
+					(complement int32[1] 1)
+					(center int8[1] 1)
+				}
+			}
+			{Work
+			}
+		}
+	}
+}
+{Plug
+	(name string[1] "AlowB")
+	(start float[1] 0.100000)
+	(end float[1] 0.600000)
+	(loop int8[1] 0)
+	{Work
+		{Rot
+			(ratio float[2] 
+				0.000000, 1.000000)
+			(type int32[1] 0)
+			(rot vector3[1] 0.000000, 0.000000, 0.000000)
+			(rot_rnd vector3[1] 10.000000, 180.000000, 0.000000)
+		}
+		{Pos
+			(ratio float[2] 
+				0.000000, 1.000000)
+			(type int32[1] 0)
+			(pos vector3[1] 0.000000, 1500.000000, 0.000000)
+			(pos_rnd vector3[1] 600.000000, 0.000000, 600.000000)
+		}
+	}
+	{Plug
+		(name string[1] "Alow")
+		(start float[1] 0.000000)
+		(end float[1] 0.500000)
+		(loop int8[1] 0)
+		{Object
+			{Model
+				(name string[1] "Model")
+				(file string[1] "fx/02/attr/EZ_02_009_00.vra")
+				(billboard_x int8[1] 0)
+				(billboard_y int8[1] 0)
+				(billboard_z int8[1] 0)
+			}
+			{Model
+				(name string[1] "Model1")
+				(file string[1] "fx/02/attr/EZ_02_009_01.vra")
+				(billboard_x int8[1] 0)
+				(billboard_y int8[1] 0)
+				(billboard_z int8[1] 0)
+			}
+		}
+		{Work
+			{Pos
+				(type int32[1] 1)
+				(ratio float[2] 
+					0.000000, 1.000000)
+				(pos vector3[2] 
+					0.000000, 0.000000, 0.000000, 
+					0.000000, -1700.000000, 0.000000)
+				(pos_rnd vector3[2] 
+					0.000000, 0.000000, 0.000000, 
+					0.000000, 0.000000, 0.000000)
+			}
+			{Rot
+				(ratio float[2] 
+					0.000000, 1.000000)
+				(type int32[1] 0)
+				(rot vector3[1] 90.000000, 0.000000, 0.000000)
+				(rot_rnd vector3[1] 0.000000, 0.000000, 0.000000)
+			}
+		}
+		{Plug
+			(name string[1] "Line")
+			(start float[1] 0.000000)
+			(end float[1] 1.000000)
+			(loop int8[1] 0)
+			{Object
+				{Trail
+					(name string[1] "Trail")
+					(file string[1] "fx/image/ET_13_007_00.tga")
+					(cycle float[1] 1.000000)
+					(life float[1] 30.000000)
+					(fade_in float[1] 0.000000)
+					(fade_out float[1] 0.500000)
+					(width float[1] 4.000000)
+					(complement_param float[1] 20.000000)
+					(blend int32[1] 2)
+					(type int32[1] 0)
+					(uv_type int32[1] 0)
+					(complement int32[1] 1)
+					(center int8[1] 1)
+				}
+			}
+			{Work
+				{Rot
+					(ratio float[2] 
+						0.000000, 1.000000)
+					(type int32[1] 0)
+					(rot vector3[1] 0.000000, 0.000000, 90.000000)
+					(rot_rnd vector3[1] 0.000000, 0.000000, 0.000000)
+				}
+			}
+		}
+		{Plug
+			(name string[1] "Line1")
+			(start float[1] 0.000000)
+			(end float[1] 1.000000)
+			(loop int8[1] 0)
+			{Object
+				{Trail
+					(name string[1] "Trail")
+					(file string[1] "fx/image/ET_13_007_00.tga")
+					(cycle float[1] 1.000000)
+					(life float[1] 30.000000)
+					(fade_in float[1] 0.000000)
+					(fade_out float[1] 0.500000)
+					(width float[1] 4.000000)
+					(complement_param float[1] 20.000000)
+					(blend int32[1] 2)
+					(type int32[1] 0)
+					(uv_type int32[1] 0)
+					(complement int32[1] 1)
+					(center int8[1] 1)
+				}
+			}
+			{Work
+			}
+		}
+	}
+}
+{Plug
+	(name string[1] "AlowC")
+	(start float[1] 0.200000)
+	(end float[1] 0.700000)
+	(loop int8[1] 0)
+	{Work
+		{Rot
+			(ratio float[2] 
+				0.000000, 1.000000)
+			(type int32[1] 0)
+			(rot vector3[1] 0.000000, 0.000000, 0.000000)
+			(rot_rnd vector3[1] 10.000000, 180.000000, 0.000000)
+		}
+		{Pos
+			(ratio float[2] 
+				0.000000, 1.000000)
+			(type int32[1] 0)
+			(pos vector3[1] 0.000000, 1500.000000, 0.000000)
+			(pos_rnd vector3[1] 600.000000, 0.000000, 600.000000)
+		}
+	}
+	{Plug
+		(name string[1] "Alow")
+		(start float[1] 0.000000)
+		(end float[1] 0.500000)
+		(loop int8[1] 0)
+		{Object
+			{Model
+				(name string[1] "Model")
+				(file string[1] "fx/02/attr/EZ_02_009_00.vra")
+				(billboard_x int8[1] 0)
+				(billboard_y int8[1] 0)
+				(billboard_z int8[1] 0)
+			}
+			{Model
+				(name string[1] "Model1")
+				(file string[1] "fx/02/attr/EZ_02_009_01.vra")
+				(billboard_x int8[1] 0)
+				(billboard_y int8[1] 0)
+				(billboard_z int8[1] 0)
+			}
+		}
+		{Work
+			{Pos
+				(type int32[1] 1)
+				(ratio float[2] 
+					0.000000, 1.000000)
+				(pos vector3[2] 
+					0.000000, 0.000000, 0.000000, 
+					0.000000, -1700.000000, 0.000000)
+				(pos_rnd vector3[2] 
+					0.000000, 0.000000, 0.000000, 
+					0.000000, 0.000000, 0.000000)
+			}
+			{Rot
+				(ratio float[2] 
+					0.000000, 1.000000)
+				(type int32[1] 0)
+				(rot vector3[1] 90.000000, 0.000000, 0.000000)
+				(rot_rnd vector3[1] 0.000000, 0.000000, 0.000000)
+			}
+		}
+		{Plug
+			(name string[1] "Line")
+			(start float[1] 0.000000)
+			(end float[1] 1.000000)
+			(loop int8[1] 0)
+			{Object
+				{Trail
+					(name string[1] "Trail")
+					(file string[1] "fx/image/ET_13_007_00.tga")
+					(cycle float[1] 1.000000)
+					(life float[1] 30.000000)
+					(fade_in float[1] 0.000000)
+					(fade_out float[1] 0.500000)
+					(width float[1] 4.000000)
+					(complement_param float[1] 20.000000)
+					(blend int32[1] 2)
+					(type int32[1] 0)
+					(uv_type int32[1] 0)
+					(complement int32[1] 1)
+					(center int8[1] 1)
+				}
+			}
+			{Work
+				{Rot
+					(ratio float[2] 
+						0.000000, 1.000000)
+					(type int32[1] 0)
+					(rot vector3[1] 0.000000, 0.000000, 90.000000)
+					(rot_rnd vector3[1] 0.000000, 0.000000, 0.000000)
+				}
+			}
+		}
+		{Plug
+			(name string[1] "Line1")
+			(start float[1] 0.000000)
+			(end float[1] 1.000000)
+			(loop int8[1] 0)
+			{Object
+				{Trail
+					(name string[1] "Trail")
+					(file string[1] "fx/image/ET_13_007_00.tga")
+					(cycle float[1] 1.000000)
+					(life float[1] 30.000000)
+					(fade_in float[1] 0.000000)
+					(fade_out float[1] 0.500000)
+					(width float[1] 4.000000)
+					(complement_param float[1] 20.000000)
+					(blend int32[1] 2)
+					(type int32[1] 0)
+					(uv_type int32[1] 0)
+					(complement int32[1] 1)
+					(center int8[1] 1)
+				}
+			}
+			{Work
+			}
+		}
+	}
+}
+{Plug
+	(name string[1] "AlowD")
+	(start float[1] 0.300000)
+	(end float[1] 0.800000)
+	(loop int8[1] 0)
+	{Work
+		{Rot
+			(ratio float[2] 
+				0.000000, 1.000000)
+			(type int32[1] 0)
+			(rot vector3[1] 0.000000, 0.000000, 0.000000)
+			(rot_rnd vector3[1] 10.000000, 180.000000, 0.000000)
+		}
+		{Pos
+			(ratio float[2] 
+				0.000000, 1.000000)
+			(type int32[1] 0)
+			(pos vector3[1] 0.000000, 1500.000000, 0.000000)
+			(pos_rnd vector3[1] 600.000000, 0.000000, 600.000000)
+		}
+	}
+	{Plug
+		(name string[1] "Alow")
+		(start float[1] 0.000000)
+		(end float[1] 0.500000)
+		(loop int8[1] 0)
+		{Object
+			{Model
+				(name string[1] "Model")
+				(file string[1] "fx/02/attr/EZ_02_009_00.vra")
+				(billboard_x int8[1] 0)
+				(billboard_y int8[1] 0)
+				(billboard_z int8[1] 0)
+			}
+			{Model
+				(name string[1] "Model1")
+				(file string[1] "fx/02/attr/EZ_02_009_01.vra")
+				(billboard_x int8[1] 0)
+				(billboard_y int8[1] 0)
+				(billboard_z int8[1] 0)
+			}
+		}
+		{Work
+			{Pos
+				(type int32[1] 1)
+				(ratio float[2] 
+					0.000000, 1.000000)
+				(pos vector3[2] 
+					0.000000, 0.000000, 0.000000, 
+					0.000000, -1700.000000, 0.000000)
+				(pos_rnd vector3[2] 
+					0.000000, 0.000000, 0.000000, 
+					0.000000, 0.000000, 0.000000)
+			}
+			{Rot
+				(ratio float[2] 
+					0.000000, 1.000000)
+				(type int32[1] 0)
+				(rot vector3[1] 90.000000, 0.000000, 0.000000)
+				(rot_rnd vector3[1] 0.000000, 0.000000, 0.000000)
+			}
+		}
+		{Plug
+			(name string[1] "Line")
+			(start float[1] 0.000000)
+			(end float[1] 1.000000)
+			(loop int8[1] 0)
+			{Object
+				{Trail
+					(name string[1] "Trail")
+					(file string[1] "fx/image/ET_13_007_00.tga")
+					(cycle float[1] 1.000000)
+					(life float[1] 30.000000)
+					(fade_in float[1] 0.000000)
+					(fade_out float[1] 0.500000)
+					(width float[1] 4.000000)
+					(complement_param float[1] 20.000000)
+					(blend int32[1] 2)
+					(type int32[1] 0)
+					(uv_type int32[1] 0)
+					(complement int32[1] 1)
+					(center int8[1] 1)
+				}
+			}
+			{Work
+				{Rot
+					(ratio float[2] 
+						0.000000, 1.000000)
+					(type int32[1] 0)
+					(rot vector3[1] 0.000000, 0.000000, 90.000000)
+					(rot_rnd vector3[1] 0.000000, 0.000000, 0.000000)
+				}
+			}
+		}
+		{Plug
+			(name string[1] "Line1")
+			(start float[1] 0.000000)
+			(end float[1] 1.000000)
+			(loop int8[1] 0)
+			{Object
+				{Trail
+					(name string[1] "Trail")
+					(file string[1] "fx/image/ET_13_007_00.tga")
+					(cycle float[1] 1.000000)
+					(life float[1] 30.000000)
+					(fade_in float[1] 0.000000)
+					(fade_out float[1] 0.500000)
+					(width float[1] 4.000000)
+					(complement_param float[1] 20.000000)
+					(blend int32[1] 2)
+					(type int32[1] 0)
+					(uv_type int32[1] 0)
+					(complement int32[1] 1)
+					(center int8[1] 1)
+				}
+			}
+			{Work
+			}
+		}
+	}
+}
+{Plug
+	(name string[1] "AlowE")
+	(start float[1] 0.400000)
+	(end float[1] 0.900000)
+	(loop int8[1] 0)
+	{Work
+		{Rot
+			(ratio float[2] 
+				0.000000, 1.000000)
+			(type int32[1] 0)
+			(rot vector3[1] 0.000000, 0.000000, 0.000000)
+			(rot_rnd vector3[1] 10.000000, 180.000000, 0.000000)
+		}
+		{Pos
+			(ratio float[2] 
+				0.000000, 1.000000)
+			(type int32[1] 0)
+			(pos vector3[1] 0.000000, 1500.000000, 0.000000)
+			(pos_rnd vector3[1] 600.000000, 0.000000, 600.000000)
+		}
+	}
+	{Plug
+		(name string[1] "Alow")
+		(start float[1] 0.000000)
+		(end float[1] 0.500000)
+		(loop int8[1] 0)
+		{Object
+			{Model
+				(name string[1] "Model")
+				(file string[1] "fx/02/attr/EZ_02_009_00.vra")
+				(billboard_x int8[1] 0)
+				(billboard_y int8[1] 0)
+				(billboard_z int8[1] 0)
+			}
+			{Model
+				(name string[1] "Model1")
+				(file string[1] "fx/02/attr/EZ_02_009_01.vra")
+				(billboard_x int8[1] 0)
+				(billboard_y int8[1] 0)
+				(billboard_z int8[1] 0)
+			}
+		}
+		{Work
+			{Pos
+				(type int32[1] 1)
+				(ratio float[2] 
+					0.000000, 1.000000)
+				(pos vector3[2] 
+					0.000000, 0.000000, 0.000000, 
+					0.000000, -1700.000000, 0.000000)
+				(pos_rnd vector3[2] 
+					0.000000, 0.000000, 0.000000, 
+					0.000000, 0.000000, 0.000000)
+			}
+			{Rot
+				(ratio float[2] 
+					0.000000, 1.000000)
+				(type int32[1] 0)
+				(rot vector3[1] 90.000000, 0.000000, 0.000000)
+				(rot_rnd vector3[1] 0.000000, 0.000000, 0.000000)
+			}
+		}
+		{Plug
+			(name string[1] "Line")
+			(start float[1] 0.000000)
+			(end float[1] 1.000000)
+			(loop int8[1] 0)
+			{Object
+				{Trail
+					(name string[1] "Trail")
+					(file string[1] "fx/image/ET_13_007_00.tga")
+					(cycle float[1] 1.000000)
+					(life float[1] 30.000000)
+					(fade_in float[1] 0.000000)
+					(fade_out float[1] 0.500000)
+					(width float[1] 4.000000)
+					(complement_param float[1] 20.000000)
+					(blend int32[1] 2)
+					(type int32[1] 0)
+					(uv_type int32[1] 0)
+					(complement int32[1] 1)
+					(center int8[1] 1)
+				}
+			}
+			{Work
+				{Rot
+					(ratio float[2] 
+						0.000000, 1.000000)
+					(type int32[1] 0)
+					(rot vector3[1] 0.000000, 0.000000, 90.000000)
+					(rot_rnd vector3[1] 0.000000, 0.000000, 0.000000)
+				}
+			}
+		}
+		{Plug
+			(name string[1] "Line1")
+			(start float[1] 0.000000)
+			(end float[1] 1.000000)
+			(loop int8[1] 0)
+			{Object
+				{Trail
+					(name string[1] "Trail")
+					(file string[1] "fx/image/ET_13_007_00.tga")
+					(cycle float[1] 1.000000)
+					(life float[1] 30.000000)
+					(fade_in float[1] 0.000000)
+					(fade_out float[1] 0.500000)
+					(width float[1] 4.000000)
+					(complement_param float[1] 20.000000)
+					(blend int32[1] 2)
+					(type int32[1] 0)
+					(uv_type int32[1] 0)
+					(complement int32[1] 1)
+					(center int8[1] 1)
+				}
+			}
+			{Work
+			}
+		}
+	}
+}
+{Plug
+	(name string[1] "AlowF")
+	(start float[1] 0.500000)
+	(end float[1] 1.000000)
+	(loop int8[1] 0)
+	{Work
+		{Rot
+			(ratio float[2] 
+				0.000000, 1.000000)
+			(type int32[1] 0)
+			(rot vector3[1] 0.000000, 0.000000, 0.000000)
+			(rot_rnd vector3[1] 10.000000, 180.000000, 0.000000)
+		}
+		{Pos
+			(ratio float[2] 
+				0.000000, 1.000000)
+			(type int32[1] 0)
+			(pos vector3[1] 0.000000, 1500.000000, 0.000000)
+			(pos_rnd vector3[1] 600.000000, 0.000000, 600.000000)
+		}
+	}
+	{Plug
+		(name string[1] "Alow")
+		(start float[1] 0.000000)
+		(end float[1] 0.500000)
+		(loop int8[1] 0)
+		{Object
+			{Model
+				(name string[1] "Model")
+				(file string[1] "fx/02/attr/EZ_02_009_00.vra")
+				(billboard_x int8[1] 0)
+				(billboard_y int8[1] 0)
+				(billboard_z int8[1] 0)
+			}
+			{Model
+				(name string[1] "Model1")
+				(file string[1] "fx/02/attr/EZ_02_009_01.vra")
+				(billboard_x int8[1] 0)
+				(billboard_y int8[1] 0)
+				(billboard_z int8[1] 0)
+			}
+		}
+		{Work
+			{Pos
+				(type int32[1] 1)
+				(ratio float[2] 
+					0.000000, 1.000000)
+				(pos vector3[2] 
+					0.000000, 0.000000, 0.000000, 
+					0.000000, -1700.000000, 0.000000)
+				(pos_rnd vector3[2] 
+					0.000000, 0.000000, 0.000000, 
+					0.000000, 0.000000, 0.000000)
+			}
+			{Rot
+				(ratio float[2] 
+					0.000000, 1.000000)
+				(type int32[1] 0)
+				(rot vector3[1] 90.000000, 0.000000, 0.000000)
+				(rot_rnd vector3[1] 0.000000, 0.000000, 0.000000)
+			}
+		}
+		{Plug
+			(name string[1] "Line")
+			(start float[1] 0.000000)
+			(end float[1] 1.000000)
+			(loop int8[1] 0)
+			{Object
+				{Trail
+					(name string[1] "Trail")
+					(file string[1] "fx/image/ET_13_007_00.tga")
+					(cycle float[1] 1.000000)
+					(life float[1] 30.000000)
+					(fade_in float[1] 0.000000)
+					(fade_out float[1] 0.500000)
+					(width float[1] 4.000000)
+					(complement_param float[1] 20.000000)
+					(blend int32[1] 2)
+					(type int32[1] 0)
+					(uv_type int32[1] 0)
+					(complement int32[1] 1)
+					(center int8[1] 1)
+				}
+			}
+			{Work
+				{Rot
+					(ratio float[2] 
+						0.000000, 1.000000)
+					(type int32[1] 0)
+					(rot vector3[1] 0.000000, 0.000000, 90.000000)
+					(rot_rnd vector3[1] 0.000000, 0.000000, 0.000000)
+				}
+			}
+		}
+		{Plug
+			(name string[1] "Line1")
+			(start float[1] 0.000000)
+			(end float[1] 1.000000)
+			(loop int8[1] 0)
+			{Object
+				{Trail
+					(name string[1] "Trail")
+					(file string[1] "fx/image/ET_13_007_00.tga")
+					(cycle float[1] 1.000000)
+					(life float[1] 30.000000)
+					(fade_in float[1] 0.000000)
+					(fade_out float[1] 0.500000)
+					(width float[1] 4.000000)
+					(complement_param float[1] 20.000000)
+					(blend int32[1] 2)
+					(type int32[1] 0)
+					(uv_type int32[1] 0)
+					(complement int32[1] 1)
+					(center int8[1] 1)
+				}
+			}
+			{Work
+			}
+		}
+	}
+}
+{Plug
+	(name string[1] "AlowA1")
+	(start float[1] 0.000000)
+	(end float[1] 0.500000)
+	(loop int8[1] 0)
+	{Work
+		{Rot
+			(ratio float[2] 
+				0.000000, 1.000000)
+			(type int32[1] 0)
+			(rot vector3[1] 0.000000, 0.000000, 0.000000)
+			(rot_rnd vector3[1] 10.000000, 180.000000, 0.000000)
+		}
+		{Pos
+			(ratio float[2] 
+				0.000000, 1.000000)
+			(type int32[1] 0)
+			(pos vector3[1] 0.000000, 1500.000000, 0.000000)
+			(pos_rnd vector3[1] 600.000000, 0.000000, 600.000000)
+		}
+	}
+	{Plug
+		(name string[1] "Alow")
+		(start float[1] 0.000000)
+		(end float[1] 0.500000)
+		(loop int8[1] 0)
+		{Object
+			{Model
+				(name string[1] "Model")
+				(file string[1] "fx/02/attr/EZ_02_009_00.vra")
+				(billboard_x int8[1] 0)
+				(billboard_y int8[1] 0)
+				(billboard_z int8[1] 0)
+			}
+			{Model
+				(name string[1] "Model1")
+				(file string[1] "fx/02/attr/EZ_02_009_01.vra")
+				(billboard_x int8[1] 0)
+				(billboard_y int8[1] 0)
+				(billboard_z int8[1] 0)
+			}
+		}
+		{Work
+			{Pos
+				(type int32[1] 1)
+				(ratio float[2] 
+					0.000000, 1.000000)
+				(pos vector3[2] 
+					0.000000, 0.000000, 0.000000, 
+					0.000000, -1700.000000, 0.000000)
+				(pos_rnd vector3[2] 
+					0.000000, 0.000000, 0.000000, 
+					0.000000, 0.000000, 0.000000)
+			}
+			{Rot
+				(ratio float[2] 
+					0.000000, 1.000000)
+				(type int32[1] 0)
+				(rot vector3[1] 90.000000, 0.000000, 0.000000)
+				(rot_rnd vector3[1] 0.000000, 0.000000, 0.000000)
+			}
+		}
+		{Plug
+			(name string[1] "Line")
+			(start float[1] 0.000000)
+			(end float[1] 1.000000)
+			(loop int8[1] 0)
+			{Object
+				{Trail
+					(name string[1] "Trail")
+					(file string[1] "fx/image/ET_13_007_00.tga")
+					(cycle float[1] 1.000000)
+					(life float[1] 30.000000)
+					(fade_in float[1] 0.000000)
+					(fade_out float[1] 0.500000)
+					(width float[1] 4.000000)
+					(complement_param float[1] 20.000000)
+					(blend int32[1] 2)
+					(type int32[1] 0)
+					(uv_type int32[1] 0)
+					(complement int32[1] 1)
+					(center int8[1] 1)
+				}
+			}
+			{Work
+				{Rot
+					(ratio float[2] 
+						0.000000, 1.000000)
+					(type int32[1] 0)
+					(rot vector3[1] 0.000000, 0.000000, 90.000000)
+					(rot_rnd vector3[1] 0.000000, 0.000000, 0.000000)
+				}
+			}
+		}
+		{Plug
+			(name string[1] "Line1")
+			(start float[1] 0.000000)
+			(end float[1] 1.000000)
+			(loop int8[1] 0)
+			{Object
+				{Trail
+					(name string[1] "Trail")
+					(file string[1] "fx/image/ET_13_007_00.tga")
+					(cycle float[1] 1.000000)
+					(life float[1] 30.000000)
+					(fade_in float[1] 0.000000)
+					(fade_out float[1] 0.500000)
+					(width float[1] 4.000000)
+					(complement_param float[1] 20.000000)
+					(blend int32[1] 2)
+					(type int32[1] 0)
+					(uv_type int32[1] 0)
+					(complement int32[1] 1)
+					(center int8[1] 1)
+				}
+			}
+			{Work
+			}
+		}
+	}
+}
+{Plug
+	(name string[1] "AlowB1")
+	(start float[1] 0.100000)
+	(end float[1] 0.600000)
+	(loop int8[1] 0)
+	{Work
+		{Rot
+			(ratio float[2] 
+				0.000000, 1.000000)
+			(type int32[1] 0)
+			(rot vector3[1] 0.000000, 0.000000, 0.000000)
+			(rot_rnd vector3[1] 10.000000, 180.000000, 0.000000)
+		}
+		{Pos
+			(ratio float[2] 
+				0.000000, 1.000000)
+			(type int32[1] 0)
+			(pos vector3[1] 0.000000, 1500.000000, 0.000000)
+			(pos_rnd vector3[1] 600.000000, 0.000000, 600.000000)
+		}
+	}
+	{Plug
+		(name string[1] "Alow")
+		(start float[1] 0.000000)
+		(end float[1] 0.500000)
+		(loop int8[1] 0)
+		{Object
+			{Model
+				(name string[1] "Model")
+				(file string[1] "fx/02/attr/EZ_02_009_00.vra")
+				(billboard_x int8[1] 0)
+				(billboard_y int8[1] 0)
+				(billboard_z int8[1] 0)
+			}
+			{Model
+				(name string[1] "Model1")
+				(file string[1] "fx/02/attr/EZ_02_009_01.vra")
+				(billboard_x int8[1] 0)
+				(billboard_y int8[1] 0)
+				(billboard_z int8[1] 0)
+			}
+		}
+		{Work
+			{Pos
+				(type int32[1] 1)
+				(ratio float[2] 
+					0.000000, 1.000000)
+				(pos vector3[2] 
+					0.000000, 0.000000, 0.000000, 
+					0.000000, -1700.000000, 0.000000)
+				(pos_rnd vector3[2] 
+					0.000000, 0.000000, 0.000000, 
+					0.000000, 0.000000, 0.000000)
+			}
+			{Rot
+				(ratio float[2] 
+					0.000000, 1.000000)
+				(type int32[1] 0)
+				(rot vector3[1] 90.000000, 0.000000, 0.000000)
+				(rot_rnd vector3[1] 0.000000, 0.000000, 0.000000)
+			}
+		}
+		{Plug
+			(name string[1] "Line")
+			(start float[1] 0.000000)
+			(end float[1] 1.000000)
+			(loop int8[1] 0)
+			{Object
+				{Trail
+					(name string[1] "Trail")
+					(file string[1] "fx/image/ET_13_007_00.tga")
+					(cycle float[1] 1.000000)
+					(life float[1] 30.000000)
+					(fade_in float[1] 0.000000)
+					(fade_out float[1] 0.500000)
+					(width float[1] 4.000000)
+					(complement_param float[1] 20.000000)
+					(blend int32[1] 2)
+					(type int32[1] 0)
+					(uv_type int32[1] 0)
+					(complement int32[1] 1)
+					(center int8[1] 1)
+				}
+			}
+			{Work
+				{Rot
+					(ratio float[2] 
+						0.000000, 1.000000)
+					(type int32[1] 0)
+					(rot vector3[1] 0.000000, 0.000000, 90.000000)
+					(rot_rnd vector3[1] 0.000000, 0.000000, 0.000000)
+				}
+			}
+		}
+		{Plug
+			(name string[1] "Line1")
+			(start float[1] 0.000000)
+			(end float[1] 1.000000)
+			(loop int8[1] 0)
+			{Object
+				{Trail
+					(name string[1] "Trail")
+					(file string[1] "fx/image/ET_13_007_00.tga")
+					(cycle float[1] 1.000000)
+					(life float[1] 30.000000)
+					(fade_in float[1] 0.000000)
+					(fade_out float[1] 0.500000)
+					(width float[1] 4.000000)
+					(complement_param float[1] 20.000000)
+					(blend int32[1] 2)
+					(type int32[1] 0)
+					(uv_type int32[1] 0)
+					(complement int32[1] 1)
+					(center int8[1] 1)
+				}
+			}
+			{Work
+			}
+		}
+	}
+}
+{Plug
+	(name string[1] "AlowC1")
+	(start float[1] 0.200000)
+	(end float[1] 0.700000)
+	(loop int8[1] 0)
+	{Work
+		{Rot
+			(ratio float[2] 
+				0.000000, 1.000000)
+			(type int32[1] 0)
+			(rot vector3[1] 0.000000, 0.000000, 0.000000)
+			(rot_rnd vector3[1] 10.000000, 180.000000, 0.000000)
+		}
+		{Pos
+			(ratio float[2] 
+				0.000000, 1.000000)
+			(type int32[1] 0)
+			(pos vector3[1] 0.000000, 1500.000000, 0.000000)
+			(pos_rnd vector3[1] 600.000000, 0.000000, 600.000000)
+		}
+	}
+	{Plug
+		(name string[1] "Alow")
+		(start float[1] 0.000000)
+		(end float[1] 0.500000)
+		(loop int8[1] 0)
+		{Object
+			{Model
+				(name string[1] "Model")
+				(file string[1] "fx/02/attr/EZ_02_009_00.vra")
+				(billboard_x int8[1] 0)
+				(billboard_y int8[1] 0)
+				(billboard_z int8[1] 0)
+			}
+			{Model
+				(name string[1] "Model1")
+				(file string[1] "fx/02/attr/EZ_02_009_01.vra")
+				(billboard_x int8[1] 0)
+				(billboard_y int8[1] 0)
+				(billboard_z int8[1] 0)
+			}
+		}
+		{Work
+			{Pos
+				(type int32[1] 1)
+				(ratio float[2] 
+					0.000000, 1.000000)
+				(pos vector3[2] 
+					0.000000, 0.000000, 0.000000, 
+					0.000000, -1700.000000, 0.000000)
+				(pos_rnd vector3[2] 
+					0.000000, 0.000000, 0.000000, 
+					0.000000, 0.000000, 0.000000)
+			}
+			{Rot
+				(ratio float[2] 
+					0.000000, 1.000000)
+				(type int32[1] 0)
+				(rot vector3[1] 90.000000, 0.000000, 0.000000)
+				(rot_rnd vector3[1] 0.000000, 0.000000, 0.000000)
+			}
+		}
+		{Plug
+			(name string[1] "Line")
+			(start float[1] 0.000000)
+			(end float[1] 1.000000)
+			(loop int8[1] 0)
+			{Object
+				{Trail
+					(name string[1] "Trail")
+					(file string[1] "fx/image/ET_13_007_00.tga")
+					(cycle float[1] 1.000000)
+					(life float[1] 30.000000)
+					(fade_in float[1] 0.000000)
+					(fade_out float[1] 0.500000)
+					(width float[1] 4.000000)
+					(complement_param float[1] 20.000000)
+					(blend int32[1] 2)
+					(type int32[1] 0)
+					(uv_type int32[1] 0)
+					(complement int32[1] 1)
+					(center int8[1] 1)
+				}
+			}
+			{Work
+				{Rot
+					(ratio float[2] 
+						0.000000, 1.000000)
+					(type int32[1] 0)
+					(rot vector3[1] 0.000000, 0.000000, 90.000000)
+					(rot_rnd vector3[1] 0.000000, 0.000000, 0.000000)
+				}
+			}
+		}
+		{Plug
+			(name string[1] "Line1")
+			(start float[1] 0.000000)
+			(end float[1] 1.000000)
+			(loop int8[1] 0)
+			{Object
+				{Trail
+					(name string[1] "Trail")
+					(file string[1] "fx/image/ET_13_007_00.tga")
+					(cycle float[1] 1.000000)
+					(life float[1] 30.000000)
+					(fade_in float[1] 0.000000)
+					(fade_out float[1] 0.500000)
+					(width float[1] 4.000000)
+					(complement_param float[1] 20.000000)
+					(blend int32[1] 2)
+					(type int32[1] 0)
+					(uv_type int32[1] 0)
+					(complement int32[1] 1)
+					(center int8[1] 1)
+				}
+			}
+			{Work
+			}
+		}
+	}
+}
+{Plug
+	(name string[1] "AlowD1")
+	(start float[1] 0.300000)
+	(end float[1] 0.800000)
+	(loop int8[1] 0)
+	{Work
+		{Rot
+			(ratio float[2] 
+				0.000000, 1.000000)
+			(type int32[1] 0)
+			(rot vector3[1] 0.000000, 0.000000, 0.000000)
+			(rot_rnd vector3[1] 10.000000, 180.000000, 0.000000)
+		}
+		{Pos
+			(ratio float[2] 
+				0.000000, 1.000000)
+			(type int32[1] 0)
+			(pos vector3[1] 0.000000, 1500.000000, 0.000000)
+			(pos_rnd vector3[1] 600.000000, 0.000000, 600.000000)
+		}
+	}
+	{Plug
+		(name string[1] "Alow")
+		(start float[1] 0.000000)
+		(end float[1] 0.500000)
+		(loop int8[1] 0)
+		{Object
+			{Model
+				(name string[1] "Model")
+				(file string[1] "fx/02/attr/EZ_02_009_00.vra")
+				(billboard_x int8[1] 0)
+				(billboard_y int8[1] 0)
+				(billboard_z int8[1] 0)
+			}
+			{Model
+				(name string[1] "Model1")
+				(file string[1] "fx/02/attr/EZ_02_009_01.vra")
+				(billboard_x int8[1] 0)
+				(billboard_y int8[1] 0)
+				(billboard_z int8[1] 0)
+			}
+		}
+		{Work
+			{Pos
+				(type int32[1] 1)
+				(ratio float[2] 
+					0.000000, 1.000000)
+				(pos vector3[2] 
+					0.000000, 0.000000, 0.000000, 
+					0.000000, -1700.000000, 0.000000)
+				(pos_rnd vector3[2] 
+					0.000000, 0.000000, 0.000000, 
+					0.000000, 0.000000, 0.000000)
+			}
+			{Rot
+				(ratio float[2] 
+					0.000000, 1.000000)
+				(type int32[1] 0)
+				(rot vector3[1] 90.000000, 0.000000, 0.000000)
+				(rot_rnd vector3[1] 0.000000, 0.000000, 0.000000)
+			}
+		}
+		{Plug
+			(name string[1] "Line")
+			(start float[1] 0.000000)
+			(end float[1] 1.000000)
+			(loop int8[1] 0)
+			{Object
+				{Trail
+					(name string[1] "Trail")
+					(file string[1] "fx/image/ET_13_007_00.tga")
+					(cycle float[1] 1.000000)
+					(life float[1] 30.000000)
+					(fade_in float[1] 0.000000)
+					(fade_out float[1] 0.500000)
+					(width float[1] 4.000000)
+					(complement_param float[1] 20.000000)
+					(blend int32[1] 2)
+					(type int32[1] 0)
+					(uv_type int32[1] 0)
+					(complement int32[1] 1)
+					(center int8[1] 1)
+				}
+			}
+			{Work
+				{Rot
+					(ratio float[2] 
+						0.000000, 1.000000)
+					(type int32[1] 0)
+					(rot vector3[1] 0.000000, 0.000000, 90.000000)
+					(rot_rnd vector3[1] 0.000000, 0.000000, 0.000000)
+				}
+			}
+		}
+		{Plug
+			(name string[1] "Line1")
+			(start float[1] 0.000000)
+			(end float[1] 1.000000)
+			(loop int8[1] 0)
+			{Object
+				{Trail
+					(name string[1] "Trail")
+					(file string[1] "fx/image/ET_13_007_00.tga")
+					(cycle float[1] 1.000000)
+					(life float[1] 30.000000)
+					(fade_in float[1] 0.000000)
+					(fade_out float[1] 0.500000)
+					(width float[1] 4.000000)
+					(complement_param float[1] 20.000000)
+					(blend int32[1] 2)
+					(type int32[1] 0)
+					(uv_type int32[1] 0)
+					(complement int32[1] 1)
+					(center int8[1] 1)
+				}
+			}
+			{Work
+			}
+		}
+	}
+}
+{Plug
+	(name string[1] "AlowE1")
+	(start float[1] 0.400000)
+	(end float[1] 0.900000)
+	(loop int8[1] 0)
+	{Work
+		{Rot
+			(ratio float[2] 
+				0.000000, 1.000000)
+			(type int32[1] 0)
+			(rot vector3[1] 0.000000, 0.000000, 0.000000)
+			(rot_rnd vector3[1] 10.000000, 180.000000, 0.000000)
+		}
+		{Pos
+			(ratio float[2] 
+				0.000000, 1.000000)
+			(type int32[1] 0)
+			(pos vector3[1] 0.000000, 1500.000000, 0.000000)
+			(pos_rnd vector3[1] 600.000000, 0.000000, 600.000000)
+		}
+	}
+	{Plug
+		(name string[1] "Alow")
+		(start float[1] 0.000000)
+		(end float[1] 0.500000)
+		(loop int8[1] 0)
+		{Object
+			{Model
+				(name string[1] "Model")
+				(file string[1] "fx/02/attr/EZ_02_009_00.vra")
+				(billboard_x int8[1] 0)
+				(billboard_y int8[1] 0)
+				(billboard_z int8[1] 0)
+			}
+			{Model
+				(name string[1] "Model1")
+				(file string[1] "fx/02/attr/EZ_02_009_01.vra")
+				(billboard_x int8[1] 0)
+				(billboard_y int8[1] 0)
+				(billboard_z int8[1] 0)
+			}
+		}
+		{Work
+			{Pos
+				(type int32[1] 1)
+				(ratio float[2] 
+					0.000000, 1.000000)
+				(pos vector3[2] 
+					0.000000, 0.000000, 0.000000, 
+					0.000000, -1700.000000, 0.000000)
+				(pos_rnd vector3[2] 
+					0.000000, 0.000000, 0.000000, 
+					0.000000, 0.000000, 0.000000)
+			}
+			{Rot
+				(ratio float[2] 
+					0.000000, 1.000000)
+				(type int32[1] 0)
+				(rot vector3[1] 90.000000, 0.000000, 0.000000)
+				(rot_rnd vector3[1] 0.000000, 0.000000, 0.000000)
+			}
+		}
+		{Plug
+			(name string[1] "Line")
+			(start float[1] 0.000000)
+			(end float[1] 1.000000)
+			(loop int8[1] 0)
+			{Object
+				{Trail
+					(name string[1] "Trail")
+					(file string[1] "fx/image/ET_13_007_00.tga")
+					(cycle float[1] 1.000000)
+					(life float[1] 30.000000)
+					(fade_in float[1] 0.000000)
+					(fade_out float[1] 0.500000)
+					(width float[1] 4.000000)
+					(complement_param float[1] 20.000000)
+					(blend int32[1] 2)
+					(type int32[1] 0)
+					(uv_type int32[1] 0)
+					(complement int32[1] 1)
+					(center int8[1] 1)
+				}
+			}
+			{Work
+				{Rot
+					(ratio float[2] 
+						0.000000, 1.000000)
+					(type int32[1] 0)
+					(rot vector3[1] 0.000000, 0.000000, 90.000000)
+					(rot_rnd vector3[1] 0.000000, 0.000000, 0.000000)
+				}
+			}
+		}
+		{Plug
+			(name string[1] "Line1")
+			(start float[1] 0.000000)
+			(end float[1] 1.000000)
+			(loop int8[1] 0)
+			{Object
+				{Trail
+					(name string[1] "Trail")
+					(file string[1] "fx/image/ET_13_007_00.tga")
+					(cycle float[1] 1.000000)
+					(life float[1] 30.000000)
+					(fade_in float[1] 0.000000)
+					(fade_out float[1] 0.500000)
+					(width float[1] 4.000000)
+					(complement_param float[1] 20.000000)
+					(blend int32[1] 2)
+					(type int32[1] 0)
+					(uv_type int32[1] 0)
+					(complement int32[1] 1)
+					(center int8[1] 1)
+				}
+			}
+			{Work
+			}
+		}
+	}
+}
+{Plug
+	(name string[1] "AlowF1")
+	(start float[1] 0.500000)
+	(end float[1] 1.000000)
+	(loop int8[1] 0)
+	{Work
+		{Rot
+			(ratio float[2] 
+				0.000000, 1.000000)
+			(type int32[1] 0)
+			(rot vector3[1] 0.000000, 0.000000, 0.000000)
+			(rot_rnd vector3[1] 10.000000, 180.000000, 0.000000)
+		}
+		{Pos
+			(ratio float[2] 
+				0.000000, 1.000000)
+			(type int32[1] 0)
+			(pos vector3[1] 0.000000, 1500.000000, 0.000000)
+			(pos_rnd vector3[1] 600.000000, 0.000000, 600.000000)
+		}
+	}
+	{Plug
+		(name string[1] "Alow")
+		(start float[1] 0.000000)
+		(end float[1] 0.500000)
+		(loop int8[1] 0)
+		{Object
+			{Model
+				(name string[1] "Model")
+				(file string[1] "fx/02/attr/EZ_02_009_00.vra")
+				(billboard_x int8[1] 0)
+				(billboard_y int8[1] 0)
+				(billboard_z int8[1] 0)
+			}
+			{Model
+				(name string[1] "Model1")
+				(file string[1] "fx/02/attr/EZ_02_009_01.vra")
+				(billboard_x int8[1] 0)
+				(billboard_y int8[1] 0)
+				(billboard_z int8[1] 0)
+			}
+		}
+		{Work
+			{Pos
+				(type int32[1] 1)
+				(ratio float[2] 
+					0.000000, 1.000000)
+				(pos vector3[2] 
+					0.000000, 0.000000, 0.000000, 
+					0.000000, -1700.000000, 0.000000)
+				(pos_rnd vector3[2] 
+					0.000000, 0.000000, 0.000000, 
+					0.000000, 0.000000, 0.000000)
+			}
+			{Rot
+				(ratio float[2] 
+					0.000000, 1.000000)
+				(type int32[1] 0)
+				(rot vector3[1] 90.000000, 0.000000, 0.000000)
+				(rot_rnd vector3[1] 0.000000, 0.000000, 0.000000)
+			}
+		}
+		{Plug
+			(name string[1] "Line")
+			(start float[1] 0.000000)
+			(end float[1] 1.000000)
+			(loop int8[1] 0)
+			{Object
+				{Trail
+					(name string[1] "Trail")
+					(file string[1] "fx/image/ET_13_007_00.tga")
+					(cycle float[1] 1.000000)
+					(life float[1] 30.000000)
+					(fade_in float[1] 0.000000)
+					(fade_out float[1] 0.500000)
+					(width float[1] 4.000000)
+					(complement_param float[1] 20.000000)
+					(blend int32[1] 2)
+					(type int32[1] 0)
+					(uv_type int32[1] 0)
+					(complement int32[1] 1)
+					(center int8[1] 1)
+				}
+			}
+			{Work
+				{Rot
+					(ratio float[2] 
+						0.000000, 1.000000)
+					(type int32[1] 0)
+					(rot vector3[1] 0.000000, 0.000000, 90.000000)
+					(rot_rnd vector3[1] 0.000000, 0.000000, 0.000000)
+				}
+			}
+		}
+		{Plug
+			(name string[1] "Line1")
+			(start float[1] 0.000000)
+			(end float[1] 1.000000)
+			(loop int8[1] 0)
+			{Object
+				{Trail
+					(name string[1] "Trail")
+					(file string[1] "fx/image/ET_13_007_00.tga")
+					(cycle float[1] 1.000000)
+					(life float[1] 30.000000)
+					(fade_in float[1] 0.000000)
+					(fade_out float[1] 0.500000)
+					(width float[1] 4.000000)
+					(complement_param float[1] 20.000000)
+					(blend int32[1] 2)
+					(type int32[1] 0)
+					(uv_type int32[1] 0)
+					(complement int32[1] 1)
+					(center int8[1] 1)
+				}
+			}
+			{Work
+			}
+		}
+	}
+}
+{Plug
+	(name string[1] "AlowA2")
+	(start float[1] 0.000000)
+	(end float[1] 0.500000)
+	(loop int8[1] 0)
+	{Work
+		{Rot
+			(ratio float[2] 
+				0.000000, 1.000000)
+			(type int32[1] 0)
+			(rot vector3[1] 0.000000, 0.000000, 0.000000)
+			(rot_rnd vector3[1] 10.000000, 180.000000, 0.000000)
+		}
+		{Pos
+			(ratio float[2] 
+				0.000000, 1.000000)
+			(type int32[1] 0)
+			(pos vector3[1] 0.000000, 1500.000000, 0.000000)
+			(pos_rnd vector3[1] 600.000000, 0.000000, 600.000000)
+		}
+	}
+	{Plug
+		(name string[1] "Alow")
+		(start float[1] 0.000000)
+		(end float[1] 0.500000)
+		(loop int8[1] 0)
+		{Object
+			{Model
+				(name string[1] "Model")
+				(file string[1] "fx/02/attr/EZ_02_009_00.vra")
+				(billboard_x int8[1] 0)
+				(billboard_y int8[1] 0)
+				(billboard_z int8[1] 0)
+			}
+			{Model
+				(name string[1] "Model1")
+				(file string[1] "fx/02/attr/EZ_02_009_01.vra")
+				(billboard_x int8[1] 0)
+				(billboard_y int8[1] 0)
+				(billboard_z int8[1] 0)
+			}
+		}
+		{Work
+			{Pos
+				(type int32[1] 1)
+				(ratio float[2] 
+					0.000000, 1.000000)
+				(pos vector3[2] 
+					0.000000, 0.000000, 0.000000, 
+					0.000000, -1700.000000, 0.000000)
+				(pos_rnd vector3[2] 
+					0.000000, 0.000000, 0.000000, 
+					0.000000, 0.000000, 0.000000)
+			}
+			{Rot
+				(ratio float[2] 
+					0.000000, 1.000000)
+				(type int32[1] 0)
+				(rot vector3[1] 90.000000, 0.000000, 0.000000)
+				(rot_rnd vector3[1] 0.000000, 0.000000, 0.000000)
+			}
+		}
+		{Plug
+			(name string[1] "Line")
+			(start float[1] 0.000000)
+			(end float[1] 1.000000)
+			(loop int8[1] 0)
+			{Object
+				{Trail
+					(name string[1] "Trail")
+					(file string[1] "fx/image/ET_13_007_00.tga")
+					(cycle float[1] 1.000000)
+					(life float[1] 30.000000)
+					(fade_in float[1] 0.000000)
+					(fade_out float[1] 0.500000)
+					(width float[1] 4.000000)
+					(complement_param float[1] 20.000000)
+					(blend int32[1] 2)
+					(type int32[1] 0)
+					(uv_type int32[1] 0)
+					(complement int32[1] 1)
+					(center int8[1] 1)
+				}
+			}
+			{Work
+				{Rot
+					(ratio float[2] 
+						0.000000, 1.000000)
+					(type int32[1] 0)
+					(rot vector3[1] 0.000000, 0.000000, 90.000000)
+					(rot_rnd vector3[1] 0.000000, 0.000000, 0.000000)
+				}
+			}
+		}
+		{Plug
+			(name string[1] "Line1")
+			(start float[1] 0.000000)
+			(end float[1] 1.000000)
+			(loop int8[1] 0)
+			{Object
+				{Trail
+					(name string[1] "Trail")
+					(file string[1] "fx/image/ET_13_007_00.tga")
+					(cycle float[1] 1.000000)
+					(life float[1] 30.000000)
+					(fade_in float[1] 0.000000)
+					(fade_out float[1] 0.500000)
+					(width float[1] 4.000000)
+					(complement_param float[1] 20.000000)
+					(blend int32[1] 2)
+					(type int32[1] 0)
+					(uv_type int32[1] 0)
+					(complement int32[1] 1)
+					(center int8[1] 1)
+				}
+			}
+			{Work
+			}
+		}
+	}
+}
+{Plug
+	(name string[1] "AlowB2")
+	(start float[1] 0.100000)
+	(end float[1] 0.600000)
+	(loop int8[1] 0)
+	{Work
+		{Rot
+			(ratio float[2] 
+				0.000000, 1.000000)
+			(type int32[1] 0)
+			(rot vector3[1] 0.000000, 0.000000, 0.000000)
+			(rot_rnd vector3[1] 10.000000, 180.000000, 0.000000)
+		}
+		{Pos
+			(ratio float[2] 
+				0.000000, 1.000000)
+			(type int32[1] 0)
+			(pos vector3[1] 0.000000, 1500.000000, 0.000000)
+			(pos_rnd vector3[1] 600.000000, 0.000000, 600.000000)
+		}
+	}
+	{Plug
+		(name string[1] "Alow")
+		(start float[1] 0.000000)
+		(end float[1] 0.500000)
+		(loop int8[1] 0)
+		{Object
+			{Model
+				(name string[1] "Model")
+				(file string[1] "fx/02/attr/EZ_02_009_00.vra")
+				(billboard_x int8[1] 0)
+				(billboard_y int8[1] 0)
+				(billboard_z int8[1] 0)
+			}
+			{Model
+				(name string[1] "Model1")
+				(file string[1] "fx/02/attr/EZ_02_009_01.vra")
+				(billboard_x int8[1] 0)
+				(billboard_y int8[1] 0)
+				(billboard_z int8[1] 0)
+			}
+		}
+		{Work
+			{Pos
+				(type int32[1] 1)
+				(ratio float[2] 
+					0.000000, 1.000000)
+				(pos vector3[2] 
+					0.000000, 0.000000, 0.000000, 
+					0.000000, -1700.000000, 0.000000)
+				(pos_rnd vector3[2] 
+					0.000000, 0.000000, 0.000000, 
+					0.000000, 0.000000, 0.000000)
+			}
+			{Rot
+				(ratio float[2] 
+					0.000000, 1.000000)
+				(type int32[1] 0)
+				(rot vector3[1] 90.000000, 0.000000, 0.000000)
+				(rot_rnd vector3[1] 0.000000, 0.000000, 0.000000)
+			}
+		}
+		{Plug
+			(name string[1] "Line")
+			(start float[1] 0.000000)
+			(end float[1] 1.000000)
+			(loop int8[1] 0)
+			{Object
+				{Trail
+					(name string[1] "Trail")
+					(file string[1] "fx/image/ET_13_007_00.tga")
+					(cycle float[1] 1.000000)
+					(life float[1] 30.000000)
+					(fade_in float[1] 0.000000)
+					(fade_out float[1] 0.500000)
+					(width float[1] 4.000000)
+					(complement_param float[1] 20.000000)
+					(blend int32[1] 2)
+					(type int32[1] 0)
+					(uv_type int32[1] 0)
+					(complement int32[1] 1)
+					(center int8[1] 1)
+				}
+			}
+			{Work
+				{Rot
+					(ratio float[2] 
+						0.000000, 1.000000)
+					(type int32[1] 0)
+					(rot vector3[1] 0.000000, 0.000000, 90.000000)
+					(rot_rnd vector3[1] 0.000000, 0.000000, 0.000000)
+				}
+			}
+		}
+		{Plug
+			(name string[1] "Line1")
+			(start float[1] 0.000000)
+			(end float[1] 1.000000)
+			(loop int8[1] 0)
+			{Object
+				{Trail
+					(name string[1] "Trail")
+					(file string[1] "fx/image/ET_13_007_00.tga")
+					(cycle float[1] 1.000000)
+					(life float[1] 30.000000)
+					(fade_in float[1] 0.000000)
+					(fade_out float[1] 0.500000)
+					(width float[1] 4.000000)
+					(complement_param float[1] 20.000000)
+					(blend int32[1] 2)
+					(type int32[1] 0)
+					(uv_type int32[1] 0)
+					(complement int32[1] 1)
+					(center int8[1] 1)
+				}
+			}
+			{Work
+			}
+		}
+	}
+}
+{Plug
+	(name string[1] "AlowC2")
+	(start float[1] 0.200000)
+	(end float[1] 0.700000)
+	(loop int8[1] 0)
+	{Work
+		{Rot
+			(ratio float[2] 
+				0.000000, 1.000000)
+			(type int32[1] 0)
+			(rot vector3[1] 0.000000, 0.000000, 0.000000)
+			(rot_rnd vector3[1] 10.000000, 180.000000, 0.000000)
+		}
+		{Pos
+			(ratio float[2] 
+				0.000000, 1.000000)
+			(type int32[1] 0)
+			(pos vector3[1] 0.000000, 1500.000000, 0.000000)
+			(pos_rnd vector3[1] 600.000000, 0.000000, 600.000000)
+		}
+	}
+	{Plug
+		(name string[1] "Alow")
+		(start float[1] 0.000000)
+		(end float[1] 0.500000)
+		(loop int8[1] 0)
+		{Object
+			{Model
+				(name string[1] "Model")
+				(file string[1] "fx/02/attr/EZ_02_009_00.vra")
+				(billboard_x int8[1] 0)
+				(billboard_y int8[1] 0)
+				(billboard_z int8[1] 0)
+			}
+			{Model
+				(name string[1] "Model1")
+				(file string[1] "fx/02/attr/EZ_02_009_01.vra")
+				(billboard_x int8[1] 0)
+				(billboard_y int8[1] 0)
+				(billboard_z int8[1] 0)
+			}
+		}
+		{Work
+			{Pos
+				(type int32[1] 1)
+				(ratio float[2] 
+					0.000000, 1.000000)
+				(pos vector3[2] 
+					0.000000, 0.000000, 0.000000, 
+					0.000000, -1700.000000, 0.000000)
+				(pos_rnd vector3[2] 
+					0.000000, 0.000000, 0.000000, 
+					0.000000, 0.000000, 0.000000)
+			}
+			{Rot
+				(ratio float[2] 
+					0.000000, 1.000000)
+				(type int32[1] 0)
+				(rot vector3[1] 90.000000, 0.000000, 0.000000)
+				(rot_rnd vector3[1] 0.000000, 0.000000, 0.000000)
+			}
+		}
+		{Plug
+			(name string[1] "Line")
+			(start float[1] 0.000000)
+			(end float[1] 1.000000)
+			(loop int8[1] 0)
+			{Object
+				{Trail
+					(name string[1] "Trail")
+					(file string[1] "fx/image/ET_13_007_00.tga")
+					(cycle float[1] 1.000000)
+					(life float[1] 30.000000)
+					(fade_in float[1] 0.000000)
+					(fade_out float[1] 0.500000)
+					(width float[1] 4.000000)
+					(complement_param float[1] 20.000000)
+					(blend int32[1] 2)
+					(type int32[1] 0)
+					(uv_type int32[1] 0)
+					(complement int32[1] 1)
+					(center int8[1] 1)
+				}
+			}
+			{Work
+				{Rot
+					(ratio float[2] 
+						0.000000, 1.000000)
+					(type int32[1] 0)
+					(rot vector3[1] 0.000000, 0.000000, 90.000000)
+					(rot_rnd vector3[1] 0.000000, 0.000000, 0.000000)
+				}
+			}
+		}
+		{Plug
+			(name string[1] "Line1")
+			(start float[1] 0.000000)
+			(end float[1] 1.000000)
+			(loop int8[1] 0)
+			{Object
+				{Trail
+					(name string[1] "Trail")
+					(file string[1] "fx/image/ET_13_007_00.tga")
+					(cycle float[1] 1.000000)
+					(life float[1] 30.000000)
+					(fade_in float[1] 0.000000)
+					(fade_out float[1] 0.500000)
+					(width float[1] 4.000000)
+					(complement_param float[1] 20.000000)
+					(blend int32[1] 2)
+					(type int32[1] 0)
+					(uv_type int32[1] 0)
+					(complement int32[1] 1)
+					(center int8[1] 1)
+				}
+			}
+			{Work
+			}
+		}
+	}
+}
+{Plug
+	(name string[1] "AlowD2")
+	(start float[1] 0.300000)
+	(end float[1] 0.800000)
+	(loop int8[1] 0)
+	{Work
+		{Rot
+			(ratio float[2] 
+				0.000000, 1.000000)
+			(type int32[1] 0)
+			(rot vector3[1] 0.000000, 0.000000, 0.000000)
+			(rot_rnd vector3[1] 10.000000, 180.000000, 0.000000)
+		}
+		{Pos
+			(ratio float[2] 
+				0.000000, 1.000000)
+			(type int32[1] 0)
+			(pos vector3[1] 0.000000, 1500.000000, 0.000000)
+			(pos_rnd vector3[1] 600.000000, 0.000000, 600.000000)
+		}
+	}
+	{Plug
+		(name string[1] "Alow")
+		(start float[1] 0.000000)
+		(end float[1] 0.500000)
+		(loop int8[1] 0)
+		{Object
+			{Model
+				(name string[1] "Model")
+				(file string[1] "fx/02/attr/EZ_02_009_00.vra")
+				(billboard_x int8[1] 0)
+				(billboard_y int8[1] 0)
+				(billboard_z int8[1] 0)
+			}
+			{Model
+				(name string[1] "Model1")
+				(file string[1] "fx/02/attr/EZ_02_009_01.vra")
+				(billboard_x int8[1] 0)
+				(billboard_y int8[1] 0)
+				(billboard_z int8[1] 0)
+			}
+		}
+		{Work
+			{Pos
+				(type int32[1] 1)
+				(ratio float[2] 
+					0.000000, 1.000000)
+				(pos vector3[2] 
+					0.000000, 0.000000, 0.000000, 
+					0.000000, -1700.000000, 0.000000)
+				(pos_rnd vector3[2] 
+					0.000000, 0.000000, 0.000000, 
+					0.000000, 0.000000, 0.000000)
+			}
+			{Rot
+				(ratio float[2] 
+					0.000000, 1.000000)
+				(type int32[1] 0)
+				(rot vector3[1] 90.000000, 0.000000, 0.000000)
+				(rot_rnd vector3[1] 0.000000, 0.000000, 0.000000)
+			}
+		}
+		{Plug
+			(name string[1] "Line")
+			(start float[1] 0.000000)
+			(end float[1] 1.000000)
+			(loop int8[1] 0)
+			{Object
+				{Trail
+					(name string[1] "Trail")
+					(file string[1] "fx/image/ET_13_007_00.tga")
+					(cycle float[1] 1.000000)
+					(life float[1] 30.000000)
+					(fade_in float[1] 0.000000)
+					(fade_out float[1] 0.500000)
+					(width float[1] 4.000000)
+					(complement_param float[1] 20.000000)
+					(blend int32[1] 2)
+					(type int32[1] 0)
+					(uv_type int32[1] 0)
+					(complement int32[1] 1)
+					(center int8[1] 1)
+				}
+			}
+			{Work
+				{Rot
+					(ratio float[2] 
+						0.000000, 1.000000)
+					(type int32[1] 0)
+					(rot vector3[1] 0.000000, 0.000000, 90.000000)
+					(rot_rnd vector3[1] 0.000000, 0.000000, 0.000000)
+				}
+			}
+		}
+		{Plug
+			(name string[1] "Line1")
+			(start float[1] 0.000000)
+			(end float[1] 1.000000)
+			(loop int8[1] 0)
+			{Object
+				{Trail
+					(name string[1] "Trail")
+					(file string[1] "fx/image/ET_13_007_00.tga")
+					(cycle float[1] 1.000000)
+					(life float[1] 30.000000)
+					(fade_in float[1] 0.000000)
+					(fade_out float[1] 0.500000)
+					(width float[1] 4.000000)
+					(complement_param float[1] 20.000000)
+					(blend int32[1] 2)
+					(type int32[1] 0)
+					(uv_type int32[1] 0)
+					(complement int32[1] 1)
+					(center int8[1] 1)
+				}
+			}
+			{Work
+			}
+		}
+	}
+}
+{Plug
+	(name string[1] "AlowE2")
+	(start float[1] 0.400000)
+	(end float[1] 0.900000)
+	(loop int8[1] 0)
+	{Work
+		{Rot
+			(ratio float[2] 
+				0.000000, 1.000000)
+			(type int32[1] 0)
+			(rot vector3[1] 0.000000, 0.000000, 0.000000)
+			(rot_rnd vector3[1] 10.000000, 180.000000, 0.000000)
+		}
+		{Pos
+			(ratio float[2] 
+				0.000000, 1.000000)
+			(type int32[1] 0)
+			(pos vector3[1] 0.000000, 1500.000000, 0.000000)
+			(pos_rnd vector3[1] 600.000000, 0.000000, 600.000000)
+		}
+	}
+	{Plug
+		(name string[1] "Alow")
+		(start float[1] 0.000000)
+		(end float[1] 0.500000)
+		(loop int8[1] 0)
+		{Object
+			{Model
+				(name string[1] "Model")
+				(file string[1] "fx/02/attr/EZ_02_009_00.vra")
+				(billboard_x int8[1] 0)
+				(billboard_y int8[1] 0)
+				(billboard_z int8[1] 0)
+			}
+			{Model
+				(name string[1] "Model1")
+				(file string[1] "fx/02/attr/EZ_02_009_01.vra")
+				(billboard_x int8[1] 0)
+				(billboard_y int8[1] 0)
+				(billboard_z int8[1] 0)
+			}
+		}
+		{Work
+			{Pos
+				(type int32[1] 1)
+				(ratio float[2] 
+					0.000000, 1.000000)
+				(pos vector3[2] 
+					0.000000, 0.000000, 0.000000, 
+					0.000000, -1700.000000, 0.000000)
+				(pos_rnd vector3[2] 
+					0.000000, 0.000000, 0.000000, 
+					0.000000, 0.000000, 0.000000)
+			}
+			{Rot
+				(ratio float[2] 
+					0.000000, 1.000000)
+				(type int32[1] 0)
+				(rot vector3[1] 90.000000, 0.000000, 0.000000)
+				(rot_rnd vector3[1] 0.000000, 0.000000, 0.000000)
+			}
+		}
+		{Plug
+			(name string[1] "Line")
+			(start float[1] 0.000000)
+			(end float[1] 1.000000)
+			(loop int8[1] 0)
+			{Object
+				{Trail
+					(name string[1] "Trail")
+					(file string[1] "fx/image/ET_13_007_00.tga")
+					(cycle float[1] 1.000000)
+					(life float[1] 30.000000)
+					(fade_in float[1] 0.000000)
+					(fade_out float[1] 0.500000)
+					(width float[1] 4.000000)
+					(complement_param float[1] 20.000000)
+					(blend int32[1] 2)
+					(type int32[1] 0)
+					(uv_type int32[1] 0)
+					(complement int32[1] 1)
+					(center int8[1] 1)
+				}
+			}
+			{Work
+				{Rot
+					(ratio float[2] 
+						0.000000, 1.000000)
+					(type int32[1] 0)
+					(rot vector3[1] 0.000000, 0.000000, 90.000000)
+					(rot_rnd vector3[1] 0.000000, 0.000000, 0.000000)
+				}
+			}
+		}
+		{Plug
+			(name string[1] "Line1")
+			(start float[1] 0.000000)
+			(end float[1] 1.000000)
+			(loop int8[1] 0)
+			{Object
+				{Trail
+					(name string[1] "Trail")
+					(file string[1] "fx/image/ET_13_007_00.tga")
+					(cycle float[1] 1.000000)
+					(life float[1] 30.000000)
+					(fade_in float[1] 0.000000)
+					(fade_out float[1] 0.500000)
+					(width float[1] 4.000000)
+					(complement_param float[1] 20.000000)
+					(blend int32[1] 2)
+					(type int32[1] 0)
+					(uv_type int32[1] 0)
+					(complement int32[1] 1)
+					(center int8[1] 1)
+				}
+			}
+			{Work
+			}
+		}
+	}
+}
+{Plug
+	(name string[1] "AlowF2")
+	(start float[1] 0.500000)
+	(end float[1] 1.000000)
+	(loop int8[1] 0)
+	{Work
+		{Rot
+			(ratio float[2] 
+				0.000000, 1.000000)
+			(type int32[1] 0)
+			(rot vector3[1] 0.000000, 0.000000, 0.000000)
+			(rot_rnd vector3[1] 10.000000, 180.000000, 0.000000)
+		}
+		{Pos
+			(ratio float[2] 
+				0.000000, 1.000000)
+			(type int32[1] 0)
+			(pos vector3[1] 0.000000, 1500.000000, 0.000000)
+			(pos_rnd vector3[1] 600.000000, 0.000000, 600.000000)
+		}
+	}
+	{Plug
+		(name string[1] "Alow")
+		(start float[1] 0.000000)
+		(end float[1] 0.500000)
+		(loop int8[1] 0)
+		{Object
+			{Model
+				(name string[1] "Model")
+				(file string[1] "fx/02/attr/EZ_02_009_00.vra")
+				(billboard_x int8[1] 0)
+				(billboard_y int8[1] 0)
+				(billboard_z int8[1] 0)
+			}
+			{Model
+				(name string[1] "Model1")
+				(file string[1] "fx/02/attr/EZ_02_009_01.vra")
+				(billboard_x int8[1] 0)
+				(billboard_y int8[1] 0)
+				(billboard_z int8[1] 0)
+			}
+		}
+		{Work
+			{Pos
+				(type int32[1] 1)
+				(ratio float[2] 
+					0.000000, 1.000000)
+				(pos vector3[2] 
+					0.000000, 0.000000, 0.000000, 
+					0.000000, -1700.000000, 0.000000)
+				(pos_rnd vector3[2] 
+					0.000000, 0.000000, 0.000000, 
+					0.000000, 0.000000, 0.000000)
+			}
+			{Rot
+				(ratio float[2] 
+					0.000000, 1.000000)
+				(type int32[1] 0)
+				(rot vector3[1] 90.000000, 0.000000, 0.000000)
+				(rot_rnd vector3[1] 0.000000, 0.000000, 0.000000)
+			}
+		}
+		{Plug
+			(name string[1] "Line")
+			(start float[1] 0.000000)
+			(end float[1] 1.000000)
+			(loop int8[1] 0)
+			{Object
+				{Trail
+					(name string[1] "Trail")
+					(file string[1] "fx/image/ET_13_007_00.tga")
+					(cycle float[1] 1.000000)
+					(life float[1] 30.000000)
+					(fade_in float[1] 0.000000)
+					(fade_out float[1] 0.500000)
+					(width float[1] 4.000000)
+					(complement_param float[1] 20.000000)
+					(blend int32[1] 2)
+					(type int32[1] 0)
+					(uv_type int32[1] 0)
+					(complement int32[1] 1)
+					(center int8[1] 1)
+				}
+			}
+			{Work
+				{Rot
+					(ratio float[2] 
+						0.000000, 1.000000)
+					(type int32[1] 0)
+					(rot vector3[1] 0.000000, 0.000000, 90.000000)
+					(rot_rnd vector3[1] 0.000000, 0.000000, 0.000000)
+				}
+			}
+		}
+		{Plug
+			(name string[1] "Line1")
+			(start float[1] 0.000000)
+			(end float[1] 1.000000)
+			(loop int8[1] 0)
+			{Object
+				{Trail
+					(name string[1] "Trail")
+					(file string[1] "fx/image/ET_13_007_00.tga")
+					(cycle float[1] 1.000000)
+					(life float[1] 30.000000)
+					(fade_in float[1] 0.000000)
+					(fade_out float[1] 0.500000)
+					(width float[1] 4.000000)
+					(complement_param float[1] 20.000000)
+					(blend int32[1] 2)
+					(type int32[1] 0)
+					(uv_type int32[1] 0)
+					(complement int32[1] 1)
+					(center int8[1] 1)
+				}
+			}
+			{Work
+			}
+		}
+	}
+}
+{Plug
+	(name string[1] "SE")
+	(start float[1] 0.000000)
+	(end float[1] 1.000000)
+	(loop int8[1] 0)
+	{Trigger
+		{Sound
+			(ratio float[1] 0.000000)
+			(file string[1] "sound/se/ese/ese_042.wav")
+			(type int32[1] 2)
+			(loop int8[1] 1)
+			(vol float[1] 1.000000)
+			(dist vector2[1] 600.000000, 3500.000000)
+		}
+	}
+}

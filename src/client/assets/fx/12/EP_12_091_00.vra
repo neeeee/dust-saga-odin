@@ -1,0 +1,57 @@
+{Version
+	(major int16[1] 1)
+	(minor int16[1] 0)
+}
+{Target
+	(type int32[1] 1)
+	(extend_visible int8[1] 1)
+	(extend_pos int8[1] 1)
+	(extend_rot int8[1] 1)
+	(extend_scale int8[1] 1)
+	(center_pos int8[1] 0)
+	(find_bone int8[1] 0)
+	(find_socket int8[1] 1)
+	(owner_name string[1] "T01")
+	(goal_name string[1] "")
+	(move_frame float[1] 0.000000)
+	(move_vel float[1] 0.000000)
+	(move_acl float[1] 0.000000)
+}
+{Header
+	(frame int16[1] 480)
+	(loop int8[1] 1)
+	(loop_ratio float[1] 0.000000)
+	(plug_end_wait int8[1] 0)
+}
+{Plug
+	(name string[1] "FX1209100")
+	(start float[1] 0.000000)
+	(end float[1] 1.000000)
+	(loop int8[1] 0)
+	{Plug
+		(name string[1] "Model")
+		(start float[1] 0.000000)
+		(end float[1] 1.000000)
+		(loop int8[1] 0)
+		{Object
+			{Model
+				(name string[1] "Model")
+				(file string[1] "fx/12/attr/EZ_12_091_00.vra")
+				(billboard_x int8[1] 0)
+				(billboard_y int8[1] 0)
+				(billboard_z int8[1] 0)
+			}
+		}
+		{Work
+			{Rot
+				(ratio float[2] 
+					0.000000, 1.000000)
+				(type int32[1] 0)
+				(rot vector3[1] 0.000000, 90.000000, 90.000000)
+				(rot_rnd vector3[1] 0.000000, 0.000000, 0.000000)
+			}
+		}
+	}
+	{Work
+	}
+}

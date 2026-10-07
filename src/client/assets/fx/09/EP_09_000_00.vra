@@ -1,0 +1,93 @@
+{Target
+	(type int32[1] 2)
+	(extend_visible int8[1] 1)
+	(extend_pos int8[1] 1)
+	(extend_rot int8[1] 0)
+	(extend_scale int8[1] 1)
+	(center_pos int8[1] 0)
+	(find_bone int8[1] 0)
+	(find_socket int8[1] 0)
+	(owner_name string[1] "")
+	(goal_name string[1] "")
+	(move_frame float[1] 0.000000)
+	(move_vel float[1] 0.000000)
+	(move_acl float[1] 0.000000)
+}
+{Version
+	(major int16[1] 1)
+	(minor int16[1] 0)
+}
+{Header
+	(frame int16[1] 30)
+	(loop int8[1] 1)
+	(loop_ratio float[1] 0.000000)
+	(plug_end_wait int8[1] 1)
+}
+{Plug
+	(name string[1] "Smork")
+	(start float[1] 0.000000)
+	(end float[1] 1.000000)
+	(loop int8[1] 0)
+	{Object
+		{Particle
+			(name string[1] "Particle")
+			(emit_type int32[1] 0)
+			(move_type int32[1] 1)
+			(emit_size vector3[1] 150.000000, 100.000000, 10.000000)
+			(emit_count int32[1] 1)
+			(emit_cycle float[1] 20.000000)
+			(life float[1] 100.000000)
+			(life_rnd float[1] 30.000000)
+			(fade_in float[1] 0.300000)
+			(fade_in_rnd float[1] 0.000000)
+			(fade_out float[1] 0.500000)
+			(fade_out_rnd float[1] 0.100000)
+			(move vector3[1] 0.000000, 3.000000, 15.000000)
+			(move_vel float[1] 0.500000)
+			(move_acl float[1] 0.000000)
+			(edge int8[1] 0)
+			(under int8[1] 0)
+			(move_rev int8[1] 0)
+			(tgt_del int8[1] 0)
+			(emt_world int8[1] 0)
+			(file string[1] "fx/image/ET_10_100_00.tga")
+			(dims vector2[1] 1500.000000, 1500.000000)
+			(color vector4[1] 1.000000, 1.000000, 1.000000, 1.000000)
+			(billboard int8[1] 1)
+			(base_x int8[1] 0)
+			(base_y int8[1] 0)
+			(reverse_x int8[1] 0)
+			(reverse_y int8[1] 0)
+			(blend int32[1] 2)
+			(anim_type int32[1] 0)
+			(anim_uv vector2[1] 0.000000, 0.000000)
+			(pos vector3[1] 0.000000, 200.000000, -500.000000)
+			(pos_rnd vector3[1] 800.000000, 300.000000, 800.000000)
+			(pos_vel vector3[1] 0.000000, 1.000000, 2.000000)
+			(pos_vel_rnd vector3[1] 1.000000, 0.000000, 1.000000)
+			(pos_acl vector3[1] 0.000000, -0.005000, 0.050000)
+			(pos_acl_rnd vector3[1] 0.000000, 0.000000, 0.000000)
+			(rot vector3[1] 0.000000, 0.000000, 0.000000)
+			(rot_rnd vector3[1] 0.000000, 0.000000, 180.000000)
+			(rot_vel vector3[1] 0.000000, 0.000000, 0.000000)
+			(rot_vel_rnd vector3[1] 0.000000, 0.000000, 0.600000)
+			(rot_acl vector3[1] 0.000000, 0.000000, 0.000000)
+			(rot_acl_rnd vector3[1] 0.000000, 0.000000, 0.000000)
+			(scale vector3[1] 1.000000, 1.000000, 1.000000)
+			(scale_rnd vector3[1] 0.000000, 0.000000, 0.000000)
+			(scale_vel vector3[1] 0.000000, 0.000000, 0.000000)
+			(scale_vel_rnd vector3[1] 0.000000, 0.000000, 0.000000)
+			(scale_acl vector3[1] 0.000000, 0.000000, 0.000000)
+			(scale_acl_rnd vector3[1] 0.000000, 0.000000, 0.000000)
+		}
+	}
+	{Work
+		{Color
+			(ratio float[2] 
+				0.000000, 1.000000)
+			(color vector4[2] 
+				0.900000, 0.700000, 0.400000, 0.000000, 
+				0.900000, 0.700000, 0.400000, 0.000000)
+		}
+	}
+}

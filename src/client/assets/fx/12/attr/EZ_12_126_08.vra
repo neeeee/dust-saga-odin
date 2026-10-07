@@ -1,0 +1,40 @@
+{geometry
+	{mesh
+		(name string[1] "EP_12_126_08")
+		{lod0
+			(material_id int32[1] 0)
+		}
+	}
+}
+{material_set
+	{material
+		(id int32[1] 0)
+		{texture
+			{diffuse
+				(fname string[1] "fx\12\tex\ET_12_126_00.dds")
+			}
+		}
+		{param_block
+			(twoSided int32[1] 1)
+			(ambient vector3[1] 0.588235, 0.588235, 0.588235)
+			(diffuse vector3[1] 0.392157, 0.392157, 0.392157)
+			(specular vector3[1] 0.900000, 0.900000, 0.900000)
+			(glossiness float[1] 0.100000)
+			(fx_fname string[1] "shader/pandora.fx")
+			(fx_technique string[1] "BlendColor")
+			(fog_enable int32[1] 0)
+			(alpha_test_enable int32[1] 0)
+			(alpha_ref int32[1] 0)
+			(alpha_func string[1] "Greater")
+			(alpha_blend_enable int32[1] 1)
+			(dest_blend string[1] "InvSrcAlpha")
+			(src_blend string[1] "SrcAlpha")
+			(draw_priority int32[1] 2)
+			(u_add float[1] -0.150000)
+			(v_add float[1] 0.000000)
+		}
+	}
+}
+{attribute
+	(Geometry string[1] "fx\12\model\EM_12_126_08.dxg")
+}
