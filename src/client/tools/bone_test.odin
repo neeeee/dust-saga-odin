@@ -72,6 +72,12 @@ main :: proc() {
 	creator_repro("021")
 	creator_repro("011")
 
+	// worn-armor: striker trousers + torso across races (name-mapped posing)
+	armor_repro("012", "item/EM_013211_03_012.glb")
+	armor_repro("011", "item/EM_012211_02_011.glb")
+	armor_repro("021", "item/EM_013211_03_021.glb")
+	armor_repro("022", "item/EM_012211_02_022.glb")
+
 	// ── character model ────────────────────────────────────────────────────
 	fmt.eprintln("loading glb...")
 	model := rl.LoadModel("assets/chara/chara_011.glb")

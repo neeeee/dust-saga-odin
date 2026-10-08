@@ -21,6 +21,7 @@ import "core:fmt"
 import "core:os"
 import "core:strings"
 import rl "vendor:raylib"
+import rlgl "vendor:raylib/rlgl"
 
 
 // Character model per race + sex. The numeric codes on disk are race/gender
@@ -1118,12 +1119,124 @@ chara_avatar_sync_armor :: proc(av: ^Chara_Avatar, inv: ^Inventory) {
 // one UpdateModelAnimation per piece, after chara_avatar_update. Posing the
 // shared cached model directly is safe today: only the local player wears
 // armor (one pose per model, the monster-model approach).
+// Column-vector TRS helper for global poses already exists (chara_pose_matrix).
+
 chara_avatar_update_armor :: proc(av: ^Chara_Avatar) {
-	if av == nil do return
+	if av == nil || av.cm == nil do return
+	base := &av.cm.entry.model
+	if base.currentPose == nil do return
+
 	for layer in 0..<CHARA_ARMOR_LAYER_COUNT {
 		if av.armor_rigid[layer] do continue
-		if e := av.armor_models[layer]; e != nil {
-			chara_apply_current_pose(av, e.model)
+		e := av.armor_models[layer]
+		if e == nil do continue
+		m := &e.model
+		remap := chara_armor_remap(e, av.cm)
+		n_cur := int(base.skeleton.boneCount)
+		for b in 0..<int(m.skeleton.boneCount) {
+			if b >= len(remap) do break
+			ci := remap[b]
+			if ci < 0 || ci >= n_cur do continue // defense: bone stays identity
+			// Same delta form raylib computes in UpdateModelAnimation — but
+			// the current pose comes from the WEARER's rig, by bone name.
+			m.boneMatrices[b] = rl.MatrixInvert(chara_pose_matrix(m.skeleton.bindPose[b])) *
+				chara_pose_matrix(base.currentPose[ci])
+		}
+		chara_skin_model_cpu(m)
+	}
+}
+
+// Armor glbs carry MORE bones than the character models (the N50..N62 grip
+// sockets + extra dummies: 111 vs 90) and a different joint order from index
+// 20 on, so UpdateModelAnimation can never be applied to them — it indexes
+// the character animation's pose arrays with the armor's bone indices,
+// reading out of bounds past 90 and mismatching names below that (the
+// stretched-flat-legs bug). Instead: pose each armor bone against the
+// character's blended global pose matched BY NAME, falling back to the
+// nearest shared ancestor (sockets N5x → their hand bone), then skin exactly
+// like raylib's CPU path. armor sid→race file names make entries single-race
+// users, so one remap per Model_Entry is sound.
+armor_remap_cache: map[^Model_Entry][]int
+
+chara_armor_remap :: proc(e: ^Model_Entry, cm: ^Chara_Model) -> []int {
+	if r, ok := armor_remap_cache[e]; ok do return r
+	base := &cm.entry.model
+	n_a := int(e.model.skeleton.boneCount)
+	n_c := int(base.skeleton.boneCount)
+	remap := make([]int, n_a)
+	if n_a > 0 && n_c > 0 {
+		name_to_c := make(map[string]int, n_c)
+		for i in 0..<n_c {
+			name_to_c[chara_bone_name(&base.skeleton.bones[i])] = i
+		}
+		for i in 0..<n_a {
+			remap[i] = 0
+			j := i
+			for depth := 0; j >= 0 && depth < n_a; depth += 1 {
+				if ci, ok := name_to_c[chara_bone_name(&e.model.skeleton.bones[j])]; ok {
+					remap[i] = ci
+					break
+				}
+				j = int(e.model.skeleton.bones[j].parent)
+			}
+		}
+		delete(name_to_c)
+	}
+	armor_remap_cache[e] = remap
+	return remap
+}
+
+// CPU skinning, a faithful port of raylib's UpdateModelAnimationVertexBuffers
+// (rmodels.c): animVertex = bindVertex · boneMatrices[boneIndex], normals via
+// transposed inverse bone matrices, then position/normal VBOs re-uploaded.
+// On GPU-skinning builds animVertices is nil and every mesh is skipped, the
+// draw path picks the boneMatrices up instead — both builds behave.
+chara_skin_model_cpu :: proc(model: ^rl.Model) {
+	normal_mats: [256]rl.Matrix
+	normals_ready := false
+	for mi in 0..<int(model.meshCount) {
+		mesh := &model.meshes[mi]
+		if mesh.boneIndices == nil || mesh.boneWeights == nil || mesh.animVertices == nil do continue
+		normals_ok := mesh.normals != nil && mesh.animNormals != nil
+		if normals_ok && !normals_ready {
+			for b in 0..<int(model.skeleton.boneCount) {
+				if b >= len(normal_mats) do break
+				normal_mats[b] = rl.MatrixTranspose(rl.MatrixInvert(model.boneMatrices[b]))
+			}
+			normals_ready = true
+		}
+		bone_counter := 0
+		for v in 0..<int(mesh.vertexCount) {
+			for k in 0..<3 do mesh.animVertices[v * 3 + k] = 0
+			if normals_ok {
+				for k in 0..<3 do mesh.animNormals[v * 3 + k] = 0
+			}
+			for j4 := 0; j4 < 4; j4 += 1 {
+				w := mesh.boneWeights[bone_counter]
+				bi := int(mesh.boneIndices[bone_counter])
+				bone_counter += 1
+				if w == 0 do continue
+				av := rl.Vector3Transform(
+					{mesh.vertices[v * 3], mesh.vertices[v * 3 + 1], mesh.vertices[v * 3 + 2]},
+					model.boneMatrices[bi])
+				mesh.animVertices[v * 3 + 0] += av.x * w
+				mesh.animVertices[v * 3 + 1] += av.y * w
+				mesh.animVertices[v * 3 + 2] += av.z * w
+				if normals_ok {
+					an := rl.Vector3Transform(
+						{mesh.normals[v * 3], mesh.normals[v * 3 + 1], mesh.normals[v * 3 + 2]},
+						normal_mats[bi])
+					mesh.animNormals[v * 3 + 0] += an.x * w
+					mesh.animNormals[v * 3 + 1] += an.y * w
+					mesh.animNormals[v * 3 + 2] += an.z * w
+				}
+			}
+		}
+		if mesh.vboId != nil {
+			rlgl.UpdateVertexBuffer(mesh.vboId[0], rawptr(mesh.animVertices), mesh.vertexCount * 3 * 4, 0)
+			if normals_ok {
+				rlgl.UpdateVertexBuffer(mesh.vboId[2], rawptr(mesh.animNormals), mesh.vertexCount * 3 * 4, 0)
+			}
 		}
 	}
 }
