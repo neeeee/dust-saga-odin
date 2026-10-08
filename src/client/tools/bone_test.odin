@@ -17,6 +17,7 @@ import "core:math"
 import "core:fmt"
 import "core:strings"
 import rl "vendor:raylib"
+import sys "../systems"
 
 cstr :: proc(s: string) -> cstring {
 	return strings.clone_to_cstring(s, context.temp_allocator)
@@ -60,6 +61,16 @@ main :: proc() {
 	rl.InitWindow(64, 64, "bone_test")
 	fmt.eprintln("window up")
 	defer rl.CloseWindow()
+
+	// creator-crash repro: sweep every race's idle clip like the preview does
+	races := []string{"011", "012", "021", "022", "031", "042", "051", "063"}
+	for id in races {
+		crash_test_load(id)
+	}
+	sys.assets_init()
+	// full creator pipeline (acquire + subset + race switch), elf first
+	creator_repro("021")
+	creator_repro("011")
 
 	// ── character model ────────────────────────────────────────────────────
 	fmt.eprintln("loading glb...")

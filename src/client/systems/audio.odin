@@ -102,7 +102,7 @@ audio_stop_bgm :: proc() {
 		rl.UnloadMusicStream(audio_bgm)
 		audio_bgm_valid = false
 	}
-	delete(audio_bgm_path)
+	if len(audio_bgm_path) > 0 do delete(audio_bgm_path)
 	audio_bgm_path = ""
 }
 

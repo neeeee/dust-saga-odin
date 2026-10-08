@@ -234,7 +234,9 @@ chara_model_load :: proc(id: string) -> ^Chara_Model {
 		name := chara_anim_name(&anims[i])
 		code := chara_code_of(name)
 		if len(code) > 0 {
-			if _, dup := cm.clips[code]; !dup do cm.clips[code] = i
+			// chara_code_of returns a VIEW into the anim's name buffer —
+			// map keys must own their memory (chara_model_free deletes them)
+			if _, dup := cm.clips[code]; !dup do cm.clips[strings.clone(code)] = i
 		}
 		if cm.idle_anim < 0 && strings.ends_with(name, CLIP_CODE_IDLE) do cm.idle_anim = i
 		if cm.walk_anim < 0 && strings.ends_with(name, CLIP_CODE_WALK) do cm.walk_anim = i
@@ -419,6 +421,8 @@ chara_model_free :: proc(cm: ^Chara_Model) {
 	}
 	delete(cm.hair_tex)
 	delete(cm.is_variant)
+	// Keys are strings.clone'd at insertion (chara_code_of returns a view
+	// into raylib's anim-name buffer — freeing that view corrupts the heap).
 	for key in cm.clips {
 		delete(key)
 	}
