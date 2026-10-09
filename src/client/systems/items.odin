@@ -60,6 +60,11 @@ Item_Def :: struct {
 	// Held-item glb ("item/EM_002904_20_000.glb"), weapons only, from the
 	// RDR-SID column; empty = no model ships.
 	model:           string,
+	// Worn-armor appearance: RDR-SID + the EM part code (1=helmet, 2=torso,
+	// 3=legs, 4=gloves, 5=boots, 12=cloak). Armor meshes are race-specific:
+	// item/EM_<sid>_<part>_<chara model>.glb. 0/0 = no wearable model.
+	armor_sid:       int,
+	armor_part:      u8,
 }
 
 item_defs: map[string]Item_Def
@@ -167,7 +172,7 @@ shipped_slot :: proc(line: string, is_weapon: bool) -> (string, bool) {
 	if csv_flag(line, 7) do return "gloves", true
 	if csv_flag(line, 8) do return "legs", true
 	if csv_flag(line, 9) do return "boots", true
-	if csv_flag(line, 10) do return "armor", true // cloak → torso slot
+	if csv_flag(line, 10) do return "back", true // cloak/cape
 	if csv_flag(line, 11) do return "ring_1", true
 	if csv_flag(line, 12) do return "necklace", true
 	if csv_flag(line, 13) do return "belt", true
@@ -179,6 +184,7 @@ shipped_item_type :: proc(type_str: string, slot: string) -> Item_Type {
 	switch slot {
 	case "helmet": return .HELMET
 	case "armor": return .ARMOR
+	case "back": return .ARMOR // capes display as armor; their own slot
 	case "legs": return .LEGS
 	case "gloves": return .GLOVES
 	case "boots": return .BOOTS
@@ -215,6 +221,20 @@ shipped_required_level :: proc(id: int, equippable: bool) -> int {
 	return 1 + (id / 11) % 40
 }
 
+// EM part code for a wearable item type — the middle segment of the shipped
+// model files (item/EM_<sid>_<part>_<race>.glb). 0 = not a wearable shape.
+shipped_armor_part :: proc "contextless" (type_str: string) -> u8 {
+	switch type_str {
+	case "HELMET":  return 1
+	case "TORSO":   return 2
+	case "CUISSES": return 3
+	case "GLOVES":  return 4
+	case "BOOTS":   return 5
+	case "MANTLE":  return 12
+	}
+	return 0
+}
+
 load_item_csv :: proc() {
 	data, err := os.read_entire_file_from_path("assets/item.csv", allocator = context.allocator)
 	if err != nil {
@@ -246,12 +266,19 @@ load_item_csv :: proc() {
 		// Weapons: held-item glb keyed by the RDR-SID column (field 21),
 		// e.g. sid 2904 → item/EM_002904_20_000.glb.
 		model := ""
+		armor_part := shipped_armor_part(type_str)
+		armor_sid: int
+		sid := csv_field_at(line, 21)
+		sid_n, sid_ok := strconv.parse_int(sid, 10)
 		if is_weapon {
-			sid := csv_field_at(line, 21)
-			sid_n, sid_ok := strconv.parse_int(sid, 10)
 			if sid_ok && sid_n > 0 {
 				model = strings.clone(fmt.tprintf("item/EM_%06d_20_000.glb", sid_n))
 			}
+		} else if armor_part > 0 {
+			// Armor: same RDR-SID column is the appearance id; meshes are
+			// race-specific (Blaze Helm ships sid 11002's file, and items can
+			// share — the per-item path resolves at render with the race).
+			if sid_ok && sid_n > 0 do armor_sid = sid_n
 		}
 
 		def := Item_Def{
@@ -262,6 +289,8 @@ load_item_csv :: proc() {
 			rarity = shipped_rarity(id, equippable),
 			required_level = shipped_required_level(id, equippable),
 			model = model,
+			armor_sid = armor_sid,
+			armor_part = armor_part,
 		}
 		key := strings.clone(id_str)
 		item_defs[key] = def
@@ -290,6 +319,14 @@ held_model_for_item :: proc(item_id: string) -> ^Model_Entry {
 	def, ok := item_def(item_id)
 	if !ok do return nil
 	return held_model_acquire(def.model)
+}
+
+// Model path for a wearable item's armor appearance on `race_id` (the chara
+// model code, "011".."063") — armor meshes ship per race. Empty when the
+// item carries no wearable model.
+armor_model_path :: proc(def: Item_Def, race_id: string) -> string {
+	if def.armor_part == 0 || def.armor_sid <= 0 do return ""
+	return fmt.tprintf("item/EM_%06d_%02d_%s.glb", def.armor_sid, def.armor_part, race_id)
 }
 
 // Lookup helpers — call after init_item_defs (wired into init_game_data).

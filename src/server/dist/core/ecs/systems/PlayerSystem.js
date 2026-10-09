@@ -101,7 +101,7 @@ class PlayerSystem extends EntityManager_1.System {
                         bonuses.magicAttackPercent += enhanceLevel * 0.02;
                     }
                 }
-                else if (eqSlot === shared_2.EquipmentSlot.ARMOR || eqSlot === shared_2.EquipmentSlot.HELMET || eqSlot === shared_2.EquipmentSlot.GLOVES || eqSlot === shared_2.EquipmentSlot.LEGS || eqSlot === shared_2.EquipmentSlot.SHIELD) {
+                else if (eqSlot === shared_2.EquipmentSlot.ARMOR || eqSlot === shared_2.EquipmentSlot.BACK || eqSlot === shared_2.EquipmentSlot.HELMET || eqSlot === shared_2.EquipmentSlot.GLOVES || eqSlot === shared_2.EquipmentSlot.LEGS || eqSlot === shared_2.EquipmentSlot.SHIELD) {
                     bonuses.defense += enhanceLevel * 3;
                     bonuses.health += enhanceLevel * 15;
                 }
@@ -184,6 +184,7 @@ class PlayerSystem extends EntityManager_1.System {
             equipment: {
                 weapon: null,
                 armor: null,
+                back: null,
                 helmet: null,
                 boots: null,
                 gloves: null,
@@ -327,7 +328,7 @@ class PlayerSystem extends EntityManager_1.System {
                     enh.magicAttackPercent += level * 0.02;
                 }
             }
-            else if (eqSlot === shared_2.EquipmentSlot.ARMOR || eqSlot === shared_2.EquipmentSlot.HELMET || eqSlot === shared_2.EquipmentSlot.GLOVES || eqSlot === shared_2.EquipmentSlot.LEGS || eqSlot === shared_2.EquipmentSlot.SHIELD) {
+            else if (eqSlot === shared_2.EquipmentSlot.ARMOR || eqSlot === shared_2.EquipmentSlot.BACK || eqSlot === shared_2.EquipmentSlot.HELMET || eqSlot === shared_2.EquipmentSlot.GLOVES || eqSlot === shared_2.EquipmentSlot.LEGS || eqSlot === shared_2.EquipmentSlot.SHIELD) {
                 enh.defense += level * 3;
                 enh.health += level * 15;
             }
@@ -539,6 +540,22 @@ class PlayerSystem extends EntityManager_1.System {
         }
         else if (slot === shared_2.EquipmentSlot.EARRING_1 || slot === shared_2.EquipmentSlot.EARRING_2) {
             slot = session.equipment.earring_1 ? shared_2.EquipmentSlot.EARRING_2 : shared_2.EquipmentSlot.EARRING_1;
+        }
+        // Two-handed weapons occupy both hands: equipping one sends the shield
+        // back to inventory, and a shield can't be equipped while one is wielded.
+        const isTwoHanded = (t) => t === shared_1.WeaponType.TWO_HANDED_SWORD || t === shared_1.WeaponType.TWO_HANDED_AXE ||
+            t === shared_1.WeaponType.TWO_HANDED_BLUNT || t === shared_1.WeaponType.TWO_HANDED_SPEAR;
+        if (slot === shared_2.EquipmentSlot.SHIELD) {
+            const weapon = session.equipment.weapon;
+            if (weapon) {
+                const weaponDef = this.itemSys.getItemDefinition(weapon.itemId);
+                if (weaponDef && isTwoHanded(weaponDef.weaponType))
+                    return false;
+            }
+        }
+        else if (slot === shared_2.EquipmentSlot.WEAPON && isTwoHanded(itemDef.weaponType)) {
+            if (session.equipment.shield)
+                this.unequipItem(session, shared_2.EquipmentSlot.SHIELD);
         }
         const currentlyEquipped = session.equipment[slot];
         if (currentlyEquipped) {

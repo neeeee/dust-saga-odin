@@ -127,7 +127,7 @@ const ITEM_TYPE_MAP: Record<string, ItemType> = {
   'CUISSES': ItemType.LEGS,
   'GLOVES': ItemType.GLOVES,
   'BOOTS': ItemType.BOOTS,
-  'MANTLE': ItemType.ARMOR,      // no cloak slot exists; rides the torso slot
+  'MANTLE': ItemType.ARMOR,      // cape appearance; its own slot since BACK exists
   'HORSE_SHIELD': ItemType.SHIELD,
   'FOOT_SHIELD': ItemType.SHIELD,
   'RING': ItemType.RING,
@@ -143,7 +143,7 @@ const ITEM_TYPE_MAP: Record<string, ItemType> = {
  * Equipment slot from item.csv's one-hot 装備箇所 columns (3..17):
  * R Hand, L Hand, head, torso, gloves, legs, feet, cloak, ring, neck, waist,
  * ear, ammunition, egg, stall. Weapons come from R Hand; everything else maps
- * onto the server's 13 equipment slots (cloak rides armor, L Hand = shield).
+ * onto the server's 14 equipment slots (cloak → BACK, L Hand = shield).
  */
 function slotFromColumns(fields: string[], isWeapon: boolean): EquipmentSlot | undefined {
   if (isWeapon && fieldFlagged(fields, 3)) return EquipmentSlot.WEAPON;
@@ -153,7 +153,7 @@ function slotFromColumns(fields: string[], isWeapon: boolean): EquipmentSlot | u
   if (fieldFlagged(fields, 7)) return EquipmentSlot.GLOVES;
   if (fieldFlagged(fields, 8)) return EquipmentSlot.LEGS;
   if (fieldFlagged(fields, 9)) return EquipmentSlot.BOOTS;
-  if (fieldFlagged(fields, 10)) return EquipmentSlot.ARMOR; // cloak
+  if (fieldFlagged(fields, 10)) return EquipmentSlot.BACK; // cloak/cape
   if (fieldFlagged(fields, 11)) return EquipmentSlot.RING_1;
   if (fieldFlagged(fields, 12)) return EquipmentSlot.NECKLACE;
   if (fieldFlagged(fields, 13)) return EquipmentSlot.BELT;

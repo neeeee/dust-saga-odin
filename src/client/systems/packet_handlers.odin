@@ -1496,14 +1496,16 @@ handle_inventory_update :: proc(ctx: ^Game_Context, data: ^JSON_Value) {
 // copy_field/copy_name were here — consolidated into copy_string_to_buffer
 // (types.odin). Call sites below use that directly.
 
-// String names for each equipment slot, parallel to the EQUIP_SLOT enum order.
+// String names for each equipment slot, parallel to the EQUIP_SLOT enum
+// order — these are the server's EquipmentSlot wire keys exactly.
 EQUIP_SLOT_NAMES: [EQUIP_SLOT_COUNT]string = {
-	"weapon",
-	"armor",
 	"helmet",
-	"boots",
+	"armor",
 	"gloves",
 	"legs",
+	"boots",
+	"back",
+	"weapon",
 	"shield",
 	"earring_1",
 	"earring_2",
@@ -1511,6 +1513,24 @@ EQUIP_SLOT_NAMES: [EQUIP_SLOT_COUNT]string = {
 	"belt",
 	"ring_1",
 	"ring_2",
+}
+
+// Player-facing labels for the inventory menu (the names above are wire keys).
+EQUIP_SLOT_LABELS: [EQUIP_SLOT_COUNT]string = {
+	"helmet",
+	"torso",
+	"gloves",
+	"legs",
+	"boots",
+	"cape",
+	"weapon",
+	"shield",
+	"earring 1",
+	"earring 2",
+	"necklace",
+	"belt",
+	"ring 1",
+	"ring 2",
 }
 
 handle_chat :: proc(ctx: ^Game_Context, data: ^JSON_Value) {

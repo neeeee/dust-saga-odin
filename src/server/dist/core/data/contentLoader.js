@@ -124,7 +124,7 @@ const ITEM_TYPE_MAP = {
     'CUISSES': shared_1.ItemType.LEGS,
     'GLOVES': shared_1.ItemType.GLOVES,
     'BOOTS': shared_1.ItemType.BOOTS,
-    'MANTLE': shared_1.ItemType.ARMOR, // no cloak slot exists; rides the torso slot
+    'MANTLE': shared_1.ItemType.ARMOR, // cape appearance; its own slot since BACK exists
     'HORSE_SHIELD': shared_1.ItemType.SHIELD,
     'FOOT_SHIELD': shared_1.ItemType.SHIELD,
     'RING': shared_1.ItemType.RING,
@@ -139,7 +139,7 @@ const ITEM_TYPE_MAP = {
  * Equipment slot from item.csv's one-hot 装備箇所 columns (3..17):
  * R Hand, L Hand, head, torso, gloves, legs, feet, cloak, ring, neck, waist,
  * ear, ammunition, egg, stall. Weapons come from R Hand; everything else maps
- * onto the server's 13 equipment slots (cloak rides armor, L Hand = shield).
+ * onto the server's 14 equipment slots (cloak → BACK, L Hand = shield).
  */
 function slotFromColumns(fields, isWeapon) {
     if (isWeapon && fieldFlagged(fields, 3))
@@ -157,7 +157,7 @@ function slotFromColumns(fields, isWeapon) {
     if (fieldFlagged(fields, 9))
         return shared_1.EquipmentSlot.BOOTS;
     if (fieldFlagged(fields, 10))
-        return shared_1.EquipmentSlot.ARMOR; // cloak
+        return shared_1.EquipmentSlot.BACK; // cloak/cape
     if (fieldFlagged(fields, 11))
         return shared_1.EquipmentSlot.RING_1;
     if (fieldFlagged(fields, 12))

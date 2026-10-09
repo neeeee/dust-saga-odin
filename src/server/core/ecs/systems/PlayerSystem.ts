@@ -1,5 +1,5 @@
 import { EntityManager, System } from '../EntityManager';
-import { PlayerSession, JobId, BaseClass, StatType, InventoryItem, AccountRole, DEFAULT_EQUIPMENT } from '@dust-saga/shared';
+import { PlayerSession, JobId, BaseClass, StatType, InventoryItem, AccountRole, DEFAULT_EQUIPMENT, WeaponType } from '@dust-saga/shared';
 import type { ItemSystem } from '../../../systems/ItemSystem';
 import { getObeliskBuffForWeapon } from '../../combat/obeliskBuff';
 import {
@@ -91,7 +91,7 @@ export class PlayerSystem extends System {
           if (isMagicWeapon) {
             bonuses.magicAttackPercent += enhanceLevel * 0.02;
           }
-        } else if (eqSlot === EquipmentSlot.ARMOR || eqSlot === EquipmentSlot.HELMET || eqSlot === EquipmentSlot.GLOVES || eqSlot === EquipmentSlot.LEGS || eqSlot === EquipmentSlot.SHIELD) {
+        } else if (eqSlot === EquipmentSlot.ARMOR || eqSlot === EquipmentSlot.BACK || eqSlot === EquipmentSlot.HELMET || eqSlot === EquipmentSlot.GLOVES || eqSlot === EquipmentSlot.LEGS || eqSlot === EquipmentSlot.SHIELD) {
           bonuses.defense += enhanceLevel * 3;
           bonuses.health += enhanceLevel * 15;
         } else if (eqSlot === EquipmentSlot.BOOTS) {
@@ -192,6 +192,7 @@ export class PlayerSystem extends System {
       equipment: {
         weapon: null,
         armor: null,
+        back: null,
         helmet: null,
         boots: null,
         gloves: null,
@@ -342,7 +343,7 @@ export class PlayerSystem extends System {
         if (isMagicWeapon) {
           enh.magicAttackPercent += level * 0.02;
         }
-      } else if (eqSlot === EquipmentSlot.ARMOR || eqSlot === EquipmentSlot.HELMET || eqSlot === EquipmentSlot.GLOVES || eqSlot === EquipmentSlot.LEGS || eqSlot === EquipmentSlot.SHIELD) {
+      } else if (eqSlot === EquipmentSlot.ARMOR || eqSlot === EquipmentSlot.BACK || eqSlot === EquipmentSlot.HELMET || eqSlot === EquipmentSlot.GLOVES || eqSlot === EquipmentSlot.LEGS || eqSlot === EquipmentSlot.SHIELD) {
         enh.defense += level * 3;
         enh.health += level * 15;
       } else if (eqSlot === EquipmentSlot.BOOTS) {
@@ -576,6 +577,21 @@ export class PlayerSystem extends System {
       slot = session.equipment.ring_1 ? EquipmentSlot.RING_2 : EquipmentSlot.RING_1;
     } else if (slot === EquipmentSlot.EARRING_1 || slot === EquipmentSlot.EARRING_2) {
       slot = session.equipment.earring_1 ? EquipmentSlot.EARRING_2 : EquipmentSlot.EARRING_1;
+    }
+
+    // Two-handed weapons occupy both hands: equipping one sends the shield
+    // back to inventory, and a shield can't be equipped while one is wielded.
+    const isTwoHanded = (t: WeaponType | undefined) =>
+      t === WeaponType.TWO_HANDED_SWORD || t === WeaponType.TWO_HANDED_AXE ||
+      t === WeaponType.TWO_HANDED_BLUNT || t === WeaponType.TWO_HANDED_SPEAR;
+    if (slot === EquipmentSlot.SHIELD) {
+      const weapon = session.equipment.weapon;
+      if (weapon) {
+        const weaponDef = this.itemSys.getItemDefinition(weapon.itemId);
+        if (weaponDef && isTwoHanded(weaponDef.weaponType)) return false;
+      }
+    } else if (slot === EquipmentSlot.WEAPON && isTwoHanded(itemDef.weaponType)) {
+      if (session.equipment.shield) this.unequipItem(session, EquipmentSlot.SHIELD);
     }
 
     const currentlyEquipped = session.equipment[slot];

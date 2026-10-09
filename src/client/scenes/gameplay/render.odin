@@ -259,6 +259,11 @@ draw_local_player :: proc() {
 				sys.chara_avatar_draw_held(av, held, p, state.player.yaw, rl.WHITE)
 			}
 		}
+
+		// Worn armor: per-race wearable glbs (RDR-SID + EM part code) —
+		// skinned pieces play the avatar's current clip, helmets ride the
+		// head bone.
+		sys.chara_avatar_draw_armor(av, p, state.player.yaw, rl.WHITE)
 	} else {
 		rl.DrawModelEx(state.scene.model_capsule,
 			{p.x, p.y + 0.9, p.z}, axis, angle, {1, 1, 1}, col)

@@ -6,6 +6,7 @@ var ItemType;
 (function (ItemType) {
     ItemType["WEAPON"] = "weapon";
     ItemType["ARMOR"] = "armor";
+    ItemType["BACK"] = "back";
     ItemType["HELMET"] = "helmet";
     ItemType["BOOTS"] = "boots";
     ItemType["GLOVES"] = "gloves";
@@ -53,6 +54,7 @@ var EquipmentSlot;
 (function (EquipmentSlot) {
     EquipmentSlot["WEAPON"] = "weapon";
     EquipmentSlot["ARMOR"] = "armor";
+    EquipmentSlot["BACK"] = "back";
     EquipmentSlot["HELMET"] = "helmet";
     EquipmentSlot["BOOTS"] = "boots";
     EquipmentSlot["GLOVES"] = "gloves";
@@ -68,6 +70,7 @@ var EquipmentSlot;
 exports.DEFAULT_EQUIPMENT = {
     weapon: null,
     armor: null,
+    back: null,
     helmet: null,
     boots: null,
     gloves: null,

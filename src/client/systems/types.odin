@@ -90,13 +90,17 @@ Player_Stats :: struct {
 
 // ── inventory / equipment (mirrors InventoryItem + Equipment) ─────────────
 
+// Equipment slots, in the inventory menu's display order. The enum value is
+// only an index — the wire identity is the name string (EQUIP_SLOT_NAMES),
+// which must match the server's EquipmentSlot keys exactly.
 EQUIP_SLOT :: enum {
-	WAPON,
-	ARMOR,
 	HELMET,
-	BOOTS,
+	ARMOR,
 	GLOVES,
 	LEGS,
+	BOOTS,
+	BACK,
+	WAPON,
 	SHIELD,
 	EARRING_1,
 	EARRING_2,

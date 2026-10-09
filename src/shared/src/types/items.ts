@@ -1,6 +1,7 @@
 export enum ItemType {
   WEAPON = 'weapon',
   ARMOR = 'armor',
+  BACK = 'back',
   HELMET = 'helmet',
   BOOTS = 'boots',
   GLOVES = 'gloves',
@@ -49,6 +50,7 @@ export enum ItemRarity {
 export enum EquipmentSlot {
   WEAPON = 'weapon',
   ARMOR = 'armor',
+  BACK = 'back',
   HELMET = 'helmet',
   BOOTS = 'boots',
   GLOVES = 'gloves',
@@ -166,6 +168,7 @@ export interface InventoryItem {
 export interface Equipment {
   weapon: InventoryItem | null;
   armor: InventoryItem | null;
+  back: InventoryItem | null;
   helmet: InventoryItem | null;
   boots: InventoryItem | null;
   gloves: InventoryItem | null;
@@ -182,6 +185,7 @@ export interface Equipment {
 export const DEFAULT_EQUIPMENT: Equipment = {
   weapon: null,
   armor: null,
+  back: null,
   helmet: null,
   boots: null,
   gloves: null,

@@ -91,6 +91,7 @@ export interface PlayerSession {
     equipment: {
         weapon: any | null;
         armor: any | null;
+        back: any | null;
         helmet: any | null;
         boots: any | null;
         gloves: any | null;

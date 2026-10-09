@@ -584,6 +584,27 @@ Local_Appearance :: struct {
 	color_i:  int,
 }
 
+// ── worn armor ─────────────────────────────────────────────────────────────
+// Equipped armor renders like a normal MMO: each wearable item ships a glb
+// per race (item/EM_<sid>_<part>_<race>.glb, part from items.odin). Torso/
+// legs/gloves/boots/cloak pieces are skinned to the same 90-joint master
+// skeleton as the characters (identical joint order, verified per race), so
+// they play the avatar's current clip directly. Helmets are rigid single
+// meshes, bone-attached to the head like the held weapon. Like weapons
+// today, only the LOCAL player's armor is drawn — remote players don't
+// broadcast equipment yet.
+Chara_Armor_Layer :: enum u8 {
+	HELMET,
+	TORSO, // the server's armor slot
+	LEGS,
+	GLOVES,
+	BOOTS,
+	BACK, // capes (EM part 12), skinned like the rest
+}
+CHARA_ARMOR_LAYER_COUNT :: len(Chara_Armor_Layer)
+
+CHARA_HEAD_BONE :: "Bip01 Head"
+
 // A per-entity animated clone. It shares the cached Chara_Model's GPU meshes,
 // materials and skeleton definition, but owns its bone-matrix / pose buffers:
 // UpdateModelAnimation writes through the pointers below, so each avatar
@@ -598,6 +619,13 @@ Chara_Avatar :: struct {
 	action_loop: bool,  // loop the action until cleared vs one-shot
 	attack_cycle: int,  // swings played — cycles the family's attack_1/2/3
 	combat_idle:  int,  // weapon drawn idle (xx01) while fighting, -1 = none
+	// worn armor (local player): resolved appearance per layer. Models come
+	// from the session held-model cache and are re-posed every frame with the
+	// avatar's clip (see chara_avatar_update_armor).
+	armor_sids:   [CHARA_ARMOR_LAYER_COUNT]int,        // item.csv RDR-SID, 0 = empty
+	armor_parts:  [CHARA_ARMOR_LAYER_COUNT]int,        // EM part code
+	armor_models: [CHARA_ARMOR_LAYER_COUNT]^Model_Entry,
+	armor_rigid:  [CHARA_ARMOR_LAYER_COUNT]bool,       // helmets: bone-attach draw
 	// pose blending: when the playing clip changes, cross-fade from the pose
 	// actually on screen (applied_*) into the new clip over CHARA_BLEND_TIME
 	applied_clip:  int,  // clip of the last applied pose, -1 = none yet
@@ -901,26 +929,34 @@ chara_avatar_update :: proc(av: ^Chara_Avatar, clip: Chara_Clip, dt: f32, combat
 		blending := av.blend_from >= 0 && av.blend_from != clip_idx
 		if blending {
 			av.blend_t += dt
-			if av.blend_t < CHARA_BLEND_TIME {
-				rl.UpdateModelAnimationEx(av.sub.model,
-					av.cm.anims[av.blend_from], av.blend_frame,
-					anim^, frame, av.blend_t / CHARA_BLEND_TIME)
-			} else {
-				blending = false
-			}
+			if av.blend_t >= CHARA_BLEND_TIME do blending = false
 		}
-		if !blending {
-			av.blend_from = -1
-			rl.UpdateModelAnimation(av.sub.model, anim^, frame)
-		}
+		if !blending do av.blend_from = -1
 		av.applied_clip = clip_idx
 		av.applied_frame = frame
+		chara_apply_current_pose(av, av.sub.model)
 	}
 
 	if !av.measured {
 		av.measured = true
 		b := chara_skin_bounds(av.cm, &av.sub.model)
 		av.lift = -b.min.y * av.scale
+	}
+}
+
+// Replays the avatar's current pose — the exact clip, frame and blend state
+// chara_avatar_update just computed — onto `model`. Used for the body subset
+// and for skinned armor pieces, whose glbs carry the same master skeleton in
+// the same joint order (verified per race).
+chara_apply_current_pose :: proc(av: ^Chara_Avatar, model: rl.Model) {
+	if av == nil || av.cm == nil || av.applied_clip < 0 do return
+	anim := &av.cm.anims[av.applied_clip]
+	if av.blend_from >= 0 && av.blend_from != av.applied_clip && av.blend_t < CHARA_BLEND_TIME {
+		rl.UpdateModelAnimationEx(model,
+			av.cm.anims[av.blend_from], av.blend_frame,
+			anim^, av.applied_frame, av.blend_t / CHARA_BLEND_TIME)
+	} else {
+		rl.UpdateModelAnimation(model, anim^, av.applied_frame)
 	}
 }
 
@@ -1037,5 +1073,80 @@ chara_avatar_draw_held :: proc(
 	for i in 0..<int(entry.model.meshCount) {
 		mat_idx := int(entry.model.meshMaterial[i])
 		rl.DrawMesh(entry.model.meshes[i], entry.model.materials[mat_idx], m)
+	}
+}
+
+// Re-resolves the armor appearance per layer against the inventory's
+// equipment. Cheap per frame (map lookups; the model path is only built on
+// change): equipment swaps re-dress the avatar on the next update.
+chara_avatar_sync_armor :: proc(av: ^Chara_Avatar, inv: ^Inventory) {
+	if av == nil || av.cm == nil do return
+	slots := [CHARA_ARMOR_LAYER_COUNT]EQUIP_SLOT {
+		.HELMET, .ARMOR, .LEGS, .GLOVES, .BOOTS, .BACK,
+	}
+	for layer in 0..<CHARA_ARMOR_LAYER_COUNT {
+		sid, part := 0, 0
+		it := &inv.equipment[int(slots[layer])]
+		if it.item_id_len > 0 {
+			if def, ok := item_def(item_id_string(it)); ok {
+				sid = def.armor_sid
+				part = int(def.armor_part)
+			}
+		}
+		if sid == av.armor_sids[layer] && part == av.armor_parts[layer] do continue
+		av.armor_sids[layer] = sid
+		av.armor_parts[layer] = part
+		av.armor_models[layer] = nil
+		av.armor_rigid[layer] = false
+		if sid > 0 {
+			path := fmt.tprintf("item/EM_%06d_%02d_%s.glb", sid, part, av.cm.id)
+			av.armor_models[layer] = held_model_acquire(path)
+			av.armor_rigid[layer] = part == 1
+			if av.armor_models[layer] != nil {
+				rl.TraceLog(.INFO, "chara: %s armor layer %d ← %s",
+					assets_cstring(av.cm.id), layer, assets_cstring(path))
+			}
+		}
+	}
+}
+
+// Poses every equipped skinned armor piece with the avatar's current clip —
+// one UpdateModelAnimation per piece, after chara_avatar_update. Posing the
+// shared cached model directly is safe today: only the local player wears
+// armor (one pose per model, the monster-model approach).
+chara_avatar_update_armor :: proc(av: ^Chara_Avatar) {
+	if av == nil do return
+	for layer in 0..<CHARA_ARMOR_LAYER_COUNT {
+		if av.armor_rigid[layer] do continue
+		if e := av.armor_models[layer]; e != nil {
+			chara_apply_current_pose(av, e.model)
+		}
+	}
+}
+
+// Draws the equipped armor pieces. Skinned pieces share the body's exact
+// model transform; the rigid helmet composes onto the head bone like the
+// held weapon minus the grip seat (its mesh is authored in bind space).
+chara_avatar_draw_armor :: proc(av: ^Chara_Avatar, position: rl.Vector3, yaw_rad: f32, tint: rl.Color) {
+	if av == nil do return
+	axis, angle := euler_y_to_raylib(yaw_rad)
+	for layer in 0..<CHARA_ARMOR_LAYER_COUNT {
+		e := av.armor_models[layer]
+		if e == nil do continue
+		if av.armor_rigid[layer] {
+			bone, ok := chara_avatar_bone_matrix(av, CHARA_HEAD_BONE)
+			if !ok do continue
+			m := rl.MatrixTranslate(position.x, position.y + av.lift, position.z) *
+				rl.MatrixRotate({0, 1, 0}, yaw_rad + AVATAR_YAW_OFFSET_DEG * 0.017453293)
+			m = m * rl.MatrixScale(av.scale, av.scale, av.scale)
+			m = m * bone
+			for i in 0..<int(e.model.meshCount) {
+				rl.DrawMesh(e.model.meshes[i], e.model.materials[int(e.model.meshMaterial[i])], m)
+			}
+		} else {
+			rl.DrawModelEx(e.model,
+				{position.x, position.y + av.lift, position.z},
+				axis, angle + AVATAR_YAW_OFFSET_DEG, {av.scale, av.scale, av.scale}, tint)
+		}
 	}
 }

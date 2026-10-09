@@ -1091,4 +1091,8 @@ update_local_avatar :: proc(dt: f32) {
 		clip = .WALK
 	}
 	sys.chara_avatar_update(av, clip, dt, state.auto_attack_active)
+	// Armor: re-resolve against equipment, then pose the pieces with the
+	// clip the body just applied (order matters on the change frame).
+	sys.chara_avatar_sync_armor(av, &state.player.inventory)
+	sys.chara_avatar_update_armor(av)
 }

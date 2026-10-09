@@ -986,7 +986,7 @@ refresh_inventory_menu :: proc() {
 		es := &inv.equipment[int(slot)]
 		if es.item_id_len == 0 do continue
 		any_eq = true
-		label := fmt.tprintf("%-9s %s%s  [remove]", sys.EQUIP_SLOT_NAMES[int(slot)], sys.item_name(sys.item_id_string(es)), enh_suffix(es))
+		label := fmt.tprintf("%-9s %s%s  [remove]", sys.EQUIP_SLOT_LABELS[int(slot)], sys.item_name(sys.item_id_string(es)), enh_suffix(es))
 		ui.menu_add_button_id(m, label, INV_UNEQUIP_BASE + int(slot))
 	}
 	if !any_eq do ui.menu_add_label(m, "(nothing equipped)")
