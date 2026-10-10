@@ -242,13 +242,15 @@ draw_ground_reticle_hint :: proc() {
 draw_local_player :: proc() {
 	p := state.player.position
 	axis, angle := sys.euler_y_to_raylib(state.player.yaw)
-	col := rl.Color{100, 180, 255, 255}
+	// Untinted like every other entity — the old light-blue wash darkened
+	// skin/armor and made the greave straps read as black bands.
+	col := rl.WHITE
 	if state.player.is_resting do col = {120, 120, 180, 255}
 	if state.player.is_dead do col = {120, 120, 120, 255}
 	if av := state.local_avatar; av != nil {
-		rl.DrawModelEx(av.sub.model,
-			{p.x, p.y + av.lift, p.z},
-			axis, angle + sys.AVATAR_YAW_OFFSET_DEG, {av.scale, av.scale, av.scale}, col)
+		// body drawn mesh-by-mesh: regions the equipped armor replaces are
+		// swapped out (see chara_avatar_sync_armor)
+		sys.chara_avatar_draw_body(av, p, state.player.yaw, col)
 
 		// Held weapon: the equipped item's glb (item.csv RDR-SID →
 		// item/EM_*.glb) attached to the rig's right-hand bone, so it

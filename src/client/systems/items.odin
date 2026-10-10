@@ -65,6 +65,12 @@ Item_Def :: struct {
 	// item/EM_<sid>_<part>_<chara model>.glb. 0/0 = no wearable model.
 	armor_sid:       int,
 	armor_part:      u8,
+	// Helmet HAIR override, item.csv cols 39..46, one entry per race
+	// (viewer decode 2026-09-20: 11→0 12→1 21→2 22→3 31→4 42→5 51→6 63→7).
+	// Equipping the helmet REPLACES the hair with that style variant
+	// (0 = keep the full hair, 1 = short helmet-fit hair, 2 = special, e.g.
+	// bunny-ear hair). Non-helmet rows leave it zeroed.
+	hair_override:   [8]i8,
 }
 
 item_defs: map[string]Item_Def
@@ -291,6 +297,11 @@ load_item_csv :: proc() {
 			model = model,
 			armor_sid = armor_sid,
 			armor_part = armor_part,
+		}
+		// Per-race helmet hair override (see Item_Def.hair_override).
+		for r in 0..<8 {
+			v, ok := strconv.parse_int(csv_field_at(line, 39 + r), 10)
+			if ok do def.hair_override[r] = i8(v)
 		}
 		key := strings.clone(id_str)
 		item_defs[key] = def

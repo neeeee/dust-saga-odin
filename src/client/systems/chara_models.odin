@@ -58,6 +58,8 @@ Chara_Model :: struct {
 	entry:       ^Model_Entry, // GPU model (assets cache, refcounted)
 	mesh_map_ok: bool,         // false => node->mesh mapping unusable, draw all
 	is_variant:  []bool,       // per raylib mesh: belongs to a face/hair node?
+	mesh_region: []u8,         // per raylib mesh: Body_Region of the default-
+	                           // outfit piece it holds (0 = none/face/hair)
 	bounds:      rl.BoundingBox, // bind-pose spatial extent (camera framing)
 	anims:       [^]rl.ModelAnimation,
 	anim_count:  int,
@@ -174,6 +176,22 @@ chara_model_load :: proc(id: string) -> ^Chara_Model {
 
 	if cm.mesh_map_ok {
 		is_variant := make([]bool, mesh_count)
+
+		// Body-region map: the default outfit ships as region pieces
+		// (body_02 top+arms, body_03 leggings, body_04 hip band, body_05
+		// feet — same convention on all 8 races; enkidu splits each across
+		// two nodes, hence prefix matching). Equipment REPLACES these
+		// (see chara_avatar_sync_armor).
+		cm.mesh_region = make([]u8, mesh_count) // Body_Region.None == 0
+		for name, indices in mesh_map.by_node {
+			region := chara_body_region_of(name)
+			if region == .None do continue
+			for mi in indices {
+				if mi >= 0 && int(mi) < int(mesh_count) {
+					cm.mesh_region[mi] = u8(region)
+				}
+			}
+		}
 
 		// Resolve faces: keep only options whose node maps to real meshes, so
 		// cm.faces and cm.face_meshes stay paired.
@@ -422,6 +440,7 @@ chara_model_free :: proc(cm: ^Chara_Model) {
 	}
 	delete(cm.hair_tex)
 	delete(cm.is_variant)
+	delete(cm.mesh_region)
 	// Keys are strings.clone'd at insertion (chara_code_of returns a view
 	// into raylib's anim-name buffer — freeing that view corrupts the heap).
 	for key in cm.clips {
@@ -443,7 +462,35 @@ chara_model_free :: proc(cm: ^Chara_Model) {
 // materials cloned for the chosen color. Free with chara_subset_free.
 Chara_Subset :: struct {
 	model:     rl.Model,
+	base_mesh: [dynamic]int,          // per sub mesh: base model mesh index
 	hair_maps: [dynamic][]rl.MaterialMap, // freshly allocated material maps
+}
+
+// Default-outfit regions a body mesh can cover, numbered to MATCH the EM
+// part codes: equipment part 02 replaces body_02, 03→body_03, 04→body_04,
+// 05→body_05 — each piece carries its own version of that region (the torso
+// ships sleeved arms, the gloves ship hands, …), so equipping one hides the
+// matching body mesh instead of drawing both (the shipped game swaps, not
+// wraps — double arms under the torso's own sleeves read as clipping).
+Body_Region :: enum u8 {
+	None,
+	Torso, // body_02: chest + arms
+	Legs,  // body_03: leggings
+	Hands, // body_04: hands + forearm bracers
+	Feet,  // body_05: sandals/greaves
+	Hair,  // CM_*_11_*: hair variants (helmets replace these, see sync_armor)
+}
+
+chara_body_region_of :: proc(name: string) -> Body_Region {
+	switch {
+	case strings.has_prefix(name, "body_02"): return .Torso
+	case strings.has_prefix(name, "body_03"): return .Legs
+	case strings.has_prefix(name, "body_04"): return .Hands
+	case strings.has_prefix(name, "body_05"): return .Feet
+	case strings.has_prefix(name, "CM_") && strings.contains(name, "_11_"):
+		return .Hair // creator.json: _11_* are the hair style nodes
+	}
+	return .None
 }
 
 // Builds a shallow model sharing the base model's GPU data. face_i/hair_i are
@@ -481,6 +528,7 @@ chara_subset_build :: proc(cm: ^Chara_Model, face_i, hair_i, color_i: int) -> Ch
 	for j in 0..<mesh_n {
 		sub.model.meshes[j] = base.meshes[keep[j]]
 		sub.model.meshMaterial[j] = base.meshMaterial[keep[j]]
+		append(&sub.base_mesh, keep[j])
 	}
 	sub.model.meshCount = c.int(mesh_n)
 
@@ -525,6 +573,7 @@ chara_subset_free :: proc(sub: ^Chara_Subset) {
 	if sub.model.meshes != nil do free(sub.model.meshes)
 	if sub.model.meshMaterial != nil do free(sub.model.meshMaterial)
 	if sub.model.materials != nil do free(sub.model.materials)
+	delete(sub.base_mesh)
 	for m in sub.hair_maps do delete(m)
 	delete(sub.hair_maps)
 	sub.model = {}
@@ -631,6 +680,9 @@ Chara_Avatar :: struct {
 	armor_parts:  [CHARA_ARMOR_LAYER_COUNT]int,        // EM part code
 	armor_models: [CHARA_ARMOR_LAYER_COUNT]^Model_Entry,
 	armor_rigid:  [CHARA_ARMOR_LAYER_COUNT]bool,       // helmets: bone-attach draw
+	// per sub mesh: the equipped armor replaces this body region (swapped out,
+	// not wrapped over) — recomputed by chara_avatar_sync_armor
+	body_hidden: [dynamic]bool,
 	// pose blending: when the playing clip changes, cross-fade from the pose
 	// actually on screen (applied_*) into the new clip over CHARA_BLEND_TIME
 	applied_clip:  int,  // clip of the last applied pose, -1 = none yet
@@ -696,6 +748,7 @@ chara_avatar_create :: proc(cm: ^Chara_Model, face_i, hair_i, color_i: int) -> ^
 	av.combat_idle = -1
 	av.applied_clip = -1
 	av.blend_from = -1
+	for i in 0..<int(av.sub.model.meshCount) do append(&av.body_hidden, false)
 	return av
 }
 
@@ -871,6 +924,7 @@ chara_avatar_destroy :: proc(av: ^Chara_Avatar) {
 	delete(av.anim_vertices)
 	for arr in av.anim_normals do delete(arr)
 	delete(av.anim_normals)
+	delete(av.body_hidden)
 	chara_subset_free(&av.sub)
 	chara_model_release(av.cm)
 	free(av)
@@ -1081,6 +1135,30 @@ chara_avatar_draw_held :: proc(
 	}
 }
 
+// Which default-outfit region each armor layer replaces when equipped — 1:1
+// with the EM part codes (torso→body_02, legs→body_03, gloves→body_04 hands,
+// boots→body_05). HELMET and BACK hide nothing here; the helmet's hair
+// replacement is handled separately in chara_avatar_sync_armor.
+chara_layer_body_region_mask :: proc(layer: Chara_Armor_Layer) -> u8 {
+	#partial switch layer {
+	case .TORSO: return 1 << u8(Body_Region.Torso)
+	case .LEGS:  return 1 << u8(Body_Region.Legs)
+	case .GLOVES: return 1 << u8(Body_Region.Hands)
+	case .BOOTS: return 1 << u8(Body_Region.Feet)
+	}
+	return 0
+}
+
+// Race index for the item.csv per-race override columns (viewer decode):
+// 11→0 12→1 21→2 22→3 31→4 42→5 51→6 63→7.
+chara_race_index :: proc(id: string) -> i8 {
+	if len(id) < 2 do return 0
+	rc := (int(id[0] - '0')) * 10 + int(id[1] - '0')
+	race, sex := rc / 10, rc % 10
+	if race <= 2 do return i8((race - 1) * 2 + (sex - 1))
+	return i8(race + 1)
+}
+
 // Re-resolves the armor appearance per layer against the inventory's
 // equipment. Cheap per frame (map lookups; the model path is only built on
 // change): equipment swaps re-dress the avatar on the next update.
@@ -1113,6 +1191,46 @@ chara_avatar_sync_armor :: proc(av: ^Chara_Avatar, inv: ^Inventory) {
 			}
 		}
 	}
+
+	// Body-region replacement: hide the default-outfit meshes that equipped
+	// layers replace (the pieces carry their own arms/legs — drawing both is
+	// the double-limb clipping).
+	hide_hair := false
+	if av.armor_models[int(Chara_Armor_Layer.HELMET)] != nil {
+		it := &inv.equipment[int(EQUIP_SLOT.HELMET)]
+		if it.item_id_len > 0 {
+			if def, ok := item_def(item_id_string(it)); ok {
+				// Helmet hair override (item.csv cols 39..46): the helmet
+				// REPLACES the hair with a helmet-fit style. We bake only the
+				// full (variant-0) hair, so a nonzero override hides the hair
+				// instead of letting it clip through the helmet.
+				hide_hair = def.hair_override[chara_race_index(av.cm.id)] != 0
+			}
+		}
+	}
+	chara_avatar_refresh_body_hidden(av, hide_hair)
+}
+
+// Recomputes av.body_hidden from the currently resolved armor layers.
+chara_avatar_refresh_body_hidden :: proc(av: ^Chara_Avatar, hide_hair: bool) {
+	if av == nil || av.cm == nil do return
+	if len(av.body_hidden) != int(av.sub.model.meshCount) do return
+	hide: u8 = 0
+	if hide_hair do hide |= 1 << u8(Body_Region.Hair)
+	for layer in 0..<CHARA_ARMOR_LAYER_COUNT {
+		if av.armor_models[layer] != nil {
+			hide |= chara_layer_body_region_mask(Chara_Armor_Layer(layer))
+		}
+	}
+	for i in 0..<len(av.body_hidden) {
+		region := Body_Region.None
+		bi := av.sub.base_mesh[i]
+		if bi >= 0 && int(bi) < len(av.cm.mesh_region) {
+			region = Body_Region(av.cm.mesh_region[bi])
+		}
+		av.body_hidden[i] = region != .None &&
+			(hide & (1 << u8(region))) != 0
+	}
 }
 
 // Poses every equipped skinned armor piece with the avatar's current clip —
@@ -1137,10 +1255,14 @@ chara_avatar_update_armor :: proc(av: ^Chara_Avatar) {
 			if b >= len(remap) do break
 			ci := remap[b]
 			if ci < 0 || ci >= n_cur do continue // defense: bone stays identity
-			// Same delta form raylib computes in UpdateModelAnimation — but
-			// the current pose comes from the WEARER's rig, by bone name.
-			m.boneMatrices[b] = rl.MatrixInvert(chara_pose_matrix(m.skeleton.bindPose[b])) *
-				chara_pose_matrix(base.currentPose[ci])
+			// Same delta form raylib computes in UpdateModelAnimation —
+			// boneMatrices = pose·bind⁻¹ (pose FIRST: Odin `*` mirrors
+			// raylib's MatrixMultiply argument order) — but the current pose
+			// comes from the WEARER's rig, by bone name. bind⁻¹·pose instead
+			// flings every vertex whose pose deviates from bind (arms → the
+			// horizontal pauldron wings).
+			m.boneMatrices[b] = chara_pose_matrix(base.currentPose[ci]) *
+				rl.MatrixInvert(chara_pose_matrix(m.skeleton.bindPose[b]))
 		}
 		chara_skin_model_cpu(m)
 	}
@@ -1238,6 +1360,32 @@ chara_skin_model_cpu :: proc(model: ^rl.Model) {
 				rlgl.UpdateVertexBuffer(mesh.vboId[2], rawptr(mesh.animNormals), mesh.vertexCount * 3 * 4, 0)
 			}
 		}
+	}
+}
+
+// Draws the avatar's body subset mesh by mesh, skipping the body regions the
+// equipped armor replaces (av.body_hidden — see chara_avatar_sync_armor).
+// Composes the exact transform DrawModelEx would (T·R(yaw+offset)·S, column
+// convention) and mirrors its tint handling.
+chara_avatar_draw_body :: proc(av: ^Chara_Avatar, position: rl.Vector3, yaw_rad: f32, tint: rl.Color) {
+	if av == nil do return
+	axis, angle := euler_y_to_raylib(yaw_rad)
+	m := rl.MatrixTranslate(position.x, position.y + av.lift, position.z) *
+		rl.MatrixRotate(axis, (angle + AVATAR_YAW_OFFSET_DEG) * 0.017453293) *
+		rl.MatrixScale(av.scale, av.scale, av.scale)
+	for i in 0..<int(av.sub.model.meshCount) {
+		if i < len(av.body_hidden) && av.body_hidden[i] do continue
+		mat := &av.sub.model.materials[av.sub.model.meshMaterial[i]]
+		albedo := int(rl.MaterialMapIndex.ALBEDO)
+		diffuse := mat.maps[albedo].color
+		mat.maps[albedo].color = rl.Color{
+			u8((int(diffuse.r) * int(tint.r)) / 255),
+			u8((int(diffuse.g) * int(tint.g)) / 255),
+			u8((int(diffuse.b) * int(tint.b)) / 255),
+			u8((int(diffuse.a) * int(tint.a)) / 255),
+		}
+		rl.DrawMesh(av.sub.model.meshes[i], mat^, m)
+		mat.maps[albedo].color = diffuse
 	}
 }
 

@@ -78,6 +78,10 @@ main :: proc() {
 	armor_repro("021", "item/EM_013211_03_021.glb")
 	armor_repro("022", "item/EM_012211_02_022.glb")
 
+	// visual worn-armor shots (front/side, idle + run) via the game path
+	armor_shot()
+	// torso_draw_probe() // raw-draw bisect for the 2-prim torso glb (old-DLL issue)
+
 	// ── character model ────────────────────────────────────────────────────
 	fmt.eprintln("loading glb...")
 	model := rl.LoadModel("assets/chara/chara_011.glb")

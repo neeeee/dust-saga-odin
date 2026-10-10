@@ -27,3 +27,6 @@ client.exe
 # build artifacts / shipped binaries
 *.exe
 src/client/raylib.dll
+
+# armor verification tool output
+src/client/armor_shot_*.png
