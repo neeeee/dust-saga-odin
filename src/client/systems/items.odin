@@ -71,6 +71,11 @@ Item_Def :: struct {
 	// (0 = keep the full hair, 1 = short helmet-fit hair, 2 = special, e.g.
 	// bunny-ear hair). Non-helmet rows leave it zeroed.
 	hair_override:   [8]i8,
+	// Per-race held-model scale in percent (item.csv cols 23..30, human m/f,
+	// elf m/f, dwarf, myrine, enkidu, lapin) — the lapin wand ships at 70%,
+	// the enkidu staff at 200%. Indexed by chara_race_index; 0 = unparsed
+	// (hand-written defs → treated as 100).
+	race_scale:      [8]u16,
 }
 
 item_defs: map[string]Item_Def
@@ -155,8 +160,10 @@ shipped_weapon_kind :: proc(type_str: string) -> (Weapon_Kind, bool) {
 	case "2H_SWORD": return .TWO_HANDED_SWORD, true
 	case "1H_AXE": return .AXE, true
 	case "2H_AXE": return .TWO_HANDED_AXE, true
-	case "1H_BLUNT_WEAPON", "1H_TRUMP_WEAPON": return .BLUNT, true
-	case "2H_BLUNT_WEAPON", "2H_TRUMP_WEAPON": return .TWO_HANDED_BLUNT, true
+	case "1H_BLUNT_WEAPON": return .BLUNT, true
+	case "1H_TRUMP_WEAPON": return .DAGGER, true          // daggers ship as trump weapons
+	case "2H_BLUNT_WEAPON": return .TWO_HANDED_BLUNT, true
+	case "2H_TRUMP_WEAPON": return .KNUCKLES, true         // claws ship as 2h trump weapons
 	case "BOW": return .BOW, true
 	case "CROSSBOW": return .CROSSBOW, true
 	case "STAFF": return .STAFF, true
@@ -303,6 +310,14 @@ load_item_csv :: proc() {
 			v, ok := strconv.parse_int(csv_field_at(line, 39 + r), 10)
 			if ok do def.hair_override[r] = i8(v)
 		}
+		// Per-race held-model scale (cols 23..30); empty → 100.
+		for r in 0..<8 {
+			if v, ok := strconv.parse_int(csv_field_at(line, 23 + r), 10); ok && v > 0 {
+				def.race_scale[r] = u16(v)
+			} else {
+				def.race_scale[r] = 100
+			}
+		}
 		key := strings.clone(id_str)
 		item_defs[key] = def
 		count += 1
@@ -330,6 +345,16 @@ held_model_for_item :: proc(item_id: string) -> ^Model_Entry {
 	def, ok := item_def(item_id)
 	if !ok do return nil
 	return held_model_acquire(def.model)
+}
+
+// Held-model scale multiplier for `race_id` (chara model code) — the
+// item.csv per-race percent over 100 (lapin wand 0.70, enkidu staff 2.0).
+item_race_scale :: proc(def: Item_Def, race_id: string) -> f32 {
+	idx := chara_race_index(race_id)
+	if idx < 0 || idx >= 8 do return 1.0
+	pct := def.race_scale[idx]
+	if pct == 0 do pct = 100
+	return f32(pct) / 100.0
 }
 
 // Model path for a wearable item's armor appearance on `race_id` (the chara

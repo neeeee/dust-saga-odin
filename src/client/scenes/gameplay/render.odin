@@ -253,12 +253,19 @@ draw_local_player :: proc() {
 		sys.chara_avatar_draw_body(av, p, state.player.yaw, col)
 
 		// Held weapon: the equipped item's glb (item.csv RDR-SID →
-		// item/EM_*.glb) attached to the rig's right-hand bone, so it
-		// tracks swings. Remote players don't broadcast equipment yet.
+		// item/EM_*.glb). Drawn: on the right-hand grip, tracking swings;
+		// sheathed: on the class carry socket (hip for 1h, back for
+		// 2h/ranged). Scaled by the item.csv per-race percent. Remote
+		// players don't broadcast equipment yet.
 		w := &state.player.inventory.equipment[sys.EQUIP_SLOT.WAPON]
 		if w.item_id_len > 0 {
 			if held := sys.held_model_for_item(sys.item_id_string(w)); held != nil {
-				sys.chara_avatar_draw_held(av, held, p, state.player.yaw, rl.WHITE)
+				scale_mul := f32(1.0)
+				if def, ok := sys.item_def(sys.item_id_string(w)); ok {
+					scale_mul = sys.item_race_scale(def, av.cm.id)
+				}
+				sys.chara_avatar_draw_held(av, held, p, state.player.yaw, rl.WHITE,
+					state.weapon_drawn, scale_mul)
 			}
 		}
 

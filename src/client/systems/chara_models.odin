@@ -673,6 +673,7 @@ Chara_Avatar :: struct {
 	action_loop: bool,  // loop the action until cleared vs one-shot
 	attack_cycle: int,  // swings played — cycles the family's attack_1/2/3
 	combat_idle:  int,  // weapon drawn idle (xx01) while fighting, -1 = none
+	weapon_kind:  Weapon_Kind, // equipped family — drives the carry socket
 	// worn armor (local player): resolved appearance per layer. Models come
 	// from the session held-model cache and are re-posed every frame with the
 	// avatar's clip (see chara_avatar_update_armor).
@@ -787,8 +788,12 @@ chara_weapon_family :: proc(kind: Weapon_Kind) -> (f: Chara_Weapon_Family) {
 	case .TWO_HANDED_SWORD: return {idle = "1401", a1 = "1455", a2 = "1456", a3 = "1457"}
 	case .TWO_HANDED_AXE:   return {idle = "1501", a1 = "1555", a2 = "1556", a3 = "1557"}
 	case .TWO_HANDED_SPEAR: return {idle = "1601", a1 = "1655", a2 = "1656", a3 = "1657"}
-	case .STAFF, .TWO_HANDED_BLUNT:
-	                        return {idle = "1701", a1 = "1755", a2 = "1756", a3 = "1757",
+	case .TWO_HANDED_BLUNT: // 2h hammer: its own family's stance/swings — NOT a
+	                        // rod — but acolytes cast spells with hammers, so
+	                        // casting rides the 2h castable stances (1771-73)
+	                        return {idle = "1501", a1 = "1555", a2 = "1556", a3 = "1557",
+	                                cast_start = "1771", cast_finish = "1772", cast_finish_attack = "1773"}
+	case .STAFF:            return {idle = "1701", a1 = "1755", a2 = "1756", a3 = "1757",
 	                                cast_start = "1771", cast_finish = "1772", cast_finish_attack = "1773"}
 	case .BOW:              return {idle = "1801", a1 = "1855", a2 = "1856", a3 = "1857"}
 	case .CROSSBOW:         return {idle = "1901", a1 = "1955", a2 = "1956", a3 = "1957"}
@@ -865,13 +870,15 @@ chara_avatar_play_action_index :: proc(av: ^Chara_Avatar, clip_idx: int, loop: b
 	av.current_clip = -1 // movement clip restarts fresh after the action
 }
 
-// Tracks the equipped weapon's animation family so combat idles use the
-// family drawn idle (xx01) instead of the neutral stance. Cheap enough to
-// call every frame (one map lookup) — equipment swaps then apply instantly.
+// Tracks the equipped weapon's animation family: combat idles use the family
+// drawn idle (xx01) instead of the neutral stance, and the carry sockets in
+// chara_avatar_draw_held pick by kind. Cheap enough to call every frame (one
+// map lookup) — equipment swaps then apply instantly.
 chara_avatar_set_weapon_kind :: proc(av: ^Chara_Avatar, kind: Weapon_Kind) {
 	if av == nil do return
 	fam := chara_weapon_family(kind)
 	av.combat_idle = chara_clip(av.cm, fam.idle)
+	av.weapon_kind = kind
 }
 
 chara_avatar_stop_action :: proc(av: ^Chara_Avatar) {
@@ -1106,33 +1113,203 @@ chara_grip_matrix :: proc "contextless" (left: bool) -> rl.Matrix {
 	return rl.MatrixTranslate(t.x, t.y, t.z) * rl.QuaternionToMatrix(q)
 }
 
-// Draw a held-item model (weapons — see items.odin held_model_for_item)
-// attached to the avatar's right-hand bone. The world matrix mirrors what
-// DrawModelEx gives the avatar (avatar scale, yaw + the +Z-pipeline 180°
-// offset, position+lift) composed around the bone's model-space attach
-// matrix and the N52 grip seat, column-vector style: (T·R·S·bone·grip)·v —
-// the grip applies first, the way the engine bolts items onto N-bones.
+// Drawn-grip seat translations per stance (right hand). The rotation is the
+// N52 socket's (CHARA_GRIP_R_Q). The base translation puts the weapon's shaft
+// axis through the FIST center (wrist + knuckle centroid — solved from the
+// drawn idles; the same value falls out for every class). On top of that each
+// stance slides the weapon along its own shaft axis to match the shipped
+// game's grip point, measured against annotated screenshots: 2h weapons sat
+// ~0.19 too far toward the head (butt poking out the back), 1h wands ~0.10
+// too far toward the butt (riding high above the fist).
+CHARA_GRIP_2H_T :: rl.Vector3{-0.05570, 0.18736, -0.00017}
+CHARA_GRIP_1H_T :: rl.Vector3{-0.04973, -0.10244, 0.00830}
+// Spears rest on the left hand when drawn — solved from the 2h_spear drawn
+// idle against both hands (the generic 2h seat leaves a 6cm gap there).
+CHARA_GRIP_SPEAR_T :: rl.Vector3{0.03198, 0.00163, 0.04010}
+
+// Seat translation for a drawn weapon of `kind`. Bows and worn claws keep the
+// raw N52 offset (no measured correction for bows yet).
+chara_drawn_grip_t :: proc(kind: Weapon_Kind) -> rl.Vector3 {
+	if kind == .TWO_HANDED_SPEAR do return CHARA_GRIP_SPEAR_T
+	stance := chara_held_stance(kind)
+	if stance == .HIP do return CHARA_GRIP_1H_T
+	if stance == .BACK do return CHARA_GRIP_2H_T
+	return CHARA_GRIP_R_T
+}
+
+// ── sheathed carry ────────────────────────────────────────────────────────
+// Where a weapon rides when it is not drawn. The engine's carry sockets are
+// N-bones that ship inside the ARMOR glbs' master skeletons (111 bones vs the
+// character's 90), all hanging off "Bip01": N22 = left hip (1h weapons),
+// N35 = lower-back diagonal (2h melee/staves), N36 = upper back (bows). Each
+// seat below is R = socket bind world · "Bip01" bind world⁻¹, measured from
+// EM_012014_02_011.glb's bind pose — already in glTF space, so it composes
+// directly with the chara rig's animated "Bip01" pose.
+Chara_Held_Stance :: enum u8 {
+	HANDS,    // always wielded (claws/knuckles — worn, not carried)
+	HIP,      // sheathed on the left hip (1h weapons)
+	BACK,     // sheathed diagonally on the back (2h weapons, staves)
+	BACK_BOW, // sheathed diagonally, higher mount (bows)
+	DUAL_HIP, // claws — one on each hip when sheathed
+}
+
+// Which carry the weapon class uses. 1h weapons ride the left hip, 2h weapons
+// and staves the back, bows/crossbows the upper-back mount; claws stay on the
+// fists in both stances.
+chara_held_stance :: proc(kind: Weapon_Kind) -> Chara_Held_Stance {
+	#partial switch kind {
+	case .KNUCKLES: return .DUAL_HIP
+	case .TWO_HANDED_SWORD, .TWO_HANDED_AXE, .TWO_HANDED_BLUNT, .STAFF, .TWO_HANDED_SPEAR:
+	                return .BACK
+	case .BOW:      return .BACK_BOW
+	case .CROSSBOW: return .BACK_BOW // seat overridden to CHARA_SOCKET_CROSSBOW
+	case:           return .HIP
+	}
+}
+
+Chara_Socket_Seat :: struct {
+	parent: string, // chara bone the socket hangs from ("Bip01")
+	t:      rl.Vector3,
+	q:      rl.Quaternion,
+}
+
+// Sheath seats: R = socket bind world · "Bip01" bind world⁻¹, measured from
+// the armor skeletons' N-bones (N22 left hip, N35 back, N36 upper back) —
+// this exact triple is the known-good set (wand on hip verified in-game).
+// 1h weapons rest against the left side (z 0.377 floated at arm's length).
+// HIP_R is its left-right mirror for dual-worn claws (derivation: the Bip01
+// bind rotation maps a local-z flip to a model-x flip, so t' = (x, y, -z)
+// and q' = (-qx, -qy, +qz, qw)).
+CHARA_SOCKET_HIP      :: Chara_Socket_Seat{"Bip01", rl.Vector3{0.10000, 0.08000, -0.10000},  rl.Quaternion(quaternion(x = 0.04456, y = 0.91330, z = 0.39125,  w = -0.10401))}
+CHARA_SOCKET_BACK     :: Chara_Socket_Seat{"Bip01", rl.Vector3{0.32243, 0.05753, -0.02948},  rl.Quaternion(quaternion(x = 0.58876, y = 0.60267, z = -0.30903, w = 0.44120))}
+CHARA_SOCKET_BACK_BOW :: Chara_Socket_Seat{"Bip01", rl.Vector3{0.21956, 0.27277, 0.08754},   rl.Quaternion(quaternion(x = -0.67491, y = 0.56950, z = 0.31770, w = 0.34529))}
+// 1h weapons ride the back as a near-vertical shaft hugging the spine
+// (SHEATHED 1H REFERENCE): handle up behind the right shoulder, head down at
+// the right thigh. Solved offline against the Bip01 idle frame (raw model
+// space faces +z; see tools/seats_probe.odin) — NOT an N-socket measurement.
+CHARA_SOCKET_BACK_1H  :: Chara_Socket_Seat{"Bip01", rl.Vector3{0.20626, 0.19618, -0.01196},  rl.Quaternion(quaternion(x = -0.52208, y = 0.48704, z = 0.42855, w = 0.55369))}
+// Crossbow: diagonal across the back, butt (item +Z) at the left hip, prod
+// (item -Z) up behind the right shoulder, limbs level (CROSSBOW REFERENCE).
+// Rendered WITHOUT the end-for-end flip.
+CHARA_SOCKET_CROSSBOW  :: Chara_Socket_Seat{"Bip01", rl.Vector3{0.10372, -0.01382, 0.03586}, rl.Quaternion(quaternion(x = 0.48073, y = 0.18492, z = -0.47469, w = 0.71370))}
+
+// The sheath seat for a weapon kind (stance defaults + per-kind overrides).
+chara_sheath_seat :: proc(kind: Weapon_Kind) -> Chara_Socket_Seat {
+	stance := chara_held_stance(kind)
+	seat := CHARA_SOCKET_BACK_1H // 1h weapons: vertical shaft on the back
+	if stance == .DUAL_HIP do seat = CHARA_SOCKET_HIP // claws: one on each hip
+	if stance == .BACK do seat = CHARA_SOCKET_BACK
+	if stance == .BACK_BOW do seat = CHARA_SOCKET_BACK_BOW
+	if kind == .CROSSBOW do seat = CHARA_SOCKET_CROSSBOW
+	return seat
+}
+
+// Mirrors a seat across the character's left-right plane (claws: left hip
+// socket -> right hip socket).
+chara_mirror_seat :: proc "contextless" (seat: Chara_Socket_Seat) -> Chara_Socket_Seat {
+	return {seat.parent, {seat.t.x, seat.t.y, -seat.t.z}, rl.Quaternion(quaternion(x = -seat.q.x, y = -seat.q.y, z = seat.q.z, w = seat.q.w))}
+}
+
+// Tuning hooks for tools/sheath_tune.odin: when enabled, chara_avatar_draw_held
+// uses these instead of the baked seats. Inert outside the tuner.
+chara_debug_sheath_seat:      rl.Quaternion // full seat orientation
+chara_debug_sheath_seat_t:    rl.Vector3    // seat translation
+chara_debug_sheath_on:        bool
+chara_debug_drawn_t:          rl.Vector3
+chara_debug_drawn_on:         bool
+
+// World matrix of a carry socket on the avatar's current pose.
+chara_avatar_socket_matrix :: proc(av: ^Chara_Avatar, seat: Chara_Socket_Seat) -> (rl.Matrix, bool) {
+	bip, ok := chara_avatar_bone_matrix(av, seat.parent)
+	if !ok do return rl.Matrix(1), false
+	return bip * (rl.MatrixTranslate(seat.t.x, seat.t.y, seat.t.z) * rl.QuaternionToMatrix(seat.q)), true
+}
+
+// Draw the held-item model (weapons — see items.odin held_model_for_item).
+// Drawn: bolted onto the right-hand grip. Sheathed (`drawn = false`): bolted
+// onto the weapon class's carry socket — hip for 1h, back for 2h/ranged;
+// claws (HANDS stance) stay on the fists either way. `scale_mul` is the
+// item.csv per-race scale (lapin wand 0.7, enkidu staff 2.0). The world
+// matrix mirrors what DrawModelEx gives the avatar (avatar scale, yaw + the
+// +Z-pipeline 180° offset, position+lift) composed around the attach matrix,
+// column-vector style: (T·R·S·attach)·v — attach applies first, the way the
+// engine bolts items onto N-bones.
+// Top-of-model world transform for a held model: position+lift, yaw + the
+// pipeline's 180° offset, avatar scale * item scale.
+chara_held_base_matrix :: proc(
+	av:       ^Chara_Avatar,
+	position: rl.Vector3,
+	yaw_rad:  f32,
+	scale_mul: f32,
+) -> rl.Matrix {
+	m := rl.MatrixTranslate(position.x, position.y + av.lift, position.z) *
+		rl.MatrixRotate({0, 1, 0}, yaw_rad + AVATAR_YAW_OFFSET_DEG * 0.017453293)
+	s := av.scale * scale_mul
+	return m * rl.MatrixScale(s, s, s)
+}
+
+draw_held_meshes :: proc(entry: ^Model_Entry, m: rl.Matrix) {
+	for i in 0..<int(entry.model.meshCount) {
+		mat_idx := int(entry.model.meshMaterial[i])
+		rl.DrawMesh(entry.model.meshes[i], entry.model.materials[mat_idx], m)
+	}
+}
+
 chara_avatar_draw_held :: proc(
 	av:        ^Chara_Avatar,
 	entry:     ^Model_Entry,
 	position:  rl.Vector3,
 	yaw_rad:   f32,
 	tint:      rl.Color,
+	drawn:     bool,
+	scale_mul: f32,
 ) {
 	if av == nil || entry == nil do return
-	bone, ok := chara_avatar_bone_matrix(av, CHARA_HAND_BONE)
-	if !ok do return
 
-	m := rl.MatrixTranslate(position.x, position.y + av.lift, position.z) *
-		rl.MatrixRotate({0, 1, 0}, yaw_rad + AVATAR_YAW_OFFSET_DEG * 0.017453293)
-	m = m * rl.MatrixScale(av.scale, av.scale, av.scale)
-	m = m * bone
-	m = m * chara_grip_matrix(false)
+	m := chara_held_base_matrix(av, position, yaw_rad, scale_mul)
 
-	for i in 0..<int(entry.model.meshCount) {
-		mat_idx := int(entry.model.meshMaterial[i])
-		rl.DrawMesh(entry.model.meshes[i], entry.model.materials[mat_idx], m)
+	stance := chara_held_stance(av.weapon_kind)
+	use_hand := drawn || stance == .HANDS
+	attach: rl.Matrix
+	ok := false
+	if use_hand {
+		attach, ok = chara_avatar_bone_matrix(av, CHARA_HAND_BONE)
+		if ok {
+			gt := CHARA_GRIP_R_T
+			if drawn {
+				gt = chara_drawn_grip_t(av.weapon_kind)
+				if chara_debug_drawn_on do gt = chara_debug_drawn_t
+			}
+			attach = attach * (rl.MatrixTranslate(gt.x, gt.y, gt.z) * rl.QuaternionToMatrix(CHARA_GRIP_R_Q))
+		}
+	} else {
+		seat := chara_sheath_seat(av.weapon_kind)
+		if chara_debug_sheath_on {
+			seat.t = chara_debug_sheath_seat_t
+			seat.q = chara_debug_sheath_seat
+		}
+		attach, ok = chara_avatar_socket_matrix(av, seat)
+		if !ok do return
+		// End-for-end flip: 2h swords sheathe handle-up by the shoulder (the
+		// model's blade end is authored opposite the axe's). Crossbows need no
+		// flip — CHARA_SOCKET_CROSSBOW is solved for the model as authored.
+		flipped := stance == .BACK && av.weapon_kind == .TWO_HANDED_SWORD
+		if flipped do attach = attach * rl.MatrixRotate({0, 1, 0}, 3.14159265)
+		m = m * attach
+		draw_held_meshes(entry, m)
+		if stance == .DUAL_HIP { // second claw on the right hip
+			attach, ok = chara_avatar_socket_matrix(av, chara_mirror_seat(seat))
+			if ok {
+				m2 := chara_held_base_matrix(av, position, yaw_rad, scale_mul) * attach
+				draw_held_meshes(entry, m2)
+			}
+		}
+		return
 	}
+	if !ok do return
+	m = m * attach
+
+	draw_held_meshes(entry, m)
 }
 
 // Which default-outfit region each armor layer replaces when equipped — 1:1

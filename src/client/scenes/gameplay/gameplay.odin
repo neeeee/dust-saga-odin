@@ -101,6 +101,7 @@ state: struct {
 	// cancels. While active the local player keeps attacking its target
 	// without holding the key.
 	auto_attack_active:     bool,
+	weapon_drawn:           bool, // sheath/drawn stance — F toggles, combat auto-draws
 
 	// Ranged manual-attack tracers (short-lived visual arrows).
 	arrows:                 [dynamic]Arrow_Tracer,
@@ -195,6 +196,7 @@ init :: proc(
 	state.initialized = true
 	state.was_connected = true
 	state.auto_attack_active = false
+	state.weapon_drawn = false
 	state.arrows = make([dynamic]Arrow_Tracer)
 	state.party_selected = -1
 	state.party_loot_key_len = 0
@@ -220,6 +222,7 @@ shutdown :: proc() {
 	state.chat_focused = false
 	state.chat_len = 0
 	state.auto_attack_active = false
+	state.weapon_drawn = false
 	clear(&state.arrows)
 	delete(state.arrows)
 }
@@ -266,6 +269,7 @@ update :: proc(dt: f32) -> (requested: sys.App_State, has_request: bool) {
 	//    while dead, they reconnect dead in the same place.
 	if state.player.is_dead {
 		state.auto_attack_active = false
+		state.weapon_drawn = false
 		p := state.player
 		if !p.respawn_sent {
 			mouse := rl.GetMousePosition()
@@ -474,6 +478,7 @@ apply_escape :: proc() {
 	// 3. Cancel auto-attack.
 	if state.auto_attack_active {
 		state.auto_attack_active = false
+		state.weapon_drawn = false
 		return
 	}
 
@@ -525,6 +530,7 @@ update_ground_target :: proc(inp: sys.Input_State) {
 		if hit && state.ctx.zone != nil {
 			half := state.ctx.zone.ground.size / 2.0
 			if point.x >= -half && point.x <= half && point.z >= -half && point.z <= half {
+				state.weapon_drawn = true
 				name := string(gt.skill_name[:gt.name_len])
 				sys.send_skill_use_ground(state.net, name, point.x, point.y, point.z)
 			}
@@ -1037,6 +1043,8 @@ handle_skill_bar_input :: proc(inp: sys.Input_State) {
 	if len(name) == 0 do return
 
 	// --- Activate ---
+	// Using a skill implies the drawn stance.
+	state.weapon_drawn = true
 	sk := sys.get_skill(name)
 	if sk == nil {
 		sys.send_skill_use(state.net, name, target_string_id())
@@ -1090,7 +1098,7 @@ update_local_avatar :: proc(dt: f32) {
 	} else if av.speed >= sys.AVATAR_WALK_SPEED {
 		clip = .WALK
 	}
-	sys.chara_avatar_update(av, clip, dt, state.auto_attack_active)
+	sys.chara_avatar_update(av, clip, dt, state.weapon_drawn)
 	// Armor: re-resolve against equipment, then pose the pieces with the
 	// clip the body just applied (order matters on the change frame).
 	sys.chara_avatar_sync_armor(av, &state.player.inventory)

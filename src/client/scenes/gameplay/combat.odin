@@ -10,17 +10,16 @@ import rl "vendor:raylib"
 // ── combat ────────────────────────────────────────────────────────────────
 
 apply_combat :: proc(inp: sys.Input_State) {
-	// Auto-attack (F): a toggle state, not a held key. F (or a double-click
-	// on an enemy, see apply_targeting) engages it; F or Esc cancels. While
-	// active the player keeps attacking its target on the cooldown gate.
+	// F: toggle the sheath/drawn stance — works without a target (drawn is
+	// purely visual until there's something to attack). Sheathing also
+	// cancels auto-attack; engaging auto-attack draws the weapon.
 	if inp.attack {
-		if state.auto_attack_active {
+		state.weapon_drawn = !state.weapon_drawn
+		if !state.weapon_drawn {
 			state.auto_attack_active = false
 		} else if state.player.target_id != sys.INVALID_ENTITY {
 			state.auto_attack_active = true
 			try_auto_attack()
-		} else {
-			sys.push_notification(state.ctx, "No target.", "info")
 		}
 	}
 
@@ -31,7 +30,9 @@ apply_combat :: proc(inp: sys.Input_State) {
 	// Manual attack (Space), aimed at the cursor and gated by
 	// MANUAL_ATTACK_COOLDOWN. Melee weapons (incl. staves and wands) sweep a
 	// cone around the aim direction; bows/crossbows loose a single arrow.
+	// Attacking implies the drawn stance.
 	if inp.manual_attack {
+		state.weapon_drawn = true
 		if f64(state.clock_ms - state.player.last_manual_attack_ms) >=
 		   sys.COMBAT.MANUAL_ATTACK_COOLDOWN {
 			dx, dz, aim_dist := aim_direction()
@@ -198,7 +199,8 @@ apply_targeting :: proc(inp: sys.Input_State) {
 			if kind == .NPC {
 				try_talk_to(idx)
 			} else if kind == .ENEMY {
-				// Double-click on an enemy: target it and engage auto-attack.
+				// Double-click on an enemy: target it, draw, engage auto-attack.
+				state.weapon_drawn = true
 				state.auto_attack_active = true
 				try_auto_attack()
 			} else if kind == .LOOT {

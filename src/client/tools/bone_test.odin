@@ -15,6 +15,7 @@ package bone_test
 import "core:c"
 import "core:math"
 import "core:fmt"
+import "core:os"
 import "core:strings"
 import rl "vendor:raylib"
 import sys "../systems"
@@ -56,6 +57,21 @@ print_matrix :: proc(label: string, m: rl.Matrix) {
 }
 
 main :: proc() {
+	// subcommand dispatch: `bone_test.exe sheath` runs only the screenshot
+	// probe; `bone_test.exe tune` runs the interactive placement tuner
+	if len(os.args) > 1 && os.args[1] == "sheath" {
+		sheath_shot()
+		return
+	}
+	if len(os.args) > 1 && os.args[1] == "tune" {
+		sheath_tune()
+		return
+	}
+	if len(os.args) > 1 && os.args[1] == "seats" {
+		seats_probe()
+		return
+	}
+
 	// visible tiny window: hidden-window contexts crash on this old GPU driver
 	fmt.eprintln("pre-init")
 	rl.InitWindow(64, 64, "bone_test")
