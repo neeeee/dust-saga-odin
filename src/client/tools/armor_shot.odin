@@ -84,6 +84,7 @@ armor_shot_take :: proc(av: ^sys.Chara_Avatar, fname: string, cam_pos: rl.Vector
 
 armor_shot :: proc() {
 	rl.InitWindow(640, 720, "armor_shot")
+	tools_clamp_window()
 	defer rl.CloseWindow()
 	sys.assets_init()
 

@@ -1,0 +1,13 @@
+{
+  "wand1h": %!(MISSING CLOSE BRACE)"label": "1h weapons (wand)", "sheath_t": [0.206, 0.196, -0.012], "sheath_q": [0.040531, 0.308569, -0.603478, 0.734137], "sheath_e": [-21.21, 30.13, -84.61], "drawn_t": [-0.050, -0.102, 0.008] },
+  "dagger": %!(MISSING CLOSE BRACE)"label": "Dagger", "sheath_t": [0.206, 0.196, -0.012], "sheath_q": [0.040531, 0.308569, -0.603478, 0.734137], "sheath_e": [-21.21, 30.13, -84.61], "drawn_t": [-0.050, -0.102, 0.008] },
+  "staff": %!(MISSING CLOSE BRACE)"label": "Staff (2h rod)", "sheath_t": [0.322, 0.058, -0.029], "sheath_q": [0.221934, 0.627896, 0.077474, 0.741950], "sheath_e": [75.17, 63.81, 63.13], "drawn_t": [-0.056, 0.187, -0.000] },
+  "sword2h": %!(MISSING CLOSE BRACE)"label": "2h Sword", "sheath_t": [0.322, 0.058, -0.029], "sheath_q": [0.221934, 0.627896, 0.077474, 0.741950], "sheath_e": [75.17, 63.81, 63.13], "drawn_t": [-0.056, 0.187, -0.000] },
+  "axe2h": %!(MISSING CLOSE BRACE)"label": "2h Axe", "sheath_t": [0.322, 0.058, -0.029], "sheath_q": [0.221934, 0.627896, 0.077474, 0.741950], "sheath_e": [75.17, 63.81, 63.13], "drawn_t": [-0.056, 0.187, -0.000] },
+  "hammer2h": %!(MISSING CLOSE BRACE)"label": "2h Hammer", "sheath_t": [0.322, 0.058, -0.029], "sheath_q": [0.221934, 0.627896, 0.077474, 0.741950], "sheath_e": [75.17, 63.81, 63.13], "drawn_t": [-0.056, 0.187, -0.000] },
+  "spear2h": %!(MISSING CLOSE BRACE)"label": "2h Spear / Pole Arm", "sheath_t": [0.322, 0.058, -0.029], "sheath_q": [0.221934, 0.627896, 0.077474, 0.741950], "sheath_e": [75.17, 63.81, 63.13], "drawn_t": [0.032, 0.002, 0.040] },
+  "lance": %!(MISSING CLOSE BRACE)"label": "Lance (1h)", "sheath_t": [0.206, 0.196, -0.012], "sheath_q": [0.040531, 0.308569, -0.603478, 0.734137], "sheath_e": [-21.21, 30.13, -84.61], "drawn_t": [-0.050, -0.102, 0.008] },
+  "bow": %!(MISSING CLOSE BRACE)"label": "Bow", "sheath_t": [0.220, 0.273, 0.088], "sheath_q": [-0.714483, 0.295666, -0.373876, 0.512164], "sheath_e": [-101.61, -13.38, -55.89], "drawn_t": [-0.093, -0.002, 0.034] },
+  "crossbow": %!(MISSING CLOSE BRACE)"label": "Crossbow", "sheath_t": [0.104, -0.014, 0.036], "sheath_q": [-0.476718, -0.439326, 0.267362, 0.712917], "sheath_e": [-80.11, -21.81, 59.51], "drawn_t": [-0.093, -0.002, 0.034] },
+  "claw": %!(MISSING CLOSE BRACE)"label": "Claw (both hips)", "sheath_t": [0.100, 0.080, -0.100], "sheath_q": [-0.392552, -0.916343, -0.031047, 0.072483], "sheath_e": [0.00, -170.95, -46.38], "drawn_t": [-0.093, -0.002, 0.104] }
+}

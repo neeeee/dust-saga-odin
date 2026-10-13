@@ -7,21 +7,71 @@ package bone_test
 // load, boneMatrices are LOCAL bind-relative deltas, and this binding is
 // COLUMN-vector (Vector3Transform = M·v, translation outermost: T·R·S).
 //
-// Build & run from src/client (the static vendor raylib.lib crashes on old
-// CPUs — link the shipped DLL instead):
-//   odin build tools -out:bone_test.exe -define:RAYLIB_SHARED=true -extra-linker-flags:"/NODEFAULTLIB:msvcrt"
-//   ./bone_test.exe
+// Build from src/client (the static vendor raylib.lib crashes on old
+// CPUs — link the shipped DLL instead); the exe can be launched from any
+// directory, it chdirs to src/client on startup to find assets/:
+//   odin build tools -out:tools/tools.exe -define:RAYLIB_SHARED=true -extra-linker-flags:"/NODEFAULTLIB:msvcrt"
+//   ./tools/tools.exe
 
 import "core:c"
 import "core:math"
 import "core:fmt"
 import "core:os"
+import "core:path/filepath"
 import "core:strings"
 import rl "vendor:raylib"
 import sys "../systems"
 
 cstr :: proc(s: string) -> cstring {
 	return strings.clone_to_cstring(s, context.temp_allocator)
+}
+
+// Asset paths ("assets/...") are relative to src/client, but the exe lives in
+// src/client/tools, so launching it from there fails every load and the
+// window flashes closed. Walk up from the executable (then the working
+// directory as fallback) to the dir holding assets/chara and chdir into it.
+tools_try_upward :: proc(start: string) -> bool {
+	d := start
+	for i in 0..<4 {
+		if os.is_directory(strings.concatenate({d, "/assets/chara"})) {
+			os.set_working_directory(d)
+			return true
+		}
+		parent := filepath.dir(d)
+		if parent == d do break
+		d = parent
+	}
+	return false
+}
+
+tools_locate_assets :: proc() {
+	if os.is_directory("assets/chara") do return
+	if exe, err := os.get_executable_path(context.temp_allocator); err == nil {
+		if tools_try_upward(filepath.dir(exe)) do return
+	}
+	if wd, err := os.get_working_directory(context.temp_allocator); err == nil {
+		tools_try_upward(wd)
+	}
+}
+
+// raylib 6 (GLFW) misplaces windows on this machine's old Intel driver: the
+// window opens at Y=32767 — fully off-screen. The process renders and pumps
+// messages and a taskbar entry exists, but nothing ever appears and the
+// taskbar entry won't raise it (blank tile in task view). Detect the bad
+// placement and pull the window onto the monitor, shrinking it if it is
+// taller than the screen can hold with chrome + taskbar (768p display here).
+tools_clamp_window :: proc() {
+	pos := rl.GetWindowPosition()
+	mon := rl.GetCurrentMonitor()
+	mp := rl.GetMonitorPosition(mon)
+	mw, mh := f32(rl.GetMonitorWidth(mon)), f32(rl.GetMonitorHeight(mon))
+	sw, sh := rl.GetScreenWidth(), rl.GetScreenHeight()
+	if f32(sh) > mh - 72 || f32(sw) > mw - 40 {
+		rl.SetWindowSize(min(sw, i32(mw) - 40), min(sh, i32(mh) - 72))
+	}
+	if pos.x < mp.x - 8 || pos.y < mp.y - 8 || pos.x > mp.x + mw - 64 || pos.y > mp.y + mh - 64 {
+		rl.SetWindowPosition(c.int(mp.x) + 60, c.int(mp.y) + 30)
+	}
 }
 
 bone_name :: proc(b: ^rl.BoneInfo) -> string {
@@ -57,6 +107,8 @@ print_matrix :: proc(label: string, m: rl.Matrix) {
 }
 
 main :: proc() {
+	tools_locate_assets()
+
 	// subcommand dispatch: `bone_test.exe sheath` runs only the screenshot
 	// probe; `bone_test.exe tune` runs the interactive placement tuner
 	if len(os.args) > 1 && os.args[1] == "sheath" {
@@ -75,6 +127,7 @@ main :: proc() {
 	// visible tiny window: hidden-window contexts crash on this old GPU driver
 	fmt.eprintln("pre-init")
 	rl.InitWindow(64, 64, "bone_test")
+	tools_clamp_window()
 	fmt.eprintln("window up")
 	defer rl.CloseWindow()
 

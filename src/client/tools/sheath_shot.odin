@@ -89,6 +89,7 @@ sheath_shot_view :: proc(v: string) -> rl.Vector3 {
 
 sheath_shot :: proc() {
 	rl.InitWindow(640, 720, "sheath_shot")
+	tools_clamp_window()
 	defer rl.CloseWindow()
 	sys.assets_init()
 

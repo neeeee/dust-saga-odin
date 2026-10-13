@@ -37,6 +37,7 @@ seats_apply :: proc(av: ^sys.Chara_Avatar, clip: int) {
 
 seats_probe :: proc() {
 	rl.InitWindow(64, 64, "seats")
+	tools_clamp_window()
 	defer rl.CloseWindow()
 	sys.assets_init()
 

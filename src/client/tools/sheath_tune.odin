@@ -8,12 +8,12 @@ package bone_test
 
 // Interactive weapon-placement tuner. Renders the avatar with the selected
 // weapon class in the sheathed or drawn state; the seat translation/rotation
-// is editable live and the whole table exports to sheath_tuning.json (Enter),
-// which gets baked back into chara_models.odin.
+// is editable live and the whole table exports to src/client/sheath_tuning.json
+// (Enter), which gets baked back into chara_models.odin.
 //
-// Build & run from src/client:
-//   odin build tools -out:bone_test.exe -define:RAYLIB_SHARED=true -extra-linker-flags:"/NODEFAULTLIB:msvcrt"
-//   ./bone_test.exe tune
+// Build from src/client (run from anywhere, assets are located on startup):
+//   odin build tools -out:tools/tools.exe -define:RAYLIB_SHARED=true -extra-linker-flags:"/NODEFAULTLIB:msvcrt"
+//   ./tools/tools.exe tune
 //
 // Controls:
 //   [ / ]   previous / next weapon category
@@ -100,12 +100,12 @@ tune_defaults :: proc() {
 		{name = "staff",    label = "Staff (2h rod)",         glb = "item/EM_002801_20_000.glb", kind = .STAFF},
 		{name = "sword2h",  label = "2h Sword",               glb = "item/EM_000401_20_000.glb", kind = .TWO_HANDED_SWORD},
 		{name = "axe2h",    label = "2h Axe",                 glb = "item/EM_000801_20_000.glb", kind = .TWO_HANDED_AXE},
-		{name = "hammer2h", label = "2h Hammer",              glb = "item/EM_001031_20_000.glb", kind = .TWO_HANDED_BLUNT},
-		{name = "spear2h",  label = "2h Spear / Pole Arm",    glb = "item/EM_001401_20_000.glb", kind = .TWO_HANDED_SPEAR},
-		{name = "lance",    label = "Lance (1h)",             glb = "item/EM_001601_20_000.glb", kind = .SPEAR},
-		{name = "bow",      label = "Bow",                    glb = "item/EM_002201_20_000.glb", kind = .BOW},
-		{name = "crossbow", label = "Crossbow",               glb = "item/EM_002401_20_000.glb", kind = .CROSSBOW},
-		{name = "claw",     label = "Claw (both hips)",       glb = "item/EM_002001_20_000.glb", kind = .KNUCKLES},
+		{name = "hammer2h", label = "2h Hammer",              glb = "item/EM_001211_20_000.glb", kind = .TWO_HANDED_BLUNT},
+		{name = "spear2h",  label = "2h Spear / Pole Arm",    glb = "item/EM_001503_20_000.glb", kind = .TWO_HANDED_SPEAR},
+		{name = "lance",    label = "Lance (1h)",             glb = "item/EM_001612_20_000.glb", kind = .SPEAR},
+		{name = "bow",      label = "Bow",                    glb = "item/EM_002224_20_000.glb", kind = .BOW},
+		{name = "crossbow", label = "Crossbow",               glb = "item/EM_002421_20_000.glb", kind = .CROSSBOW},
+		{name = "claw",     label = "Claw (both hips)",       glb = "item/EM_002021_20_000.glb", kind = .KNUCKLES},
 	}
 	for &c in cats {
 		c.sheath_t = sys.chara_sheath_seat(c.kind).t
@@ -164,6 +164,8 @@ tune_adjust :: proc(e: ^Tune_Category, axis: int, sign: f32, step: f32) {
 
 sheath_tune :: proc() {
 	rl.InitWindow(900, 760, "sheath_tune")
+	tools_clamp_window()
+	rl.SetTargetFPS(60) // uncapped loop pegs a core on this old laptop
 	defer rl.CloseWindow()
 	sys.assets_init()
 	tune_defaults()

@@ -11,6 +11,7 @@ import rlgl "vendor:raylib/rlgl"
 
 torso_draw_probe :: proc() {
 	rl.InitWindow(640, 720, "torso_draw_probe")
+	tools_clamp_window()
 	defer rl.CloseWindow()
 
 	entry := sys.held_model_acquire("item/EM_012211_02_022.glb")
