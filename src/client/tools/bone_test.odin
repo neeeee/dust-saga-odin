@@ -111,6 +111,11 @@ main :: proc() {
 
 	// subcommand dispatch: `bone_test.exe sheath` runs only the screenshot
 	// probe; `bone_test.exe tune` runs the interactive placement tuner
+	if len(os.args) > 1 && os.args[1] == "dump" {
+		tune_defaults()
+		tune_save()
+		return
+	}
 	if len(os.args) > 1 && os.args[1] == "sheath" {
 		sheath_shot()
 		return

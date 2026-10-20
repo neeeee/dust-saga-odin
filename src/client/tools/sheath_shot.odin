@@ -106,6 +106,10 @@ sheath_shot :: proc() {
 	idle := av.cm.idle_anim
 
 	weapons := []Sheath_Shot_Weapon{
+		{name = "sword1h",  glb = "item/EM_000001_20_000.glb", kind = .SWORD},
+		{name = "axe1h",    glb = "item/EM_000601_20_000.glb", kind = .AXE},
+		{name = "club1h",   glb = "item/EM_001001_20_000.glb", kind = .BLUNT},
+		{name = "bow",      glb = "item/EM_002224_20_000.glb", kind = .BOW},
 		{name = "wand",     glb = "item/EM_002631_20_000.glb", kind = .WAND},
 		{name = "staff",    glb = "item/EM_002801_20_000.glb", kind = .STAFF},
 		{name = "crossbow", glb = "item/EM_002401_20_000.glb", kind = .CROSSBOW},

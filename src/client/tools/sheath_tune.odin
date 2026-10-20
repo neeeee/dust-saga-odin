@@ -9,7 +9,7 @@ package bone_test
 // Interactive weapon-placement tuner. Renders the avatar with the selected
 // weapon class in the sheathed or drawn state; the seat translation/rotation
 // is editable live and the whole table exports to src/client/sheath_tuning.json
-// (Enter), which gets baked back into chara_models.odin.
+// (Enter), which the game hot-loads (and gets baked back into chara_models.odin).
 //
 // Build from src/client (run from anywhere, assets are located on startup):
 //   odin build tools -out:tools/tools.exe -define:RAYLIB_SHARED=true -extra-linker-flags:"/NODEFAULTLIB:msvcrt"
@@ -19,13 +19,18 @@ package bone_test
 //   [ / ]   previous / next weapon category
 //   TAB     sheathed <-> drawn
 //   W/S     move up / down          A/D  move left / right
-//   Q/E     move forward / back     (sheathed only: the seat origin)
-//   I/K     pitch  -/+              J/L  yaw -/+     U/O  roll -/+
-//           (sheathed only: seat orientation; drawn weapons don't roll)
+//   Q/E     move forward / back
+//   RMB drag  freeform rotation — screen-relative spins about the camera's
+//           right/up axes, so every orientation is reachable (no euler lock)
+//   I/K     fine pitch -/+          J/L  fine yaw -/+     U/O  fine roll -/+
 //   SHIFT   coarse steps (5x)
 //   ENTER   save sheath_tuning.json
 //   ESC     quit (saves too)
-//   Mouse drag orbits the camera, wheel zooms.
+//   LMB drag orbits the camera, wheel zooms.
+//
+// Orientation lives in a quaternion. The euler `*_e` fields in the JSON are
+// informational only (round-tripped for readable hand edits); the `*_q`
+// fields are authoritative and what the game loader prefers.
 
 import "core:fmt"
 import "core:math"
@@ -40,9 +45,10 @@ Tune_Category :: struct {
 	glb:   string,
 	kind:  sys.Weapon_Kind,
 	// live state
-	sheath_t: rl.Vector3, // Bip01-relative seat translation
-	sheath_e: rl.Vector3, // seat orientation, euler degrees (XYZ order)
-	drawn_t:  rl.Vector3, // right-hand grip translation
+	sheath_t: rl.Vector3,    // Bip01-relative seat translation
+	sheath_q: rl.Quaternion, // seat orientation, freeform
+	drawn_t:  rl.Vector3,    // right-hand grip translation
+	drawn_q:  rl.Quaternion, // drawn grip orientation, freeform
 }
 
 tune_cats: []Tune_Category
@@ -55,23 +61,9 @@ tune_cstr :: proc(s: string) -> cstring {
 	return strings.clone_to_cstring(s, context.temp_allocator)
 }
 
-tune_euler_to_quat :: proc(e: rl.Vector3) -> rl.Quaternion {
-	d := f64(math.PI) / 180.0
-	ex, ey, ez := f64(e.x), f64(e.y), f64(e.z)
-	cx := math.cos(ex * d * 0.5); sx := math.sin(ex * d * 0.5)
-	cy := math.cos(ey * d * 0.5); sy := math.sin(ey * d * 0.5)
-	cz := math.cos(ez * d * 0.5); sz := math.sin(ez * d * 0.5)
-	// XYZ intrinsic order
-	return rl.Quaternion(quaternion(
-		x = sx * cy * cz - cx * sy * sz,
-		y = cx * sy * cz + sx * cy * sz,
-		z = cx * cy * sz - sx * sy * cz,
-		w = cx * cy * cz + sx * sy * sz))
-}
-
 tune_quat_to_euler :: proc(q: rl.Quaternion) -> rl.Vector3 {
 	x := f64(q.x); y := f64(q.y); z := f64(q.z); w := f64(q.w)
-	// XYZ order (same construction as above, inverted)
+	// XYZ order — the historical euler convention, informational only
 	sin_p := clamp(-1.0, 1.0, 2.0 * (w * x - y * z))
 	pitch := math.asin(sin_p)
 	if math.abs(sin_p) < 0.9995 {
@@ -90,12 +82,28 @@ clamp :: proc "contextless" (lo, hi, v: f64) -> f64 {
 	return math.min(hi, math.max(lo, v))
 }
 
+// Rotates `q` by `deg` about a world-space axis (world up, camera right, or
+// camera forward), pre-multiplied so the spin follows the screen regardless
+// of the current orientation. Freely composed this covers every orientation —
+// the reason the old per-axis euler stepping couldn't.
+tune_rotate :: proc(q: ^rl.Quaternion, axis: rl.Vector3, deg: f32) {
+	if deg == 0 do return
+	q^ = rl.QuaternionFromAxisAngle(axis, deg * (math.PI / 180.0)) * q^
+}
+
 tune_defaults :: proc() {
+	// Start from sheath_tuning.json when it exists, so tuner edits continue
+	// from the values the game is actually using (falls back to the baked
+	// chara_models.odin constants otherwise).
+	sys.chara_tuning_reload()
 	// [dynamic] (not a plain slice literal): slice literals are backed by the
 	// STACK, so storing one in the global tune_cats left a dangling pointer
 	// once this proc returned — the heap copy survives.
 	cats := [dynamic]Tune_Category{
-		{name = "wand1h",   label = "1h weapons (wand)",      glb = "item/EM_002631_20_000.glb", kind = .WAND},
+		{name = "wand1h",   label = "1h Wand (castable)",     glb = "item/EM_002631_20_000.glb", kind = .WAND},
+		{name = "sword1h",  label = "1h Sword",               glb = "item/EM_000001_20_000.glb", kind = .SWORD},
+		{name = "axe1h",    label = "1h Axe",                 glb = "item/EM_000601_20_000.glb", kind = .AXE},
+		{name = "club1h",   label = "1h Blunt (Club)",        glb = "item/EM_001001_20_000.glb", kind = .BLUNT},
 		{name = "dagger",   label = "Dagger",                 glb = "item/EM_001801_20_000.glb", kind = .DAGGER},
 		{name = "staff",    label = "Staff (2h rod)",         glb = "item/EM_002801_20_000.glb", kind = .STAFF},
 		{name = "sword2h",  label = "2h Sword",               glb = "item/EM_000401_20_000.glb", kind = .TWO_HANDED_SWORD},
@@ -109,8 +117,9 @@ tune_defaults :: proc() {
 	}
 	for &c in cats {
 		c.sheath_t = sys.chara_sheath_seat(c.kind).t
-		c.sheath_e = tune_quat_to_euler(sys.chara_sheath_seat(c.kind).q)
+		c.sheath_q = sys.chara_sheath_seat(c.kind).q
 		c.drawn_t = sys.chara_drawn_grip_t(c.kind)
+		c.drawn_q = sys.chara_drawn_grip_q(c.kind)
 	}
 	tune_cats = cats[:]
 }
@@ -126,15 +135,19 @@ tune_save :: proc() {
 	parts: [dynamic]string
 	append(&parts, "{\n")
 	for c, i in tune_cats {
-		q := tune_euler_to_quat(c.sheath_e)
+		// *_q is authoritative; *_e is derived so the file stays readable.
+		se := tune_quat_to_euler(c.sheath_q)
+		de := tune_quat_to_euler(c.drawn_q)
 		comma := i < len(tune_cats) - 1 ? "," : ""
 		append(&parts, fmt.tprintf(
-			"  \"%s\": { \"label\": \"%s\", \"sheath_t\": [%f, %f, %f], \"sheath_q\": [%.6f, %.6f, %.6f, %.6f], \"sheath_e\": [%.2f, %.2f, %.2f], \"drawn_t\": [%f, %f, %f] }%s\n",
+			"  \"%s\": {{ \"label\": \"%s\", \"sheath_t\": [%f, %f, %f], \"sheath_q\": [%.6f, %.6f, %.6f, %.6f], \"sheath_e\": [%.2f, %.2f, %.2f], \"drawn_t\": [%f, %f, %f], \"drawn_q\": [%.6f, %.6f, %.6f, %.6f], \"drawn_e\": [%.2f, %.2f, %.2f] }}%s\n",
 			c.name, c.label,
 			c.sheath_t.x, c.sheath_t.y, c.sheath_t.z,
-			q.x, q.y, q.z, q.w,
-			c.sheath_e.x, c.sheath_e.y, c.sheath_e.z,
+			c.sheath_q.x, c.sheath_q.y, c.sheath_q.z, c.sheath_q.w,
+			se.x, se.y, se.z,
 			c.drawn_t.x, c.drawn_t.y, c.drawn_t.z,
+			c.drawn_q.x, c.drawn_q.y, c.drawn_q.z, c.drawn_q.w,
+			de.x, de.y, de.z,
 			comma))
 	}
 	append(&parts, "}\n")
@@ -142,9 +155,10 @@ tune_save :: proc() {
 	_ = os.write_entire_file_from_string("sheath_tuning.json", out)
 }
 
+// Translation nudge for the active state (rotation happens in the loop — it
+// needs the camera axes).
 tune_adjust :: proc(e: ^Tune_Category, axis: int, sign: f32, step: f32) {
 	if tune_drawn {
-		// drawn grip: translation only (rotation is the fixed N52 seat)
 		switch axis {
 		case 0: e.drawn_t.x += sign * step
 		case 1: e.drawn_t.y += sign * step
@@ -155,9 +169,6 @@ tune_adjust :: proc(e: ^Tune_Category, axis: int, sign: f32, step: f32) {
 		case 0: e.sheath_t.x += sign * step
 		case 1: e.sheath_t.y += sign * step
 		case 2: e.sheath_t.z += sign * step
-		case 3: e.sheath_e.x += sign * step * 5.0
-		case 4: e.sheath_e.y += sign * step * 5.0
-		case 5: e.sheath_e.z += sign * step * 5.0
 		}
 	}
 }
@@ -170,9 +181,9 @@ sheath_tune :: proc() {
 	sys.assets_init()
 	tune_defaults()
 
-	cm := sys.chara_model_acquire("012")
+	cm := sys.chara_model_acquire("022")
 	if cm == nil {
-		fmt.eprintfln("tune: race 012 acquire FAILED")
+		fmt.eprintfln("tune: race 022 acquire FAILED")
 		return
 	}
 	tune_av = sys.chara_avatar_create(cm, 0, 0, 0)
@@ -188,9 +199,18 @@ sheath_tune :: proc() {
 	last_mouse := rl.GetMousePosition()
 
 	for !rl.WindowShouldClose() {
-		dt := rl.GetFrameTime()
 		e := &tune_cats[tune_idx]
-		step := f32(0.01) * (rl.IsKeyDown(.LEFT_SHIFT) || rl.IsKeyDown(.RIGHT_SHIFT) ? 5.0 : 1.0)
+		shift := rl.IsKeyDown(.LEFT_SHIFT) || rl.IsKeyDown(.RIGHT_SHIFT)
+		step := f32(0.01) * (shift ? 5.0 : 1.0)
+		rstep := f32(2.0) * (shift ? 5.0 : 1.0)
+
+		// Camera-relative rotation axes for the current orbit position.
+		cam_right := rl.Vector3{math.sin(cam_yaw), 0, -math.cos(cam_yaw)}
+		cam_fwd := rl.Vector3{
+			-math.cos(cam_yaw) * math.cos(cam_pitch),
+			-math.sin(cam_pitch),
+			-math.sin(cam_yaw) * math.cos(cam_pitch),
+		}
 
 		// ── input ──
 		if rl.IsKeyPressed(.LEFT_BRACKET) do tune_idx = (tune_idx + len(tune_cats) - 1) % len(tune_cats)
@@ -203,19 +223,26 @@ sheath_tune :: proc() {
 		if rl.IsKeyDown(.S) do tune_adjust(e, 1, -1, step)
 		if rl.IsKeyDown(.Q) do tune_adjust(e, 2, -1, step)
 		if rl.IsKeyDown(.E) do tune_adjust(e, 2, +1, step)
-		if !tune_drawn {
-			if rl.IsKeyDown(.K) do tune_adjust(e, 3, -1, step)
-			if rl.IsKeyDown(.I) do tune_adjust(e, 3, +1, step)
-			if rl.IsKeyDown(.J) do tune_adjust(e, 4, -1, step)
-			if rl.IsKeyDown(.L) do tune_adjust(e, 4, +1, step)
-			if rl.IsKeyDown(.U) do tune_adjust(e, 5, -1, step)
-			if rl.IsKeyDown(.O) do tune_adjust(e, 5, +1, step)
+
+		// Freeform rotation: RMB drag for big sweeps, keys for fine steps.
+		// Both target whichever state (sheathed/drawn) is active.
+		mouse := rl.GetMousePosition()
+		tgt := tune_drawn ? &e.drawn_q : &e.sheath_q
+		if rl.IsMouseButtonDown(.RIGHT) {
+			d := mouse - last_mouse
+			tune_rotate(tgt, {0, 1, 0}, f32(d.x) * 0.4)
+			tune_rotate(tgt, cam_right, f32(d.y) * 0.4)
 		}
+		if rl.IsKeyDown(.I) do tune_rotate(tgt, cam_right, +rstep)
+		if rl.IsKeyDown(.K) do tune_rotate(tgt, cam_right, -rstep)
+		if rl.IsKeyDown(.J) do tune_rotate(tgt, {0, 1, 0}, -rstep)
+		if rl.IsKeyDown(.L) do tune_rotate(tgt, {0, 1, 0}, +rstep)
+		if rl.IsKeyDown(.U) do tune_rotate(tgt, cam_fwd, +rstep)
+		if rl.IsKeyDown(.O) do tune_rotate(tgt, cam_fwd, -rstep)
 
 		if rl.IsKeyPressed(.ENTER) do tune_save()
 
 		// ── camera orbit (left-drag) + zoom ──
-		mouse := rl.GetMousePosition()
 		if rl.IsMouseButtonDown(.LEFT) {
 			delta := mouse - last_mouse
 			cam_yaw -= f32(delta.x) * 0.01
@@ -259,10 +286,11 @@ sheath_tune :: proc() {
 		rl.DrawPlane({0, 0, 0}, {4, 4}, {120, 140, 110, 255})
 		if av != nil {
 			// tuning overrides live for this frame
-			sys.chara_debug_sheath_seat = tune_euler_to_quat(e.sheath_e)
+			sys.chara_debug_sheath_seat = e.sheath_q
 			sys.chara_debug_sheath_seat_t = {e.sheath_t.x, e.sheath_t.y, e.sheath_t.z}
 			sys.chara_debug_sheath_on = true
 			sys.chara_debug_drawn_t = {e.drawn_t.x, e.drawn_t.y, e.drawn_t.z}
+			sys.chara_debug_drawn_q = e.drawn_q
 			sys.chara_debug_drawn_on = true
 
 			sys.chara_avatar_draw_body(av, {0, 0, 0}, 0, rl.WHITE)
@@ -278,14 +306,16 @@ sheath_tune :: proc() {
 		// format pass reads them as strings with a garbage length.
 		title := fmt.tprintf("[%s]  %s  —  %s", e.name, e.label, tune_drawn ? "DRAWN" : "SHEATHED")
 		t1 := fmt.tprintf("sheath_t  %.3f %.3f %.3f", e.sheath_t.x, e.sheath_t.y, e.sheath_t.z)
-		t2 := fmt.tprintf("sheath_e  %.1f %.1f %.1f", e.sheath_e.x, e.sheath_e.y, e.sheath_e.z)
+		t2 := fmt.tprintf("sheath_q  %.3f %.3f %.3f %.3f", e.sheath_q.x, e.sheath_q.y, e.sheath_q.z, e.sheath_q.w)
 		t3 := fmt.tprintf("drawn_t   %.3f %.3f %.3f", e.drawn_t.x, e.drawn_t.y, e.drawn_t.z)
+		t4 := fmt.tprintf("drawn_q   %.3f %.3f %.3f %.3f", e.drawn_q.x, e.drawn_q.y, e.drawn_q.z, e.drawn_q.w)
 		rl.DrawText(tune_cstr(title), 12, 10, 20, {20, 20, 30, 255})
 		rl.DrawText(tune_cstr(t1), 12, 36, 16, {40, 40, 60, 255})
 		rl.DrawText(tune_cstr(t2), 12, 56, 16, {40, 40, 60, 255})
 		rl.DrawText(tune_cstr(t3), 12, 76, 16, {40, 40, 60, 255})
-		rl.DrawText(tune_cstr("[ ] weapon   TAB sheath/drawn   WASD+QE move   IJKL+UO rotate"), 12, i32(rl.GetScreenHeight()) - 60, 16, {40, 40, 60, 255})
-		rl.DrawText(tune_cstr("SHIFT coarse   ENTER save sheath_tuning.json   ESC quit   drag orbit, wheel zoom"), 12, i32(rl.GetScreenHeight()) - 38, 16, {40, 40, 60, 255})
+		rl.DrawText(tune_cstr(t4), 12, 96, 16, {40, 40, 60, 255})
+		rl.DrawText(tune_cstr("[ ] weapon   TAB sheath/drawn   WASD+QE move   RMB drag rotate (freeform)"), 12, i32(rl.GetScreenHeight()) - 60, 16, {40, 40, 60, 255})
+		rl.DrawText(tune_cstr("IJKL+UO fine rotate   SHIFT coarse   ENTER save   ESC quit   LMB orbit, wheel zoom"), 12, i32(rl.GetScreenHeight()) - 38, 16, {40, 40, 60, 255})
 		rl.EndDrawing()
 	}
 	tune_save()

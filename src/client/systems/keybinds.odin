@@ -20,7 +20,7 @@ Action :: enum u8 {
 	Sprint,
 
 	// combat / interaction
-	Attack,       // toggle — auto-attack state (Esc also cancels)
+	Attack,       // B — sheath/draw stance toggle (drawn engages auto-attack)
 	Manual_Attack, // manual attack toward the cursor (cone melee / arrow ranged)
 	Interact,
 	Toggle_Rest,
@@ -71,7 +71,7 @@ keybind_defaults :: proc() -> KeyBinds {
 	kb.keys[.Move_Left] = .A
 	kb.keys[.Move_Right] = .D
 	kb.keys[.Sprint] = .LEFT_SHIFT
-	kb.keys[.Attack] = .F
+	kb.keys[.Attack] = .B
 	kb.keys[.Manual_Attack] = .SPACE
 	kb.keys[.Interact] = .E
 	kb.keys[.Toggle_Rest] = .R

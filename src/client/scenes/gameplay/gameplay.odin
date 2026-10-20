@@ -97,11 +97,11 @@ state: struct {
 	last_click_time_ms:     u64,
 	last_click_target:      sys.Entity_Id,
 
-	// Auto-attack state: F toggles it on (requires a target), F or Esc
-	// cancels. While active the local player keeps attacking its target
-	// without holding the key.
+	// Auto-attack state: drawing the weapon (B or attacking) engages it on a
+	// target; B or Esc cancels. While active the local player keeps attacking
+	// its target without holding the key.
 	auto_attack_active:     bool,
-	weapon_drawn:           bool, // sheath/drawn stance — F toggles, combat auto-draws
+	weapon_drawn:           bool, // sheath/drawn stance — B toggles, combat auto-draws
 
 	// Ranged manual-attack tracers (short-lived visual arrows).
 	arrows:                 [dynamic]Arrow_Tracer,

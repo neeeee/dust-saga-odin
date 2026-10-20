@@ -329,7 +329,7 @@ draw_hud :: proc() {
 		fmt.tprintf("MP %d/%d", i32(s.mana), i32(s.max_mana)),
 	)
 
-	// Auto-attack state indicator (F toggles, Esc cancels).
+	// Auto-attack state indicator (B toggles the stance, Esc cancels).
 	if state.auto_attack_active {
 		sys.draw_text("Auto-attack", 22, 100, 16, rl.Color{255, 200, 80, 255})
 	}

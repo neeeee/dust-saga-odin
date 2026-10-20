@@ -5,7 +5,7 @@ import "core:math/linalg"
 import rl "vendor:raylib"
 
 // Mirrors packages/client/src/core/input/InputManager.ts:
-//   WASD move, Shift sprint, F toggle auto-attack, Space manual attack,
+//   WASD move, Shift sprint, B sheath/draw toggle, Space manual attack,
 //   E interact, digits 0-0 = skill bar slots, Tab cycle target, Enter toggle
 //   chat, Esc. When chat is focused or a dialog is active, gameplay keys are
 //   suppressed.
@@ -18,7 +18,7 @@ Input_State :: struct {
 	sprint:              bool,
 
 	// Combat / interaction edge triggers (true for the frame the key went down).
-	attack:              bool, // F  — toggle auto-attack state
+	attack:              bool, // B  — sheath/draw stance toggle
 	manual_attack:       bool, // Space — manual attack toward the cursor
 	interact:            bool, // E
 	cycle_target:        int, // -1 (prev), +1 (next), 0 none  (Tab / Shift+Tab)

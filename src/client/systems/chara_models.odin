@@ -673,6 +673,7 @@ Chara_Avatar :: struct {
 	action_loop: bool,  // loop the action until cleared vs one-shot
 	attack_cycle: int,  // swings played — cycles the family's attack_1/2/3
 	combat_idle:  int,  // weapon drawn idle (xx01) while fighting, -1 = none
+	combat_run:   int,  // weapon drawn run (xx18) while fighting, -1 = none
 	weapon_kind:  Weapon_Kind, // equipped family — drives the carry socket
 	// worn armor (local player): resolved appearance per layer. Models come
 	// from the session held-model cache and are re-posed every frame with the
@@ -747,6 +748,7 @@ chara_avatar_create :: proc(cm: ^Chara_Model, face_i, hair_i, color_i: int) -> ^
 	av.current_clip = -1
 	av.action_clip = -1
 	av.combat_idle = -1
+	av.combat_run = -1
 	av.applied_clip = -1
 	av.blend_from = -1
 	for i in 0..<int(av.sub.model.meshCount) do append(&av.body_hidden, false)
@@ -772,6 +774,7 @@ CLIP_CODE_CAST_END_ATTACK :: "0073"
 // its own and borrows the 2h_hammer swings). No weapon falls back to unarmed.
 Chara_Weapon_Family :: struct {
 	idle:               string, // weapon drawn idle (xx01)
+	run:                string, // weapon drawn run (xx18)
 	a1, a2, a3:         string, // basic swings (xx55..xx57)
 	cast_start:         string, // cast channel loop; "" ⇒ family has none
 	cast_finish:        string, // buff/debuff cast finish
@@ -780,27 +783,27 @@ Chara_Weapon_Family :: struct {
 
 chara_weapon_family :: proc(kind: Weapon_Kind) -> (f: Chara_Weapon_Family) {
 	switch kind {
-	case .DAGGER:           return {idle = "1101", a1 = "1155", a2 = "1156", a3 = "1157"}
+	case .DAGGER:           return {idle = "1101", run = "1118", a1 = "1155", a2 = "1156", a3 = "1157"}
 	case .SWORD, .AXE, .BLUNT, .WAND:
-	                        return {idle = "1201", a1 = "1255", a2 = "1256", a3 = "1257",
+	                        return {idle = "1201", run = "1218", a1 = "1255", a2 = "1256", a3 = "1257",
 	                                cast_start = "1271", cast_finish = "1272", cast_finish_attack = "1273"}
-	case .SPEAR:            return {idle = "1301", a1 = "1355", a2 = "1356", a3 = "1357"}
-	case .TWO_HANDED_SWORD: return {idle = "1401", a1 = "1455", a2 = "1456", a3 = "1457"}
-	case .TWO_HANDED_AXE:   return {idle = "1501", a1 = "1555", a2 = "1556", a3 = "1557"}
-	case .TWO_HANDED_SPEAR: return {idle = "1601", a1 = "1655", a2 = "1656", a3 = "1657"}
+	case .SPEAR:            return {idle = "1301", run = "1318", a1 = "1355", a2 = "1356", a3 = "1357"}
+	case .TWO_HANDED_SWORD: return {idle = "1401", run = "1418", a1 = "1455", a2 = "1456", a3 = "1457"}
+	case .TWO_HANDED_AXE:   return {idle = "1501", run = "1518", a1 = "1555", a2 = "1556", a3 = "1557"}
+	case .TWO_HANDED_SPEAR: return {idle = "1601", run = "1618", a1 = "1655", a2 = "1656", a3 = "1657"}
 	case .TWO_HANDED_BLUNT: // 2h hammer: its own family's stance/swings — NOT a
 	                        // rod — but acolytes cast spells with hammers, so
 	                        // casting rides the 2h castable stances (1771-73)
-	                        return {idle = "1501", a1 = "1555", a2 = "1556", a3 = "1557",
+	                        return {idle = "1501", run = "1518", a1 = "1555", a2 = "1556", a3 = "1557",
 	                                cast_start = "1771", cast_finish = "1772", cast_finish_attack = "1773"}
-	case .STAFF:            return {idle = "1701", a1 = "1755", a2 = "1756", a3 = "1757",
+	case .STAFF:            return {idle = "1701", run = "1718", a1 = "1755", a2 = "1756", a3 = "1757",
 	                                cast_start = "1771", cast_finish = "1772", cast_finish_attack = "1773"}
-	case .BOW:              return {idle = "1801", a1 = "1855", a2 = "1856", a3 = "1857"}
-	case .CROSSBOW:         return {idle = "1901", a1 = "1955", a2 = "1956", a3 = "1957"}
-	case .KNUCKLES:         return {idle = "2001", a1 = "2055", a2 = "2056", a3 = "2057"}
-	case .NONE:             return {idle = "1001", a1 = "1055", a2 = "1056", a3 = "1057"}
+	case .BOW:              return {idle = "1801", run = "1818", a1 = "1855", a2 = "1856", a3 = "1857"}
+	case .CROSSBOW:         return {idle = "1901", run = "1918", a1 = "1955", a2 = "1956", a3 = "1957"}
+	case .KNUCKLES:         return {idle = "2001", run = "2018", a1 = "2055", a2 = "2056", a3 = "2057"}
+	case .NONE:             return {idle = "1001", run = "1018", a1 = "1055", a2 = "1056", a3 = "1057"}
 	}
-	return {idle = "1001", a1 = "1055", a2 = "1056", a3 = "1057"} // unreachable: every kind covered
+	return {idle = "1001", run = "1018", a1 = "1055", a2 = "1056", a3 = "1057"} // unreachable: every kind covered
 }
 
 chara_clip :: proc(cm: ^Chara_Model, code: string) -> int {
@@ -878,6 +881,7 @@ chara_avatar_set_weapon_kind :: proc(av: ^Chara_Avatar, kind: Weapon_Kind) {
 	if av == nil do return
 	fam := chara_weapon_family(kind)
 	av.combat_idle = chara_clip(av.cm, fam.idle)
+	av.combat_run = chara_clip(av.cm, fam.run)
 	av.weapon_kind = kind
 }
 
@@ -938,7 +942,7 @@ chara_avatar_destroy :: proc(av: ^Chara_Avatar) {
 }
 
 // Advances the avatar's animation for one frame toward `clip` — toward the
-// weapon drawn idle instead while `combat` — blending across clip changes,
+// weapon drawn idle/run instead while `combat` — blending across clip changes,
 // and, on the first call, measures the posed bounds for the ground lift.
 chara_avatar_update :: proc(av: ^Chara_Avatar, clip: Chara_Clip, dt: f32, combat: bool) {
 	if av == nil || av.cm == nil || av.cm.idle_anim < 0 do return
@@ -963,7 +967,13 @@ chara_avatar_update :: proc(av: ^Chara_Avatar, clip: Chara_Clip, dt: f32, combat
 		case .WALK:
 			if av.cm.walk_anim >= 0 do clip_idx = av.cm.walk_anim
 		case .RUN:
-			if av.cm.run_anim >= 0 do clip_idx = av.cm.run_anim
+			// Drawn stance runs on the weapon family's drawn run (xx18); the
+			// normal run (0018) is the sheathed/unarmed gait.
+			if combat && av.combat_run >= 0 {
+				clip_idx = av.combat_run
+			} else if av.cm.run_anim >= 0 {
+				clip_idx = av.cm.run_anim
+			}
 		case .IDLE:
 			// In combat the character holds the weapon family's drawn stance.
 			if combat && av.combat_idle >= 0 do clip_idx = av.combat_idle
@@ -1049,6 +1059,7 @@ anim_keyframe_count :: proc(av: ^Chara_Avatar, clip_idx: int) -> i32 {
 // per-avatar pose snapshot.
 
 CHARA_HAND_BONE :: "Bip01 R Hand"
+CHARA_HAND_L_BONE :: "Bip01 L Hand"
 
 chara_bone_name :: proc "contextless" (b: ^rl.BoneInfo) -> string {
 	for i in 0..<len(b.name) {
@@ -1130,11 +1141,25 @@ CHARA_GRIP_SPEAR_T :: rl.Vector3{0.03198, 0.00163, 0.04010}
 // Seat translation for a drawn weapon of `kind`. Bows and worn claws keep the
 // raw N52 offset (no measured correction for bows yet).
 chara_drawn_grip_t :: proc(kind: Weapon_Kind) -> rl.Vector3 {
+	if t, ok := chara_tuned[kind]; ok do return t.drawn_t
+	if kind == .BOW do return CHARA_GRIP_L_T // bows draw left-handed (N62)
 	if kind == .TWO_HANDED_SPEAR do return CHARA_GRIP_SPEAR_T
 	stance := chara_held_stance(kind)
 	if stance == .HIP do return CHARA_GRIP_1H_T
 	if stance == .BACK do return CHARA_GRIP_2H_T
 	return CHARA_GRIP_R_T
+}
+
+// Drawn-grip rotation per weapon kind (right hand). Every class starts on the
+// N52 socket orientation (CHARA_GRIP_R_Q); classes whose model axes disagree
+// get their own quaternion baked here from tools/sheath_tune's
+// sheath_tuning.json ("drawn_q"), same as the spear row above in _t.
+chara_drawn_grip_q :: proc(kind: Weapon_Kind) -> rl.Quaternion {
+	if t, ok := chara_tuned[kind]; ok do return t.drawn_q
+	if kind == .BOW do return CHARA_GRIP_L_Q // bows draw left-handed (N62)
+	// per-kind carve-outs land here as classes get tuned, e.g.
+	// if kind == .CROSSBOW do return rl.Quaternion(quaternion(x = …, y = …, z = …, w = …))
+	return CHARA_GRIP_R_Q
 }
 
 // ── sheathed carry ────────────────────────────────────────────────────────
@@ -1201,6 +1226,10 @@ chara_sheath_seat :: proc(kind: Weapon_Kind) -> Chara_Socket_Seat {
 	if stance == .BACK do seat = CHARA_SOCKET_BACK
 	if stance == .BACK_BOW do seat = CHARA_SOCKET_BACK_BOW
 	if kind == .CROSSBOW do seat = CHARA_SOCKET_CROSSBOW
+	if t, ok := chara_tuned[kind]; ok {
+		seat.t = t.sheath_t
+		seat.q = t.sheath_q
+	}
 	return seat
 }
 
@@ -1216,6 +1245,7 @@ chara_debug_sheath_seat:      rl.Quaternion // full seat orientation
 chara_debug_sheath_seat_t:    rl.Vector3    // seat translation
 chara_debug_sheath_on:        bool
 chara_debug_drawn_t:          rl.Vector3
+chara_debug_drawn_q:          rl.Quaternion // drawn-grip orientation
 chara_debug_drawn_on:         bool
 
 // World matrix of a carry socket on the avatar's current pose.
@@ -1266,6 +1296,8 @@ chara_avatar_draw_held :: proc(
 ) {
 	if av == nil || entry == nil do return
 
+	chara_tuning_tick() // pick up sheath_tuning.json edits ~2x/second
+
 	m := chara_held_base_matrix(av, position, yaw_rad, scale_mul)
 
 	stance := chara_held_stance(av.weapon_kind)
@@ -1273,14 +1305,31 @@ chara_avatar_draw_held :: proc(
 	attach: rl.Matrix
 	ok := false
 	if use_hand {
-		attach, ok = chara_avatar_bone_matrix(av, CHARA_HAND_BONE)
+		// Bows are held left-handed once drawn — the right hand works the
+		// string — so the bow bolts onto the left-hand N62 seat; everything
+		// else grips the right hand.
+		left := drawn && av.weapon_kind == .BOW
+		if left {
+			attach, ok = chara_avatar_bone_matrix(av, CHARA_HAND_L_BONE)
+		} else {
+			attach, ok = chara_avatar_bone_matrix(av, CHARA_HAND_BONE)
+		}
 		if ok {
 			gt := CHARA_GRIP_R_T
+			gq := CHARA_GRIP_R_Q
+			if left {
+				gt = CHARA_GRIP_L_T
+				gq = CHARA_GRIP_L_Q
+			}
 			if drawn {
 				gt = chara_drawn_grip_t(av.weapon_kind)
-				if chara_debug_drawn_on do gt = chara_debug_drawn_t
+				gq = chara_drawn_grip_q(av.weapon_kind)
+				if chara_debug_drawn_on {
+					gt = chara_debug_drawn_t
+					gq = chara_debug_drawn_q
+				}
 			}
-			attach = attach * (rl.MatrixTranslate(gt.x, gt.y, gt.z) * rl.QuaternionToMatrix(CHARA_GRIP_R_Q))
+			attach = attach * (rl.MatrixTranslate(gt.x, gt.y, gt.z) * rl.QuaternionToMatrix(gq))
 		}
 	} else {
 		seat := chara_sheath_seat(av.weapon_kind)
@@ -1290,11 +1339,9 @@ chara_avatar_draw_held :: proc(
 		}
 		attach, ok = chara_avatar_socket_matrix(av, seat)
 		if !ok do return
-		// End-for-end flip: 2h swords sheathe handle-up by the shoulder (the
-		// model's blade end is authored opposite the axe's). Crossbows need no
-		// flip — CHARA_SOCKET_CROSSBOW is solved for the model as authored.
-		flipped := stance == .BACK && av.weapon_kind == .TWO_HANDED_SWORD
-		if flipped do attach = attach * rl.MatrixRotate({0, 1, 0}, 3.14159265)
+		// No per-kind flips here: seats are tuned per weapon kind against the
+		// actual model (tools/sheath_tune + sheath_tuning.json), so what the
+		// tuner shows is exactly what renders.
 		m = m * attach
 		draw_held_meshes(entry, m)
 		if stance == .DUAL_HIP { // second claw on the right hip

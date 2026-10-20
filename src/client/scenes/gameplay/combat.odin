@@ -10,7 +10,7 @@ import rl "vendor:raylib"
 // ── combat ────────────────────────────────────────────────────────────────
 
 apply_combat :: proc(inp: sys.Input_State) {
-	// F: toggle the sheath/drawn stance — works without a target (drawn is
+	// B: toggle the sheath/drawn stance — works without a target (drawn is
 	// purely visual until there's something to attack). Sheathing also
 	// cancels auto-attack; engaging auto-attack draws the weapon.
 	if inp.attack {
