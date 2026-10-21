@@ -33,6 +33,12 @@ function handleSkillCancel(ctx, socket, _data) {
         timestamp: Date.now(),
         data: { skillName, type: 'cast_cancel' }
     });
+    // Drop the channeling stance other clients are showing for this cast.
+    ctx.broadcastInZone(session.zoneId, {
+        type: shared_1.PacketType.CAST_CANCEL,
+        timestamp: Date.now(),
+        data: { entityId: characterId }
+    }, characterId);
 }
 function handleSkillUse(ctx, socket, data) {
     const characterId = ctx.findCharacterBySocket(socket.id);
@@ -222,8 +228,15 @@ function handleSkillUse(ctx, socket, data) {
         ctx.sendToPlayer(characterId, {
             type: shared_1.PacketType.COOLDOWN_UPDATE,
             timestamp: Date.now(),
-            data: { skillName, castTime, type: 'cast_start' }
+            data: { skillName, castTime, type: 'cast_start', anim: (0, shared_1.skillAnimCategory)(ctx.skillSys.findSkillDefinition(skillName)) }
         });
+        // Show the channeling stance to everyone else in the zone; the 'Skill'
+        // execution animation broadcast replaces it on completion.
+        ctx.broadcastInZone(session.zoneId, {
+            type: shared_1.PacketType.CAST_START,
+            timestamp: Date.now(),
+            data: { entityId: characterId, castTime }
+        }, characterId);
         return;
     }
     const skill = ctx.skillSys.findSkillDefinition(skillName);
@@ -297,6 +310,7 @@ function handleSkillUse(ctx, socket, data) {
             skillName,
             type: 'used',
             mpCost: skill?.mpCost || 0,
+            anim: (0, shared_1.skillAnimCategory)(skill || earlySkillDef),
             cooldownRemaining: session.skillCooldowns.find(c => c.skillName === skillName)?.readyAt
                 ? Math.max(0, (session.skillCooldowns.find(c => c.skillName === skillName).readyAt - Date.now()))
                 : 0
@@ -305,7 +319,7 @@ function handleSkillUse(ctx, socket, data) {
     ctx.broadcastInZone(session.zoneId, {
         type: shared_1.PacketType.ENTITY_ANIMATION,
         timestamp: Date.now(),
-        data: { entityId: characterId, animation: 'Attack' }
+        data: { entityId: characterId, animation: 'Skill', skillName, kind: (0, shared_1.skillAnimKind)(skill || earlySkillDef), anim: (0, shared_1.skillAnimCategory)(skill || earlySkillDef), intervalMs: 1000 }
     }, characterId);
     if (result.createdItems && result.createdItems.length > 0) {
         for (const ci of result.createdItems) {
@@ -687,14 +701,20 @@ function handleGroundAOESkillUse(ctx, session, skillName, aoePosition) {
         });
     }
     const { started, castTime } = ctx.skillSys.beginCast(session, skillName, null, aoePosition);
+    console.log(`[anim-debug] GROUND AOE use: ${skillName} started=${started} castTime=${castTime}ms`);
     if (!started)
         return;
     if (castTime > 0) {
         ctx.sendToPlayer(characterId, {
             type: shared_1.PacketType.COOLDOWN_UPDATE,
             timestamp: Date.now(),
-            data: { skillName, castTime, type: 'cast_start', aoePosition }
+            data: { skillName, castTime, type: 'cast_start', aoePosition, anim: (0, shared_1.skillAnimCategory)(ctx.skillSys.findSkillDefinition(skillName)) }
         });
+        ctx.broadcastInZone(session.zoneId, {
+            type: shared_1.PacketType.CAST_START,
+            timestamp: Date.now(),
+            data: { entityId: characterId, castTime }
+        }, characterId);
         return;
     }
     ctx.executeAOESkillInternal(session, skillName, aoePosition);
@@ -767,8 +787,13 @@ function handleConeSkillUse(ctx, session, skillName, targetId) {
         ctx.sendToPlayer(characterId, {
             type: shared_1.PacketType.COOLDOWN_UPDATE,
             timestamp: Date.now(),
-            data: { skillName, castTime, type: 'cast_start' }
+            data: { skillName, castTime, type: 'cast_start', anim: (0, shared_1.skillAnimCategory)(ctx.skillSys.findSkillDefinition(skillName)) }
         });
+        ctx.broadcastInZone(session.zoneId, {
+            type: shared_1.PacketType.CAST_START,
+            timestamp: Date.now(),
+            data: { entityId: characterId, castTime }
+        }, characterId);
         return;
     }
     ctx.executeConeSkillInternal(session, skillName, targetId);

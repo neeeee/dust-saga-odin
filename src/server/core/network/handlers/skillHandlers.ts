@@ -10,6 +10,7 @@ import {
   isZonePvpEnabled,
   isBeneficialSkillType,
   RANGED_WEAPON_TYPES,
+  skillAnimKind, skillAnimCategory,
 } from '@dust-saga/shared';
 import { NetworkContext, PacketHandler } from '../NetworkContext';
 import { hasLineOfSight } from '../../world/LineOfSight';
@@ -44,6 +45,12 @@ function handleSkillCancel(ctx: NetworkContext, socket: Socket, _data: any): voi
     timestamp: Date.now(),
     data: { skillName, type: 'cast_cancel' }
   });
+  // Drop the channeling stance other clients are showing for this cast.
+  ctx.broadcastInZone(session.zoneId, {
+    type: PacketType.CAST_CANCEL,
+    timestamp: Date.now(),
+    data: { entityId: characterId }
+  }, characterId);
 }
 
 function handleSkillUse(ctx: NetworkContext, socket: Socket, data: any): void {
@@ -247,8 +254,15 @@ function handleSkillUse(ctx: NetworkContext, socket: Socket, data: any): void {
     ctx.sendToPlayer(characterId, {
       type: PacketType.COOLDOWN_UPDATE,
       timestamp: Date.now(),
-      data: { skillName, castTime, type: 'cast_start' }
+      data: { skillName, castTime, type: 'cast_start' , anim: skillAnimCategory(ctx.skillSys.findSkillDefinition(skillName)) }
     });
+    // Show the channeling stance to everyone else in the zone; the 'Skill'
+    // execution animation broadcast replaces it on completion.
+    ctx.broadcastInZone(session.zoneId, {
+      type: PacketType.CAST_START,
+      timestamp: Date.now(),
+      data: { entityId: characterId, castTime }
+    }, characterId);
     return;
   }
 
@@ -333,6 +347,7 @@ function handleSkillUse(ctx: NetworkContext, socket: Socket, data: any): void {
       skillName,
       type: 'used',
       mpCost: skill?.mpCost || 0,
+      anim: skillAnimCategory(skill || earlySkillDef),
       cooldownRemaining: session.skillCooldowns.find(c => c.skillName === skillName)?.readyAt
         ? Math.max(0, (session.skillCooldowns.find(c => c.skillName === skillName)!.readyAt - Date.now()))
         : 0
@@ -342,7 +357,7 @@ function handleSkillUse(ctx: NetworkContext, socket: Socket, data: any): void {
   ctx.broadcastInZone(session.zoneId, {
     type: PacketType.ENTITY_ANIMATION,
     timestamp: Date.now(),
-    data: { entityId: characterId, animation: 'Attack' }
+    data: { entityId: characterId, animation: 'Skill', skillName, kind: skillAnimKind(skill || earlySkillDef), anim: skillAnimCategory(skill || earlySkillDef), intervalMs: 1000 }
   }, characterId);
 
   if (result.createdItems && result.createdItems.length > 0) {
@@ -732,14 +747,20 @@ function handleGroundAOESkillUse(
   }
 
   const { started, castTime } = ctx.skillSys.beginCast(session, skillName, null, aoePosition);
+  console.log(`[anim-debug] GROUND AOE use: ${skillName} started=${started} castTime=${castTime}ms`);
   if (!started) return;
 
   if (castTime > 0) {
     ctx.sendToPlayer(characterId, {
       type: PacketType.COOLDOWN_UPDATE,
       timestamp: Date.now(),
-      data: { skillName, castTime, type: 'cast_start', aoePosition }
+      data: { skillName, castTime, type: 'cast_start', aoePosition , anim: skillAnimCategory(ctx.skillSys.findSkillDefinition(skillName)) }
     });
+    ctx.broadcastInZone(session.zoneId, {
+      type: PacketType.CAST_START,
+      timestamp: Date.now(),
+      data: { entityId: characterId, castTime }
+    }, characterId);
     return;
   }
 
@@ -823,8 +844,13 @@ function handleConeSkillUse(
     ctx.sendToPlayer(characterId, {
       type: PacketType.COOLDOWN_UPDATE,
       timestamp: Date.now(),
-      data: { skillName, castTime, type: 'cast_start' }
+      data: { skillName, castTime, type: 'cast_start' , anim: skillAnimCategory(ctx.skillSys.findSkillDefinition(skillName)) }
     });
+    ctx.broadcastInZone(session.zoneId, {
+      type: PacketType.CAST_START,
+      timestamp: Date.now(),
+      data: { entityId: characterId, castTime }
+    }, characterId);
     return;
   }
 

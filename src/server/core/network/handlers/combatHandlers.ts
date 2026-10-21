@@ -1,12 +1,55 @@
 import { Socket } from 'socket.io';
 import {
-  Packet, PacketType, PlayerSession, isZonePvpEnabled,
+  Packet, PacketType, PlayerSession, isZonePvpEnabled, GAME_CONFIG,
 } from '@dust-saga/shared';
 import { NetworkContext, PacketHandler } from '../NetworkContext';
 
 export function registerHandlers(registry: Map<PacketType, PacketHandler>): void {
   registry.set(PacketType.ATTACK, handleAttack);
   registry.set(PacketType.MANUAL_ATTACK, handleManualAttack);
+  registry.set(PacketType.STANCE_UPDATE, handleStanceUpdate);
+  registry.set(PacketType.ANIM_DEBUG, handleAnimDebug);
+}
+
+// Sheath/drawn stance report: store it and rebroadcast to the zone so other
+// clients render the stance immediately. Only transitions are sent by the
+// client; the server additionally rate-limits and drops no-op restates so
+// keybind mashing can't spam the zone.
+function handleStanceUpdate(ctx: NetworkContext, socket: Socket, data: any): void {
+  const characterId = ctx.findCharacterBySocket(socket.id);
+  if (!characterId) return;
+
+  const session = ctx.state.players.get(characterId);
+  if (!session) return;
+
+  const drawn = !!data?.drawn;
+  const now = Date.now();
+  if (session.weaponDrawn === drawn) return;
+  if (session.lastStanceAt && now - session.lastStanceAt < 150) return;
+  session.weaponDrawn = drawn;
+  session.lastStanceAt = now;
+
+  ctx.broadcastInZone(session.zoneId, {
+    type: PacketType.ENTITY_STANCE,
+    timestamp: now,
+    data: { entityId: characterId, drawn }
+  }, characterId);
+}
+
+// Animation-playback debug relay: the client reports every clip it plays.
+function handleAnimDebug(ctx: NetworkContext, socket: Socket, data: any): void {
+  const characterId = ctx.findCharacterBySocket(socket.id) || '?';
+  console.log(`[anim-debug] ${characterId}: ${data?.msg ?? ''}`);
+}
+
+// Auto-attack cadence for animation timing: the client scales the swing clip
+// so it fills this interval (same formula as the client's own cooldown gate).
+function attackIntervalMs(session: PlayerSession): number {
+  const speed = session.stats?.castSpeed || 0;
+  if (speed > 0) {
+    return Math.max(GAME_CONFIG.AUTO_ATTACK_MIN_COOLDOWN, GAME_CONFIG.AUTO_ATTACK_BASE_COOLDOWN / speed);
+  }
+  return GAME_CONFIG.AUTO_ATTACK_BASE_COOLDOWN;
 }
 
 function handleAttack(ctx: NetworkContext, socket: Socket, data: any): void {
@@ -17,6 +60,8 @@ function handleAttack(ctx: NetworkContext, socket: Socket, data: any): void {
   if (!session) return;
 
   if (session.currentNpcId) return;
+  // No auto-attacks while a skill is channeling.
+  if (session.activeCast) return;
 
   ctx.cancelRest(session);
 
@@ -40,7 +85,7 @@ function handleAttack(ctx: NetworkContext, socket: Socket, data: any): void {
   ctx.broadcastInZone(session.zoneId, {
     type: PacketType.ENTITY_ANIMATION,
     timestamp: Date.now(),
-    data: { entityId: characterId, animation: 'Attack' }
+    data: { entityId: characterId, animation: 'Attack', intervalMs: attackIntervalMs(session) }
   }, characterId);
 
   for (const damageInfo of damageInfos) {
@@ -114,13 +159,15 @@ function handleManualAttack(ctx: NetworkContext, socket: Socket, data: any): voi
   if (!session || session.isDead) return;
 
   if (session.currentNpcId) return;
+  // No manual attacks while a skill is channeling.
+  if (session.activeCast) return;
 
   ctx.cancelRest(session);
 
   ctx.broadcastInZone(session.zoneId, {
     type: PacketType.ENTITY_ANIMATION,
     timestamp: Date.now(),
-    data: { entityId: characterId, animation: 'Attack' }
+    data: { entityId: characterId, animation: 'Attack', intervalMs: attackIntervalMs(session) }
   }, characterId);
 
   const zoneEnemies = ctx.spawnMgr.getEnemiesInZone(session.zoneId) || new Map();

@@ -37,6 +37,7 @@ export * from './types/trade';
 export * from './types/summon';
 export * from './utils/proficiency';
 export * from './utils/skillAnimations';
+export * from './utils/equipment';
 export * from './utils/math';
 export * from './utils/validator';
 export * from './utils/racialPassives';

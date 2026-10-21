@@ -91,6 +91,7 @@ __exportStar(require("./types/trade"), exports);
 __exportStar(require("./types/summon"), exports);
 __exportStar(require("./utils/proficiency"), exports);
 __exportStar(require("./utils/skillAnimations"), exports);
+__exportStar(require("./utils/equipment"), exports);
 __exportStar(require("./utils/math"), exports);
 __exportStar(require("./utils/validator"), exports);
 __exportStar(require("./utils/racialPassives"), exports);

@@ -388,7 +388,8 @@ export class CombatSystem extends System {
 
   processEnemyAttack(
     enemy: EnemyInstance,
-    target: PlayerSession
+    target: PlayerSession,
+    powerMult = 1
   ): DamageInfo | null {
     const def = getEnemyDefinition(enemy.enemyType);
     const attackRange = def?.attackRange || 2;
@@ -418,7 +419,7 @@ export class CombatSystem extends System {
       };
     }
 
-    const attackPower = def?.attack || 5;
+    const attackPower = (def?.attack || 5) * powerMult;
     const targetEffective = target.effectiveStats ?? getEffectiveStats(
       target.stats,
       target.statPoints,

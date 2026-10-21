@@ -188,6 +188,14 @@ Packet_Type :: enum u32 {
 	GUILD_BANK_ITEM            = 210,
 	GUILD_DISBAND              = 211,
 	ENTITY_GUILD_TAG           = 212,
+
+	// Skill-cast presentation (zone broadcasts about other entities).
+	CAST_START                 = 213,
+	CAST_CANCEL                = 214,
+	ENTITY_EQUIPMENT           = 215,
+	STANCE_UPDATE              = 216,
+	ENTITY_STANCE              = 217,
+	ANIM_DEBUG                 = 218,
 }
 
 // A decoded inbound packet. `data` is an owned (deep-cloned) JSON payload; the
@@ -510,6 +518,24 @@ send_attack :: proc(nc: ^Network_Client, target_id: string) {
 	defer delete(fields)
 	append(&fields, JSON_Field{"targetId", json_str(target_id)})
 	send_object(nc, .ATTACK, fields[:])
+}
+
+// Report a sheath/drawn stance transition; the server rebroadcasts it to the
+// zone (rate-limited there, so keybind mashing can't spam it).
+send_stance :: proc(nc: ^Network_Client, drawn: bool) {
+	fields := make([dynamic]JSON_Field, 0, 1)
+	defer delete(fields)
+	append(&fields, JSON_Field{"drawn", json.Boolean(drawn)})
+	send_object(nc, .STANCE_UPDATE, fields[:])
+}
+
+// Animation-playback debug relay: the server prints the message to its
+// console (see ANIM_DEBUG).
+send_anim_debug :: proc(nc: ^Network_Client, msg: string) {
+	fields := make([dynamic]JSON_Field, 0, 1)
+	defer delete(fields)
+	append(&fields, JSON_Field{"msg", json_str(msg)})
+	send_object(nc, .ANIM_DEBUG, fields[:])
 }
 
 send_manual_attack :: proc(nc: ^Network_Client, facing_angle: f32) {

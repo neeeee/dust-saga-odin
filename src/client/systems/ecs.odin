@@ -32,10 +32,11 @@ Renderable :: struct {
 	// character model is drawn instead of the capsule. Owned: removed with
 	// the entity / on scene_clear.
 	avatar:         ^Chara_Avatar,
-	// Enemy entities: when the monster's glb loaded, it is drawn instead of
-	// the capsule (animated idle — see monster_models.odin). Not owned: the
-	// monster cache holds the reference for the session.
-	monster:        ^Monster_Model,
+	// Enemy entities: per-entity animation state against the shared monster
+	// glb (skill swings/cast loops + per-entity idle; see monster_models.odin).
+	// By value — the species model stays in the monster cache for the session
+	// and the pose is applied to it at draw time, so nothing to free.
+	monster:        Monster_Instance,
 	model_scale:    f32,
 }
 
@@ -203,6 +204,10 @@ remove_entity :: proc(s: ^Scene, id: Entity_Id) {
 	idx := find_index(s, id)
 	if idx == -1 do return
 
+	battle_playback_stop(id)
+	battle_cast_forget(id)
+	entity_equipment_forget(id)
+
 	if s.renderables[idx].avatar != nil {
 		chara_avatar_destroy(s.renderables[idx].avatar)
 		s.renderables[idx].avatar = nil
@@ -229,6 +234,11 @@ remove_entity :: proc(s: ^Scene, id: Entity_Id) {
 
 // Reset the scene (used on zone change / character-select return).
 scene_clear :: proc(s: ^Scene) {
+	if battle_playbacks != nil do clear(&battle_playbacks)
+	if remote_cast_ends != nil do clear(&remote_cast_ends)
+	entity_equipment_clear_all()
+	if phased_actions != nil do clear(&phased_actions)
+	battle_held_impacts_clear()
 	for i in 0..<s.count {
 		if s.renderables[i].avatar != nil {
 			chara_avatar_destroy(s.renderables[i].avatar)
@@ -476,7 +486,20 @@ update :: proc(s: ^Scene, dt: f32, current_time: f64, player_pos: [3]f32, curren
 			} else if av.speed >= AVATAR_WALK_SPEED {
 				clip = .WALK
 			}
-			chara_avatar_update(av, clip, dt, false)
+			// Remotes run their drawn-stance clips while fighting (recent
+			// attack/skill), sheathed stances otherwise.
+			id := s.entity_ids[i]
+			chara_avatar_update(av, clip, dt, entity_is_drawn(id))
+			if inv, ok := entity_equipment[id]; ok {
+				chara_avatar_set_weapon_kind(av, entity_weapon_kind(id))
+				chara_avatar_sync_armor(av, &inv)
+				chara_avatar_update_armor(av)
+			}
+		}
+
+		// Monster clones pose independently (idle + skill clips).
+		if s.renderables[i].monster.valid {
+			monster_instance_update(&s.renderables[i].monster, dt)
 		}
 	}
 }
@@ -504,11 +527,34 @@ render :: proc(s: ^Scene, camera: rl.Camera3D) {
 		case .CAPSULE:
 			if r.avatar != nil {
 				av := r.avatar
-				rl.DrawModelEx(av.sub.model,
-					{t.position.x, t.position.y + av.lift, t.position.z},
-					axis, angle + AVATAR_YAW_OFFSET_DEG, {av.scale, av.scale, av.scale}, r.color)
-			} else if r.monster != nil {
-				monster_model_draw(r.monster,
+				id := s.entity_ids[i]
+				// body drawn mesh-by-mesh (armor-replaced regions hidden),
+				// then the held weapon and worn armor — same as the local
+				// player's draw path.
+				chara_avatar_draw_body(av,
+					{t.position.x, t.position.y, t.position.z},
+					t.rotation.y, r.color)
+				if inv, ok := entity_equipment[id]; ok {
+					w := &inv.equipment[int(EQUIP_SLOT.WAPON)]
+					if w.item_id_len > 0 {
+						wid := item_id_string(w)
+						if held := held_model_for_item(wid); held != nil {
+							scale_mul := f32(1.0)
+							if def, ok2 := item_def(wid); ok2 {
+								scale_mul = item_race_scale(def, av.cm.id)
+							}
+							chara_avatar_draw_held(av, held,
+								{t.position.x, t.position.y, t.position.z},
+								t.rotation.y, r.color,
+								entity_is_drawn(id), scale_mul)
+						}
+					}
+				}
+				chara_avatar_draw_armor(av,
+					{t.position.x, t.position.y, t.position.z},
+					t.rotation.y, r.color)
+			} else if r.monster.valid {
+				monster_model_draw(&r.monster,
 					{t.position.x, t.position.y, t.position.z},
 					t.rotation.y, r.color, r.model_scale)
 			} else if r.draw_wireframe {

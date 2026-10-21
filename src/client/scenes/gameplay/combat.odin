@@ -9,12 +9,26 @@ import rl "vendor:raylib"
 
 // ── combat ────────────────────────────────────────────────────────────────
 
+// Grace for the server's "used" after a Shot channel's local timer expires,
+// and how long a just-released channel draw suppresses duplicate execs.
+SHOT_USED_GRACE_MS :: 750.0
+SHOT_REEXEC_SUPPRESS_MS :: 1500.0
+
+// Flip the sheath/drawn stance and report the transition to the server once
+// (the zone broadcast drives other clients; the server rate-limits, so
+// keybind mashing can't spam packets).
+set_weapon_drawn :: proc(drawn: bool) {
+	if state.weapon_drawn == drawn do return
+	state.weapon_drawn = drawn
+	sys.send_stance(state.net, drawn)
+}
+
 apply_combat :: proc(inp: sys.Input_State) {
 	// B: toggle the sheath/drawn stance — works without a target (drawn is
 	// purely visual until there's something to attack). Sheathing also
 	// cancels auto-attack; engaging auto-attack draws the weapon.
 	if inp.attack {
-		state.weapon_drawn = !state.weapon_drawn
+		set_weapon_drawn(!state.weapon_drawn)
 		if !state.weapon_drawn {
 			state.auto_attack_active = false
 		} else if state.player.target_id != sys.INVALID_ENTITY {
@@ -32,16 +46,19 @@ apply_combat :: proc(inp: sys.Input_State) {
 	// cone around the aim direction; bows/crossbows loose a single arrow.
 	// Attacking implies the drawn stance.
 	if inp.manual_attack {
-		state.weapon_drawn = true
-		if f64(state.clock_ms - state.player.last_manual_attack_ms) >=
-		   sys.COMBAT.MANUAL_ATTACK_COOLDOWN {
-			dx, dz, aim_dist := aim_direction()
-			sys.send_manual_attack(state.net, math.atan2(dx, dz))
-			state.player.last_manual_attack_ms = state.clock_ms
-			if player_weapon_is_ranged() {
-				spawn_arrow_tracer(dx, dz, aim_dist)
-			}
-		}
+		set_weapon_drawn(true)
+	if f64(state.clock_ms - state.player.last_manual_attack_ms) >=
+	   sys.COMBAT.MANUAL_ATTACK_COOLDOWN {
+		dx, dz, aim_dist := aim_direction()
+		sys.send_manual_attack(state.net, math.atan2(dx, dz))
+		state.player.last_manual_attack_ms = state.clock_ms
+		// Local swing, timed to the manual-attack cadence (the zone-wide
+		// broadcast drives everyone else's view); the arrow waits for the
+		// release frame.
+		sys.battle_script_start_attack(state.scene.player_id, state.local_avatar,
+			equipped_weapon_kind(), sys.COMBAT.MANUAL_ATTACK_COOLDOWN)
+		defer_arrow_tracer()
+	}
 	}
 }
 
@@ -99,11 +116,37 @@ spawn_arrow_tracer :: proc(dx, dz: f32, aim_dist: f32) {
 	})
 }
 
+// Ranged attacks loose their arrow on the phased release frame (the draw
+// starts at attack-send time), so remember the aim and wait. When the model
+// has no phased draw there is no release to wait for — spawn immediately.
+defer_arrow_tracer :: proc() {
+	if !player_weapon_is_ranged() do return
+	dx, dz, aim_dist := aim_direction()
+	state.pending_shot = Pending_Shot{active = true, dx = dx, dz = dz, dist = aim_dist}
+	if !sys.battle_phased_active(state.scene.player_id) {
+		state.pending_shot.active = false
+		spawn_arrow_tracer(dx, dz, aim_dist)
+	}
+}
+
+// The local player's phased release just fired — loose the waiting arrow.
+fire_pending_arrow :: proc() {
+	if !state.pending_shot.active do return
+	state.pending_shot.active = false
+	spawn_arrow_tracer(state.pending_shot.dx, state.pending_shot.dz, state.pending_shot.dist)
+}
+
 // Fires the next auto-attack swing when the cooldown allows AND the target is
 // in range for the weapon (the server silently drops out-of-range attacks, so
 // gate the send here — no attack, no animation, when too far).
 try_auto_attack :: proc() {
 	if state.player.target_id == sys.INVALID_ENTITY do return
+	// A skill owns the character while it channels or resolves — no auto-
+	// swings during it (the attack draw would also stomp the channel
+	// animation, which shares the action slot).
+	c := &state.player.casting
+	if c.active || c.used_pending do return
+	if f64(state.clock_ms-state.last_skill_exec_ms) < sys.COMBAT.AUTO_ATTACK_MIN_COOLDOWN do return
 	idx := sys.find_index(state.scene, state.player.target_id)
 	if idx < 0 do return
 	t := state.scene.transforms[idx].position
@@ -125,8 +168,11 @@ try_auto_attack :: proc() {
 		state.player.last_auto_attack_ms = state.clock_ms
 		// Local swing via the model's battle script (motion/se/hit timeline)
 		// when one ships for this attack code; plain family swing otherwise.
-		// Remote swings are driven by the server's ENTITY_ANIMATION packet.
-		sys.battle_script_start_attack(state.local_avatar, equipped_weapon_kind())
+		// `cd` times the swing to this attacker's attack speed; remote swings
+		// are driven by the server's ENTITY_ANIMATION packet.
+		sys.battle_script_start_attack(state.scene.player_id, state.local_avatar,
+			equipped_weapon_kind(), cd)
+		defer_arrow_tracer()
 	}
 }
 
@@ -198,11 +244,11 @@ apply_targeting :: proc(inp: sys.Input_State) {
 			kind := state.scene.metas[idx].kind
 			if kind == .NPC {
 				try_talk_to(idx)
-			} else if kind == .ENEMY {
-				// Double-click on an enemy: target it, draw, engage auto-attack.
-				state.weapon_drawn = true
-				state.auto_attack_active = true
-				try_auto_attack()
+				} else if kind == .ENEMY {
+					// Double-click on an enemy: target it, draw, engage auto-attack.
+					set_weapon_drawn(true)
+					state.auto_attack_active = true
+					try_auto_attack()
 			} else if kind == .LOOT {
 				try_loot(idx)
 			}

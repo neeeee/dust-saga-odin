@@ -70,6 +70,9 @@ exports.ENEMY_DATABASE = {
         leashRange: 25,
         respawnTime: 20000,
         patrolSpeed: 1.5,
+        skills: [
+            { name: 'Slice', kind: 'physical', powerMult: 1.4, castTimeMs: 0, cooldownMs: 6000 },
+        ],
         lootTable: {
             rolls: 2,
             drops: [
@@ -98,6 +101,9 @@ exports.ENEMY_DATABASE = {
         leashRange: 30,
         respawnTime: 30000,
         patrolSpeed: 1,
+        skills: [
+            { name: 'Clobber', kind: 'physical', powerMult: 1.8, castTimeMs: 0, cooldownMs: 8000 },
+        ],
         lootTable: {
             rolls: 2,
             drops: [
@@ -126,6 +132,9 @@ exports.ENEMY_DATABASE = {
         leashRange: 35,
         respawnTime: 45000,
         patrolSpeed: 1.5,
+        skills: [
+            { name: 'Curse', kind: 'magical', powerMult: 1.6, castTimeMs: 2000, cooldownMs: 10000 },
+        ],
         lootTable: {
             rolls: 3,
             drops: [

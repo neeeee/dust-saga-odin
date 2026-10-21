@@ -671,6 +671,8 @@ Chara_Avatar :: struct {
 	current_clip: int,  // index into cm.anims, -1 until first update
 	action_clip: int,   // action override (cast, emote, ...), -1 = none
 	action_loop: bool,  // loop the action until cleared vs one-shot
+	action_speed: f32,  // playback rate of the current action (attack speed)
+	action_freeze: bool, // hold the current action frame (bow aim holds)
 	attack_cycle: int,  // swings played — cycles the family's attack_1/2/3
 	combat_idle:  int,  // weapon drawn idle (xx01) while fighting, -1 = none
 	combat_run:   int,  // weapon drawn run (xx18) while fighting, -1 = none
@@ -747,6 +749,7 @@ chara_avatar_create :: proc(cm: ^Chara_Model, face_i, hair_i, color_i: int) -> ^
 	av.scale = AVATAR_HEIGHT / CHARA_REF_HEIGHT
 	av.current_clip = -1
 	av.action_clip = -1
+	av.action_speed = 1
 	av.combat_idle = -1
 	av.combat_run = -1
 	av.applied_clip = -1
@@ -779,6 +782,11 @@ Chara_Weapon_Family :: struct {
 	cast_start:         string, // cast channel loop; "" ⇒ family has none
 	cast_finish:        string, // buff/debuff cast finish
 	cast_finish_attack: string, // attack cast finish
+	// Bow-style phased attacks: draw start → hold (loop) → release (the
+	// release doubles as a basic swing). skill_* repeats the pattern for
+	// Shot-category skills (arrow rain/storm). "" ⇒ the family just swings.
+	ranged_start, ranged_hold, ranged_release: string,
+	skill_start,  skill_hold,  skill_release:  string,
 }
 
 chara_weapon_family :: proc(kind: Weapon_Kind) -> (f: Chara_Weapon_Family) {
@@ -798,8 +806,13 @@ chara_weapon_family :: proc(kind: Weapon_Kind) -> (f: Chara_Weapon_Family) {
 	                                cast_start = "1771", cast_finish = "1772", cast_finish_attack = "1773"}
 	case .STAFF:            return {idle = "1701", run = "1718", a1 = "1755", a2 = "1756", a3 = "1757",
 	                                cast_start = "1771", cast_finish = "1772", cast_finish_attack = "1773"}
-	case .BOW:              return {idle = "1801", run = "1818", a1 = "1855", a2 = "1856", a3 = "1857"}
-	case .CROSSBOW:         return {idle = "1901", run = "1918", a1 = "1955", a2 = "1956", a3 = "1957"}
+	case .BOW:              return {idle = "1801", run = "1818", a1 = "1855", a2 = "1856", a3 = "1857",
+	                                ranged_start = "1861", ranged_hold = "1862", ranged_release = "1855",
+	                                skill_start = "1863",  skill_hold = "1864",  skill_release = "1856"}
+	case .CROSSBOW:         return {idle = "1901", run = "1918", a1 = "1955", a2 = "1956", a3 = "1957",
+	                                ranged_start = "1961", ranged_hold = "1962", ranged_release = "1955"}
+	                                // 1963/1964 are the aim-up variant (elevated targets,
+	                                // unused yet); crossbow skills loose the normal 1955.
 	case .KNUCKLES:         return {idle = "2001", run = "2018", a1 = "2055", a2 = "2056", a3 = "2057"}
 	case .NONE:             return {idle = "1001", run = "1018", a1 = "1055", a2 = "1056", a3 = "1057"}
 	}
@@ -845,6 +858,21 @@ chara_dump_animations :: proc(cm: ^Chara_Model) {
 	_ = os.write_entire_file_from_string(ANIM_DUMP_PATH, strings.to_string(sb))
 }
 
+// ── animation debug relay ────────────────────────────────────────────────
+// Every clip play/freeze/stop on any avatar reports itself to the client
+// console and (when a sink is set) to the server console over ANIM_DEBUG.
+// Gameplay sets the sink to its network client at init.
+anim_debug_relay: ^Network_Client
+
+anim_debug_relay_set :: proc(nc: ^Network_Client) {
+	anim_debug_relay = nc
+}
+
+anim_debug_msg :: proc(msg: string) {
+	rl.TraceLog(.INFO, "[clip] %s", assets_cstring(msg))
+	if anim_debug_relay != nil do send_anim_debug(anim_debug_relay, msg)
+}
+
 // Starts an action clip override by name code ("0071", "0072", ...). Looping
 // actions run until chara_avatar_stop_action; one-shots return to the
 // movement clip when they finish. No-op if the model lacks the clip.
@@ -869,8 +897,31 @@ chara_avatar_play_action_any :: proc(av: ^Chara_Avatar, loop: bool, codes: ..str
 chara_avatar_play_action_index :: proc(av: ^Chara_Avatar, clip_idx: int, loop: bool) {
 	av.action_clip = clip_idx
 	av.action_loop = loop
+	av.action_speed = 1 // attack paths re-scale after playing
+	av.action_freeze = false
 	av.anim_time = 0
 	av.current_clip = -1 // movement clip restarts fresh after the action
+	if 0 <= clip_idx && clip_idx < av.cm.anim_count {
+		anim_debug_msg(fmt.tprintf("play model=%s %s loop=%v",
+			av.cm.id, chara_anim_name(&av.cm.anims[clip_idx]), loop))
+	}
+}
+
+// Pin the avatar to `clip_idx`'s final frame (a bow aim hold): the action
+// stays until another play/stop replaces it.
+chara_avatar_freeze_action :: proc(av: ^Chara_Avatar, clip_idx: int) {
+	if av == nil || clip_idx < 0 do return
+	frames := f32(anim_keyframe_count(av, clip_idx))
+	if frames <= 0 do return
+	av.action_clip = clip_idx
+	av.action_loop = false
+	av.action_freeze = true
+	av.anim_time = f64((frames - 1) / CHARA_ANIM_FPS)
+	av.current_clip = -1
+	if 0 <= clip_idx && clip_idx < av.cm.anim_count {
+		anim_debug_msg(fmt.tprintf("freeze model=%s %s",
+			av.cm.id, chara_anim_name(&av.cm.anims[clip_idx])))
+	}
 }
 
 // Tracks the equipped weapon's animation family: combat idles use the family
@@ -889,6 +940,7 @@ chara_avatar_stop_action :: proc(av: ^Chara_Avatar) {
 	if av == nil do return
 	av.action_clip = -1
 	av.anim_time = 0
+	anim_debug_msg("stop")
 }
 
 // Plays one weapon attack swing on the avatar: the kind's family clips from
@@ -912,8 +964,7 @@ chara_avatar_play_attack :: proc(av: ^Chara_Avatar, kind: Weapon_Kind) {
 	av.attack_cycle += 1
 }
 
-chara_avatar_destroy :: proc(av: ^Chara_Avatar) {
-	if av == nil do return
+chara_avatar_destroy :: proc(av: ^Chara_Avatar) {	if av == nil do return
 	// Unload the cloned GPU meshes. UnloadMesh also frees the CPU arrays, and
 	// most of those are shared with the cached base model — nil them first so
 	// only the avatar-owned anim arrays go away.
@@ -986,7 +1037,7 @@ chara_avatar_update :: proc(av: ^Chara_Avatar, clip: Chara_Clip, dt: f32, combat
 			av.anim_time += f64(dt)
 		}
 	} else {
-		av.anim_time += f64(dt)
+		if !av.action_freeze do av.anim_time += f64(dt * av.action_speed)
 	}
 
 	// When the clip on screen changes, cross-fade from the last applied pose

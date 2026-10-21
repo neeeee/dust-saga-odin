@@ -135,4 +135,23 @@ var PacketType;
     PacketType[PacketType["GUILD_BANK_ITEM"] = 210] = "GUILD_BANK_ITEM";
     PacketType[PacketType["GUILD_DISBAND"] = 211] = "GUILD_DISBAND";
     PacketType[PacketType["ENTITY_GUILD_TAG"] = 212] = "ENTITY_GUILD_TAG";
+    // Skill-cast presentation: zone broadcasts so remote clients see an entity
+    // channeling (looping cast stance) and drop it on interrupt/cancel. A
+    // completed cast needs no end packet — the ENTITY_ANIMATION 'Skill' payload
+    // that fires on execution replaces the loop.
+    PacketType[PacketType["CAST_START"] = 213] = "CAST_START";
+    PacketType[PacketType["CAST_CANCEL"] = 214] = "CAST_CANCEL";
+    // Visible equipment of a player entity (slot → item id), broadcast when it
+    // changes so other clients render armor/weapon swaps immediately. The same
+    // summary also rides the player spawn payload.
+    PacketType[PacketType["ENTITY_EQUIPMENT"] = 215] = "ENTITY_EQUIPMENT";
+    // Client → server sheath/drawn stance report; the server rebroadcasts it to
+    // the zone so other clients render the stance near-immediately. Sent only
+    // on state transitions, rate-limited server-side against keybind mashing.
+    PacketType[PacketType["STANCE_UPDATE"] = 216] = "STANCE_UPDATE";
+    PacketType[PacketType["ENTITY_STANCE"] = 217] = "ENTITY_STANCE";
+    // Client → server animation-playback debug relay (temporary diagnostics):
+    // the client reports every animation clip it plays and the server prints
+    // it to its console.
+    PacketType[PacketType["ANIM_DEBUG"] = 218] = "ANIM_DEBUG";
 })(PacketType || (exports.PacketType = PacketType = {}));

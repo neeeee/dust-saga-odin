@@ -303,7 +303,7 @@ class CombatSystem extends EntityManager_1.System {
         }
         return results;
     }
-    processEnemyAttack(enemy, target) {
+    processEnemyAttack(enemy, target, powerMult = 1) {
         const def = (0, shared_1.getEnemyDefinition)(enemy.enemyType);
         const attackRange = def?.attackRange || 2;
         const dist = Math.sqrt((enemy.position.x - target.position.x) ** 2 +
@@ -328,7 +328,7 @@ class CombatSystem extends EntityManager_1.System {
                 missed: true,
             };
         }
-        const attackPower = def?.attack || 5;
+        const attackPower = (def?.attack || 5) * powerMult;
         const targetEffective = target.effectiveStats ?? (0, shared_1.getEffectiveStats)(target.stats, target.statPoints, target.statusEffects || []);
         const { damage, isCritical } = this.computePhysicalDamage(attackPower, targetEffective.defense, 'monster');
         let finalDamage = damage;

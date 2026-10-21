@@ -128,7 +128,13 @@ export declare enum PacketType {
     GUILD_BANK_GOLD = 209,
     GUILD_BANK_ITEM = 210,
     GUILD_DISBAND = 211,
-    ENTITY_GUILD_TAG = 212
+    ENTITY_GUILD_TAG = 212,
+    CAST_START = 213,
+    CAST_CANCEL = 214,
+    ENTITY_EQUIPMENT = 215,
+    STANCE_UPDATE = 216,
+    ENTITY_STANCE = 217,
+    ANIM_DEBUG = 218
 }
 export interface Packet {
     type: PacketType;

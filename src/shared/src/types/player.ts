@@ -49,6 +49,9 @@ export interface PlayerSession {
   race: string;
   racialPassive?: string;
   role: AccountRole;
+  /** Sheath/drawn stance (STANCE_UPDATE); rebroadcast as ENTITY_STANCE. */
+  weaponDrawn?: boolean;
+  lastStanceAt?: number;
   jobId: JobId;
   baseClass: BaseClass;
   // Character creator appearance (character model + face/hair/color picks)
@@ -152,6 +155,16 @@ export interface EnemyInstance {
   statusEffects: StatusEffect[];
   invulnerable?: boolean;
   enmityTable?: Record<string, EnmityEntry>;
+  /** Skill channel in progress — set by AISystem, resolved when readyAt passes. */
+  skillCast?: {
+    name: string;
+    kind: 'physical' | 'magical';
+    powerMult: number;
+    cooldownMs: number;
+    targetId: string;
+    readyAt: number;
+  };
+  lastSkillTime?: number;
 }
 
 export interface DamageInfo {

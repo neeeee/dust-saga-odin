@@ -1,5 +1,5 @@
 import { EntityManager, System } from '../EntityManager';
-import { EnemyInstance, StatusEffectType, distance2D } from '@dust-saga/shared';
+import { EnemyInstance, EnemySkillDef, StatusEffectType, distance2D } from '@dust-saga/shared';
 import { getEnemyDefinition } from '@dust-saga/shared';
 import type { EnmitySystem } from './EnmitySystem';
 
@@ -14,6 +14,9 @@ export class AISystem extends System {
   private attackSummonCallbacks: Array<(enemyId: string, summonId: string, damage: number) => void> = [];
   private respawnCallbacks: Array<(enemyId: string) => void> = [];
   private aggroCallbacks: Array<(enemyId: string, enemyType: string, targetId: string, enemyPos: { x: number; y: number; z: number }, spawnPos: { x: number; y: number; z: number }) => void> = [];
+  private skillStartCallbacks: Array<(enemyId: string, targetId: string, skillName: string, castTimeMs: number) => void> = [];
+  private skillExecuteCallbacks: Array<(enemyId: string, targetId: string, skill: EnemySkillDef) => void> = [];
+  private skillCancelCallbacks: Array<(enemyId: string, targetId: string) => void> = [];
   enmitySys: EnmitySystem | null = null;
 
   constructor(entityManager: EntityManager) {
@@ -42,6 +45,18 @@ export class AISystem extends System {
 
   onEnemyAggro(callback: (enemyId: string, enemyType: string, targetId: string, enemyPos: { x: number; y: number; z: number }, spawnPos: { x: number; y: number; z: number }) => void): void {
     this.aggroCallbacks.push(callback);
+  }
+
+  onEnemySkillCastStart(callback: (enemyId: string, targetId: string, skillName: string, castTimeMs: number) => void): void {
+    this.skillStartCallbacks.push(callback);
+  }
+
+  onEnemySkillExecute(callback: (enemyId: string, targetId: string, skill: EnemySkillDef) => void): void {
+    this.skillExecuteCallbacks.push(callback);
+  }
+
+  onEnemySkillCancel(callback: (enemyId: string, targetId: string) => void): void {
+    this.skillCancelCallbacks.push(callback);
   }
 
   private getSpeedMultiplier(enemy: EnemyInstance): number {
@@ -470,9 +485,56 @@ export class AISystem extends System {
     enemy.rotation = Math.atan2(targetPos.x - enemy.position.x, targetPos.z - enemy.position.z);
 
     const now = Date.now();
+
+    // Resolve a channeling skill cast: fire when ready; cancel when the
+    // target escaped or vanished mid-channel.
+    if (enemy.skillCast) {
+      const cast = enemy.skillCast;
+      const castPos = this.resolveTargetPosition(cast.targetId, players, summons);
+      if (!castPos || distance2D(enemy.position, castPos) > def.attackRange * 1.5) {
+        enemy.skillCast = undefined;
+        this.skillCancelCallbacks.forEach(cb => cb(enemy.id, cast.targetId));
+        return;
+      }
+      if (now >= cast.readyAt) {
+        enemy.skillCast = undefined;
+        enemy.lastSkillTime = now;
+        this.skillExecuteCallbacks.forEach(cb => cb(enemy.id, cast.targetId, {
+          name: cast.name,
+          kind: cast.kind,
+          powerMult: cast.powerMult,
+          castTimeMs: 0,
+          cooldownMs: cast.cooldownMs,
+        }));
+      }
+      return; // channeling: no basic attack until the cast resolves
+    }
+
     const cooldown = def.attackCooldown || 1000;
     if (now - enemy.lastAttackTime >= cooldown) {
       enemy.lastAttackTime = now;
+
+      // Skill roll: a ready skill replaces this swing (instant ones fire
+      // now; channeled ones start the cast and block further attacks).
+      const skill = this.pickEnemySkill(enemy, def, now);
+      if (skill) {
+        if (skill.castTimeMs > 0) {
+          enemy.skillCast = {
+            name: skill.name,
+            kind: skill.kind,
+            powerMult: skill.powerMult,
+            cooldownMs: skill.cooldownMs,
+            targetId: enemy.targetId,
+            readyAt: now + skill.castTimeMs,
+          };
+          this.skillStartCallbacks.forEach(cb => cb(enemy.id, enemy.targetId!, skill.name, skill.castTimeMs));
+          return;
+        }
+        enemy.lastSkillTime = now;
+        this.skillExecuteCallbacks.forEach(cb => cb(enemy.id, enemy.targetId!, skill));
+        return;
+      }
+
       const isSummon = summons.has(enemy.targetId);
       if (isSummon) {
         this.attackSummonCallbacks.forEach(cb => cb(enemy.id, enemy.targetId!, def.attack));
@@ -480,6 +542,16 @@ export class AISystem extends System {
         this.attackCallbacks.forEach(cb => cb(enemy.id, enemy.targetId!, def.attack));
       }
     }
+  }
+
+  // Rolls whether this swing becomes a skill instead: the definition's pool,
+  // gated by the skill's own cooldown and a 30% chance.
+  private pickEnemySkill(enemy: EnemyInstance, def: ReturnType<typeof getEnemyDefinition> | undefined, now: number): EnemySkillDef | null {
+    if (!def || !def.skills || def.skills.length === 0) return null;
+    if (Math.random() > 0.3) return null;
+    const skill = def.skills[Math.floor(Math.random() * def.skills.length)];
+    if (now - (enemy.lastSkillTime || 0) < skill.cooldownMs) return null;
+    return skill;
   }
 
   private moveReturn(enemy: EnemyInstance, def: ReturnType<typeof getEnemyDefinition>, deltaTime: number): void {
@@ -499,6 +571,7 @@ export class AISystem extends System {
       enemy.position = { ...enemy.spawnPosition };
       enemy.currentPatrolIndex = 0;
       enemy.statusEffects = [];
+      enemy.skillCast = undefined;
       if (this.enmitySys) {
         this.enmitySys.clearEnmity(enemy);
       }

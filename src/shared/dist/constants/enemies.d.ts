@@ -1,4 +1,20 @@
 import { LootTable } from '../types/items';
+/**
+ * A monster skill: presentation rides the same ENTITY_ANIMATION 'Skill'
+ * payload as player casts (the client plays the monster glb's own clips by
+ * kind — swings 0155-57 physical, cast loop 0171 + end 0172 otherwise), and
+ * damage reuses the monster's basic attack roll scaled by powerMult.
+ */
+export interface EnemySkillDef {
+    /** Display name — carried to clients (skill.csv/fx lookup, combat text). */
+    name: string;
+    kind: 'physical' | 'magical';
+    /** Damage multiplier over the enemy definition's `attack`. */
+    powerMult: number;
+    /** Channel duration before the skill lands (0 = instant). */
+    castTimeMs: number;
+    cooldownMs: number;
+}
 export interface EnemyDefinition {
     id: string;
     name: string;
@@ -27,7 +43,8 @@ export interface EnemyDefinition {
     attackCooldown?: number;
     aggroStrategy?: 'first' | 'closest' | 'lowestHp';
     patrolStrategy?: 'random' | 'sequential';
-    skills?: Array<string>;
+    /** Chance-weighted pool the AI rolls against instead of a basic attack. */
+    skills?: EnemySkillDef[];
     immunities?: string[];
     knockbackImmune?: boolean;
     magicDefense?: number;

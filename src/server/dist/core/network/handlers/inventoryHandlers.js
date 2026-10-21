@@ -40,6 +40,11 @@ function handleItemUse(ctx, socket, data) {
             timestamp: Date.now(),
             data: { inventory: session.inventory, equipment: session.equipment }
         });
+        ctx.broadcastInZone(session.zoneId, {
+            type: shared_1.PacketType.ENTITY_EQUIPMENT,
+            timestamp: Date.now(),
+            data: { entityId: characterId, equipment: (0, shared_1.equipmentSummary)(session.equipment) }
+        });
         ctx.sendToPlayer(characterId, {
             type: shared_1.PacketType.STATS_UPDATE,
             timestamp: Date.now(),
@@ -80,6 +85,11 @@ function handleItemUse(ctx, socket, data) {
             timestamp: Date.now(),
             data: { inventory: session.inventory, equipment: session.equipment }
         });
+        ctx.broadcastInZone(session.zoneId, {
+            type: shared_1.PacketType.ENTITY_EQUIPMENT,
+            timestamp: Date.now(),
+            data: { entityId: characterId, equipment: (0, shared_1.equipmentSummary)(session.equipment) }
+        });
         ctx.sendToPlayer(characterId, {
             type: shared_1.PacketType.NOTIFICATION,
             timestamp: Date.now(),
@@ -101,6 +111,11 @@ function handleEquipItem(ctx, socket, data) {
             type: shared_1.PacketType.INVENTORY_UPDATE,
             timestamp: Date.now(),
             data: { inventory: session.inventory, equipment: session.equipment }
+        });
+        ctx.broadcastInZone(session.zoneId, {
+            type: shared_1.PacketType.ENTITY_EQUIPMENT,
+            timestamp: Date.now(),
+            data: { entityId: characterId, equipment: (0, shared_1.equipmentSummary)(session.equipment) }
         });
         ctx.sendToPlayer(characterId, {
             type: shared_1.PacketType.STATS_UPDATE,
@@ -130,6 +145,11 @@ function handleUnequipItem(ctx, socket, data) {
             type: shared_1.PacketType.INVENTORY_UPDATE,
             timestamp: Date.now(),
             data: { inventory: session.inventory, equipment: session.equipment }
+        });
+        ctx.broadcastInZone(session.zoneId, {
+            type: shared_1.PacketType.ENTITY_EQUIPMENT,
+            timestamp: Date.now(),
+            data: { entityId: characterId, equipment: (0, shared_1.equipmentSummary)(session.equipment) }
         });
         ctx.sendToPlayer(characterId, {
             type: shared_1.PacketType.STATS_UPDATE,
@@ -363,6 +383,11 @@ function handleItemDrop(ctx, socket, data) {
             type: shared_1.PacketType.INVENTORY_UPDATE,
             timestamp: Date.now(),
             data: { inventory: session.inventory, equipment: session.equipment }
+        });
+        ctx.broadcastInZone(session.zoneId, {
+            type: shared_1.PacketType.ENTITY_EQUIPMENT,
+            timestamp: Date.now(),
+            data: { entityId: characterId, equipment: (0, shared_1.equipmentSummary)(session.equipment) }
         });
         ctx.sendToPlayer(characterId, {
             type: shared_1.PacketType.NOTIFICATION,

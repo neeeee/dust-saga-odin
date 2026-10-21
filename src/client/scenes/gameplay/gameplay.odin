@@ -106,6 +106,20 @@ state: struct {
 	// Ranged manual-attack tracers (short-lived visual arrows).
 	arrows:                 [dynamic]Arrow_Tracer,
 
+	// Clock ms of the last skill-execution animation — auto-attacks pause
+	// briefly after a skill resolves so they don't talk over it.
+	last_skill_exec_ms:     u64,
+
+	// The cast channel is a phased bow/crossbow draw in flight; the skill
+	// execution must not start a second sequence over it.
+	cast_draw_phased:       bool,
+	// Clock ms of the last skill-channel release — a Shot execution within
+	// 1.5s of it is a duplicate (pulse/hit re-fire) and must not re-draw.
+	shot_channel_released_ms: u64,
+
+	// Aim of the in-flight ranged attack awaiting its release frame.
+	pending_shot:           Pending_Shot,
+
 	click_path:             [dynamic]rl.Vector3,
 	click_path_index:       int,
 	click_move_active:      bool,
@@ -162,6 +176,14 @@ Arrow_Tracer :: struct {
 
 ARROW_TRACER_LIFE :: 0.18
 
+// Aim of a ranged attack waiting for its phased release frame: the draw
+// starts at attack-send time, the arrow flies when the release clip fires.
+Pending_Shot :: struct {
+	active: bool,
+	dx, dz: f32, // normalized aim direction
+	dist:   f32, // aim distance (0 = fall back to max range)
+}
+
 
 // Allocate everything gameplay needs. The network client / scene / player /
 // chat are passed in from main (which owns their lifetimes across state
@@ -195,6 +217,7 @@ init :: proc(
 	state.status = .PLAYING
 	state.initialized = true
 	state.was_connected = true
+	sys.anim_debug_relay_set(state.net)
 	state.auto_attack_active = false
 	state.weapon_drawn = false
 	state.arrows = make([dynamic]Arrow_Tracer)
@@ -223,6 +246,7 @@ shutdown :: proc() {
 	state.chat_len = 0
 	state.auto_attack_active = false
 	state.weapon_drawn = false
+	sys.anim_debug_relay_set(nil)
 	clear(&state.arrows)
 	delete(state.arrows)
 }
@@ -327,16 +351,41 @@ update :: proc(dt: f32) -> (requested: sys.App_State, has_request: bool) {
 	// 8. Teleport pads.
 	check_teleports()
 
-	// 9. Update entity scene (culling + interpolation) and cooldowns.
+	// 9. Update entity scene (culling + interpolation + per-entity monster
+	// poses) and cooldowns.
 	ppos := [3]f32{state.player.position.x, state.player.position.y, state.player.position.z}
 	sys.update(state.scene, dt, f64(rl.GetTime()), ppos, int(rl.GetFPS()))
-	sys.monster_models_update(dt)
 	update_local_avatar(dt)
 	tick_cooldowns(dt)
 	tick_notifications(dt)
 	tick_floating(dt)
 	tick_cast(dt)
-	sys.battle_script_update(state.local_avatar, dt)
+	sys.battle_script_update(state.scene, state.local_avatar, dt)
+	// Phased releases this frame (bow/crossbow loose) fire the waiting arrow
+	// and replay the damage feedback that was held for the shot.
+	{
+		events := sys.battle_take_release_events()
+		defer delete(events)
+		for e in events {
+			if e == state.scene.player_id {
+				anim_log("release fired")
+				if state.cast_draw_phased do state.shot_channel_released_ms = state.clock_ms
+				fire_pending_arrow()
+				sys.battle_flush_held_impacts(state.ctx)
+			}
+		}
+		// The skill draw stays "in flight" until its whole sequence — release
+		// clip included — is gone, so the execution can't layer a second one.
+		// Only then may the next cast draw again.
+		if state.cast_draw_phased && !sys.battle_phased_active(state.scene.player_id) {
+			state.cast_draw_phased = false
+		}
+		// Orphaned impacts (a release event missed) flush as soon as no
+		// phased action is in flight — numbers can be late, never lost.
+		if sys.battle_held_impacts_pending() && !sys.battle_phased_active(state.scene.player_id) {
+			sys.battle_flush_held_impacts(state.ctx)
+		}
+	}
 	tick_arrows(dt)
 	tick_aoe_zones()
 
@@ -530,7 +579,7 @@ update_ground_target :: proc(inp: sys.Input_State) {
 		if hit && state.ctx.zone != nil {
 			half := state.ctx.zone.ground.size / 2.0
 			if point.x >= -half && point.x <= half && point.z >= -half && point.z <= half {
-				state.weapon_drawn = true
+				set_weapon_drawn(true)
 				name := string(gt.skill_name[:gt.name_len])
 				sys.send_skill_use_ground(state.net, name, point.x, point.y, point.z)
 			}
@@ -788,57 +837,136 @@ tick_cast :: proc(dt: f32) {
 	if c.active {
 		c.elapsed += f64(dt * 1000.0)
 
-		// Cast channel: loop the cast clip while the cast runs — the weapon
-		// family's cast stance when it has one, the neutral cast otherwise.
+		// Cast channel: Shot skills channel AS the bow/crossbow draw (start
+		// clip, then hold while aiming; it looses at the cast end). Everything
+		// else loops the cast stance — the family's cast stance when it has
+		// one, the neutral cast otherwise.
 		if !state.cast_anim_active {
 			state.cast_anim_active = true
-			fam := sys.chara_weapon_family(equipped_weapon_kind())
-			sys.chara_avatar_play_action_any(state.local_avatar, true,
-				fam.cast_start, sys.CLIP_CODE_CAST_LOOP)
+			anim := sys.casting_anim(state.ctx)
+			name := string(c.skill_name[:c.name_len])
+			draw_started := false
+			if sys.battle_anim_is_shot(anim) {
+				s, h, r := sys.battle_shot_draw_codes(equipped_weapon_kind())
+				draw_started = sys.battle_start_phased(state.scene.player_id,
+					state.local_avatar, s, h, r, c.cast_time, 0, false)
+				state.cast_draw_phased = draw_started
+				anim_log(fmt.tprintf("%s channel: cat=%s draw=%s/%s/%s phased=%v cast=%.1fs",
+					name, anim, s, h, r, draw_started, c.cast_time / 1000.0))
+			}
+			if !draw_started {
+				fam := sys.chara_weapon_family(equipped_weapon_kind())
+				sys.chara_avatar_play_action_any(state.local_avatar, true,
+					fam.cast_start, sys.CLIP_CODE_CAST_LOOP)
+				anim_log(fmt.tprintf("%s channel: cat=%s neutral cast loop", name, anim))
+			}
 		}
 
-		// Local finish (the server's "used" also clears active).
+		// Local finish (the server's "used" also clears active). For Shot
+		// channels the local timer expiring must NOT end the cast — ending it
+		// here deletes the in-flight draw a beat before the server's "used"
+		// arrives, which then re-draws everything. Wait a short grace for the
+		// confirmation instead; the draw releases on its own deadline either
+		// way.
 		if c.cast_time > 0 && c.elapsed >= c.cast_time {
-			c.active = false
+			if sys.battle_anim_is_shot(sys.casting_anim(state.ctx)) &&
+			   c.elapsed < c.cast_time + SHOT_USED_GRACE_MS {
+				// hold for the server's used
+			} else {
+				c.active = false
+			}
 		}
 	}
 
-	// Cast over (finished or cancelled without execution): play the finish
-	// flourish once; the avatar returns to movement clips afterwards.
+	// Cast over (finished or cancelled without execution): Shot channels drop
+	// the draw silently (no loose, no flourish); everything else plays the
+	// finish flourish once.
 	if state.cast_anim_active && !c.active {
 		state.cast_anim_active = false
+		if sys.battle_anim_is_shot(sys.casting_anim(state.ctx)) {
+			sys.battle_playback_stop(state.scene.player_id)
+			state.cast_draw_phased = false
+			return
+		}
 		fam := sys.chara_weapon_family(equipped_weapon_kind())
 		sys.chara_avatar_play_action_any(state.local_avatar, false,
 			fam.cast_finish, sys.CLIP_CODE_CAST_END)
 	}
 }
 
-// Execution animation for a server-confirmed skill: physical damage swings
-// the equipped weapon family, magical damage plays the attack cast finish,
-// support skills the plain cast finish. The server already range-checked the
-// skill (rejected casts never reach "used"), so out-of-range never animates.
+// Skill-animation diagnostics: every playback decision for the local
+// player's skills lands in the system chat so problems are visible live.
+anim_log :: proc(msg: string) {
+	sys.chat_push(state.chat, .SYSTEM, "anim", msg)
+}
+
+// Execution animation for a server-confirmed skill on the local player —
+// the shared resolver in systems does the work; the server's animation
+// category rides the "used" packet, so even skills the local table doesn't
+// know draw/loose correctly.
 play_skill_execution :: proc(skill: string) {
 	av := state.local_avatar
 	if av == nil do return
-	kind := equipped_weapon_kind()
-	fam := sys.chara_weapon_family(kind)
-	sk := sys.get_skill(skill)
+	state.last_skill_exec_ms = state.clock_ms
 
-	// Battle script first: when it carries a playable motion it replaces the
-	// default execution animation entirely; motionless scripts (fx/se/hit
-	// timing only, e.g. Provoke) layer on top of the default instead.
-	script := sys.battle_script_start_skill(av, skill)
-	if script != nil && sys.battle_script_has_motion(script, av) do return
+	anim := sys.casting_anim(state.ctx)
 
-	if sk != nil && sk.kind == .DAMAGE_PHYSICAL {
-		sys.chara_avatar_play_attack(av, kind)
-	} else if sk != nil && sk.kind == .DAMAGE_MAGICAL {
-		sys.chara_avatar_play_action_any(av, false,
-			fam.cast_finish_attack, sys.CLIP_CODE_CAST_END_ATTACK)
-	} else {
-		sys.chara_avatar_play_action_any(av, false,
-			fam.cast_finish, sys.CLIP_CODE_CAST_END)
+	// The cast channel's draw is still in flight — it looses at the cast end
+	// and the execution must not layer a second sequence over it.
+	if state.cast_draw_phased {
+		anim_log(fmt.tprintf("%s exec: channel draw in flight -> skip", skill))
+		return
 	}
+
+	// Shot skills channel as the draw itself: while the channel draw is in
+	// flight it looses at the cast end and nothing more plays. An instant
+	// Shot skill starts the draw now and looses on the global cooldown.
+	if sys.battle_anim_is_shot(anim) {
+		if state.cast_draw_phased {
+			anim_log(fmt.tprintf("%s exec: channel draw in flight -> skip", skill))
+			return
+		}
+		if state.shot_channel_released_ms != 0 &&
+		   f64(state.clock_ms-state.shot_channel_released_ms) < SHOT_REEXEC_SUPPRESS_MS {
+			anim_log(fmt.tprintf("%s exec: channel just released -> skip", skill))
+			return
+		}
+		if !sys.battle_phased_active(state.scene.player_id) {
+			s, h, r := sys.battle_shot_draw_codes(equipped_weapon_kind())
+			sys.battle_start_phased(state.scene.player_id, av, s, h, r, 1000, 0, false)
+		}
+		return
+	}
+
+	// Script availability report — a PURE lookup: starting the playback here
+	// would also delete the channel's phased draw (battle_start supersedes).
+	script_report := "script=none"
+	if serial, ok := sys.battle_skill_serial(skill); ok {
+		key := fmt.tprintf("%d", serial)
+		script := sys.battle_get_script("skill", av.cm.id, key)
+		if script != nil {
+			if sys.battle_script_has_motion(script, av) {
+				script_report = fmt.tprintf("script motion (%d ops)", len(script.ops))
+			} else {
+				script_report = fmt.tprintf("script motionless (%d ops)", len(script.ops))
+			}
+		}
+	}
+
+	fallback := sys.Battle_Skill_Fallback.CAST_SUPPORT
+	known := false
+	if sk := sys.get_skill(skill); sk != nil {
+		known = true
+		if sk.kind == .DAMAGE_PHYSICAL {
+			fallback = .WEAPON_SWING
+		} else if sk.kind == .DAMAGE_MAGICAL {
+			fallback = .CAST_ATTACK
+		}
+	}
+	anim_log(fmt.tprintf("%s exec: cat=%s %s fallback=%v table=%v", skill, anim,
+		script_report, fallback, known))
+	sys.battle_play_skill_execution(state.scene.player_id, av, skill, fallback,
+		equipped_weapon_kind(), anim, 1000)
 }
 
 tick_arrows :: proc(dt: f32) {
@@ -1044,7 +1172,7 @@ handle_skill_bar_input :: proc(inp: sys.Input_State) {
 
 	// --- Activate ---
 	// Using a skill implies the drawn stance.
-	state.weapon_drawn = true
+	set_weapon_drawn(true)
 	sk := sys.get_skill(name)
 	if sk == nil {
 		sys.send_skill_use(state.net, name, target_string_id())

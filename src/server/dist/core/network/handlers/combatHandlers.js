@@ -5,6 +5,47 @@ const shared_1 = require("@dust-saga/shared");
 function registerHandlers(registry) {
     registry.set(shared_1.PacketType.ATTACK, handleAttack);
     registry.set(shared_1.PacketType.MANUAL_ATTACK, handleManualAttack);
+    registry.set(shared_1.PacketType.STANCE_UPDATE, handleStanceUpdate);
+    registry.set(shared_1.PacketType.ANIM_DEBUG, handleAnimDebug);
+}
+// Sheath/drawn stance report: store it and rebroadcast to the zone so other
+// clients render the stance immediately. Only transitions are sent by the
+// client; the server additionally rate-limits and drops no-op restates so
+// keybind mashing can't spam the zone.
+function handleStanceUpdate(ctx, socket, data) {
+    const characterId = ctx.findCharacterBySocket(socket.id);
+    if (!characterId)
+        return;
+    const session = ctx.state.players.get(characterId);
+    if (!session)
+        return;
+    const drawn = !!data?.drawn;
+    const now = Date.now();
+    if (session.weaponDrawn === drawn)
+        return;
+    if (session.lastStanceAt && now - session.lastStanceAt < 150)
+        return;
+    session.weaponDrawn = drawn;
+    session.lastStanceAt = now;
+    ctx.broadcastInZone(session.zoneId, {
+        type: shared_1.PacketType.ENTITY_STANCE,
+        timestamp: now,
+        data: { entityId: characterId, drawn }
+    }, characterId);
+}
+// Animation-playback debug relay: the client reports every clip it plays.
+function handleAnimDebug(ctx, socket, data) {
+    const characterId = ctx.findCharacterBySocket(socket.id) || '?';
+    console.log(`[anim-debug] ${characterId}: ${data?.msg ?? ''}`);
+}
+// Auto-attack cadence for animation timing: the client scales the swing clip
+// so it fills this interval (same formula as the client's own cooldown gate).
+function attackIntervalMs(session) {
+    const speed = session.stats?.castSpeed || 0;
+    if (speed > 0) {
+        return Math.max(shared_1.GAME_CONFIG.AUTO_ATTACK_MIN_COOLDOWN, shared_1.GAME_CONFIG.AUTO_ATTACK_BASE_COOLDOWN / speed);
+    }
+    return shared_1.GAME_CONFIG.AUTO_ATTACK_BASE_COOLDOWN;
 }
 function handleAttack(ctx, socket, data) {
     const characterId = ctx.findCharacterBySocket(socket.id);
@@ -14,6 +55,9 @@ function handleAttack(ctx, socket, data) {
     if (!session)
         return;
     if (session.currentNpcId)
+        return;
+    // No auto-attacks while a skill is channeling.
+    if (session.activeCast)
         return;
     ctx.cancelRest(session);
     if (data.targetId && ctx.state.players.has(data.targetId) && ctx.isPartyMember(characterId, data.targetId))
@@ -28,7 +72,7 @@ function handleAttack(ctx, socket, data) {
     ctx.broadcastInZone(session.zoneId, {
         type: shared_1.PacketType.ENTITY_ANIMATION,
         timestamp: Date.now(),
-        data: { entityId: characterId, animation: 'Attack' }
+        data: { entityId: characterId, animation: 'Attack', intervalMs: attackIntervalMs(session) }
     }, characterId);
     for (const damageInfo of damageInfos) {
         const enemy = ctx.spawnMgr.getEnemy(data.targetId);
@@ -100,11 +144,14 @@ function handleManualAttack(ctx, socket, data) {
         return;
     if (session.currentNpcId)
         return;
+    // No manual attacks while a skill is channeling.
+    if (session.activeCast)
+        return;
     ctx.cancelRest(session);
     ctx.broadcastInZone(session.zoneId, {
         type: shared_1.PacketType.ENTITY_ANIMATION,
         timestamp: Date.now(),
-        data: { entityId: characterId, animation: 'Attack' }
+        data: { entityId: characterId, animation: 'Attack', intervalMs: attackIntervalMs(session) }
     }, characterId);
     const zoneEnemies = ctx.spawnMgr.getEnemiesInZone(session.zoneId) || new Map();
     const zonePlayerBuf = new Map();

@@ -1,3 +1,5 @@
+import { CLASS_SKILL_DATA } from '../constants/skills';
+
 export enum SkillAnimationType {
   SLASH = 'Slash',
   THRUST = 'Thrust',
@@ -88,15 +90,63 @@ export function getSkillAnimationName(
     return SKILL_NAME_OVERRIDES[skillName];
   }
 
-  if (castTime > 0) {
-    return SkillAnimationType.CAST;
-  }
-
+  // Sub-category first: a cast-time Shot skill (Arrow Rain) is still a bow
+  // draw, a cast-time Grace skill still a heal — the cast-time → generic
+  // cast fallback only applies when the sub-category is unknown.
   if (SUB_CATEGORY_ANIMATIONS[subCategory]) {
     return SUB_CATEGORY_ANIMATIONS[subCategory];
   }
 
+  if (castTime > 0) {
+    return SkillAnimationType.CAST;
+  }
+
   return SkillAnimationType.GENERIC;
+}
+
+export type SkillAnimKind = 'physical' | 'magical' | 'support';
+
+/**
+ * Kind hint for the ENTITY_ANIMATION 'Skill' payload: the client picks the
+ * default execution pose (weapon swing / attack cast finish / plain cast
+ * finish) from it when the skill has no battle script for that model.
+ */
+export function skillAnimKind(def?: { damageType?: string } | null): SkillAnimKind {
+  if (def?.damageType === 'physical') return 'physical';
+  if (def?.damageType === 'magical') return 'magical';
+  return 'support';
+}
+
+let SUBCATEGORY_BY_SKILL: Record<string, string> | null = null;
+
+/** name → sub-category row name ("Slash", "Shot", "Grace", …) from the class
+ * skill trees; first tree that lists a skill wins. */
+function subcategoryIndex(): Record<string, string> {
+  if (!SUBCATEGORY_BY_SKILL) {
+    SUBCATEGORY_BY_SKILL = {};
+    for (const cls of Object.values(CLASS_SKILL_DATA)) {
+      for (const row of cls.skills) {
+        for (const skillName of Object.keys(row.skills)) {
+          if (!SUBCATEGORY_BY_SKILL[skillName]) SUBCATEGORY_BY_SKILL[skillName] = row.name;
+        }
+      }
+    }
+  }
+  return SUBCATEGORY_BY_SKILL;
+}
+
+/**
+ * Fine animation category for a skill definition ("Slash", "Shot", "Cast",
+ * "CastHeal", …) — the shipped sub-category mapping, so skills without a
+ * per-model battle script still play the right family of animation. Returns
+ * '' when the skill is passive or unknown (caller falls back to the kind
+ * hint).
+ */
+export function skillAnimCategory(
+  def?: { name?: string; castTime?: number; isPassive?: boolean } | null
+): string {
+  if (!def || !def.name || def.isPassive) return '';
+  return getSkillAnimationName(def.name, subcategoryIndex()[def.name] || '', def.castTime || 0, !!def.isPassive);
 }
 
 export function getCategoryForSubCategory(subCategoryId: number): string {

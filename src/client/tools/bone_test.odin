@@ -128,6 +128,44 @@ main :: proc() {
 		seats_probe()
 		return
 	}
+	if len(os.args) > 1 && os.args[1] == "packet_probe" {
+		// no window: exercise the wire-id → Packet_Type seeding that crashed
+		// on login when CAST_START (213) outgrew the fixed valid-type table
+		fmt.eprintln("== packet_probe ==")
+		ids := []int{0, 23, 175, 212, 213, 214}
+		for n in ids {
+			pt, ok := sys.int_to_packet_type(n)
+			fmt.eprintfln("  %d -> %v ok=%v", n, pt, ok)
+		}
+		bad, bad_ok := sys.int_to_packet_type(999)
+		fmt.eprintfln("  999 -> %v ok=%v (want ok=false)", bad, bad_ok)
+		return
+	}
+
+	if len(os.args) > 1 && os.args[1] == "monster_smoke" {
+		// tiny visible window (hidden-window contexts crash on this GPU driver);
+		// shutdown mirrors main.odin's order — release GL assets, then the window
+		rl.InitWindow(64, 64, "bone_test")
+		defer rl.CloseWindow()
+		if len(os.args) > 2 && os.args[2] == "acquire_only" {
+			fmt.eprintln("== acquire_only ==")
+			m := sys.monster_model_acquire("monster/monster_21201_Kobold.glb")
+			fmt.eprintfln("  valid=%v", m != nil && m.valid)
+			// old lockstep flow: pose the shared model directly, then shutdown
+			if len(os.args) > 3 && os.args[3] == "pose" && m != nil && m.valid && m.anim_count > 0 {
+				for i in 0..<10 {
+					rl.UpdateModelAnimation(m.entry.model, m.anims[m.idle], f32(i))
+				}
+				fmt.eprintln("  posed shared model 10 frames")
+			}
+			defer sys.monster_models_shutdown()
+			return
+		}
+		defer sys.monster_models_shutdown()
+		tools_clamp_window()
+		monster_smoke()
+		return
+	}
 
 	// visible tiny window: hidden-window contexts crash on this old GPU driver
 	fmt.eprintln("pre-init")

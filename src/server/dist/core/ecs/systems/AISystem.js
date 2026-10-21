@@ -11,6 +11,9 @@ class AISystem extends EntityManager_1.System {
         this.attackSummonCallbacks = [];
         this.respawnCallbacks = [];
         this.aggroCallbacks = [];
+        this.skillStartCallbacks = [];
+        this.skillExecuteCallbacks = [];
+        this.skillCancelCallbacks = [];
         this.enmitySys = null;
     }
     static hashId(id) {
@@ -31,6 +34,15 @@ class AISystem extends EntityManager_1.System {
     }
     onEnemyAggro(callback) {
         this.aggroCallbacks.push(callback);
+    }
+    onEnemySkillCastStart(callback) {
+        this.skillStartCallbacks.push(callback);
+    }
+    onEnemySkillExecute(callback) {
+        this.skillExecuteCallbacks.push(callback);
+    }
+    onEnemySkillCancel(callback) {
+        this.skillCancelCallbacks.push(callback);
     }
     getSpeedMultiplier(enemy) {
         let multiplier = 1;
@@ -372,9 +384,52 @@ class AISystem extends EntityManager_1.System {
             return;
         enemy.rotation = Math.atan2(targetPos.x - enemy.position.x, targetPos.z - enemy.position.z);
         const now = Date.now();
+        // Resolve a channeling skill cast: fire when ready; cancel when the
+        // target escaped or vanished mid-channel.
+        if (enemy.skillCast) {
+            const cast = enemy.skillCast;
+            const castPos = this.resolveTargetPosition(cast.targetId, players, summons);
+            if (!castPos || (0, shared_1.distance2D)(enemy.position, castPos) > def.attackRange * 1.5) {
+                enemy.skillCast = undefined;
+                this.skillCancelCallbacks.forEach(cb => cb(enemy.id, cast.targetId));
+                return;
+            }
+            if (now >= cast.readyAt) {
+                enemy.skillCast = undefined;
+                enemy.lastSkillTime = now;
+                this.skillExecuteCallbacks.forEach(cb => cb(enemy.id, cast.targetId, {
+                    name: cast.name,
+                    kind: cast.kind,
+                    powerMult: cast.powerMult,
+                    castTimeMs: 0,
+                    cooldownMs: cast.cooldownMs,
+                }));
+            }
+            return; // channeling: no basic attack until the cast resolves
+        }
         const cooldown = def.attackCooldown || 1000;
         if (now - enemy.lastAttackTime >= cooldown) {
             enemy.lastAttackTime = now;
+            // Skill roll: a ready skill replaces this swing (instant ones fire
+            // now; channeled ones start the cast and block further attacks).
+            const skill = this.pickEnemySkill(enemy, def, now);
+            if (skill) {
+                if (skill.castTimeMs > 0) {
+                    enemy.skillCast = {
+                        name: skill.name,
+                        kind: skill.kind,
+                        powerMult: skill.powerMult,
+                        cooldownMs: skill.cooldownMs,
+                        targetId: enemy.targetId,
+                        readyAt: now + skill.castTimeMs,
+                    };
+                    this.skillStartCallbacks.forEach(cb => cb(enemy.id, enemy.targetId, skill.name, skill.castTimeMs));
+                    return;
+                }
+                enemy.lastSkillTime = now;
+                this.skillExecuteCallbacks.forEach(cb => cb(enemy.id, enemy.targetId, skill));
+                return;
+            }
             const isSummon = summons.has(enemy.targetId);
             if (isSummon) {
                 this.attackSummonCallbacks.forEach(cb => cb(enemy.id, enemy.targetId, def.attack));
@@ -383,6 +438,18 @@ class AISystem extends EntityManager_1.System {
                 this.attackCallbacks.forEach(cb => cb(enemy.id, enemy.targetId, def.attack));
             }
         }
+    }
+    // Rolls whether this swing becomes a skill instead: the definition's pool,
+    // gated by the skill's own cooldown and a 30% chance.
+    pickEnemySkill(enemy, def, now) {
+        if (!def || !def.skills || def.skills.length === 0)
+            return null;
+        if (Math.random() > 0.3)
+            return null;
+        const skill = def.skills[Math.floor(Math.random() * def.skills.length)];
+        if (now - (enemy.lastSkillTime || 0) < skill.cooldownMs)
+            return null;
+        return skill;
     }
     moveReturn(enemy, def, deltaTime) {
         if (!def)
@@ -401,6 +468,7 @@ class AISystem extends EntityManager_1.System {
             enemy.position = { ...enemy.spawnPosition };
             enemy.currentPatrolIndex = 0;
             enemy.statusEffects = [];
+            enemy.skillCast = undefined;
             if (this.enmitySys) {
                 this.enmitySys.clearEnmity(enemy);
             }

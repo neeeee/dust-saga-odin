@@ -3,6 +3,7 @@ import {
   Packet, PacketType,
   applyRacialPotionHealing,
   LootRule, normalizeLootRule, LootRollKind, getRecipe,
+  equipmentSummary,
 } from '@dust-saga/shared';
 import { NetworkContext, PacketHandler } from '../NetworkContext';
 
@@ -46,6 +47,12 @@ function handleItemUse(ctx: NetworkContext, socket: Socket, data: any): void {
       timestamp: Date.now(),
       data: { inventory: session.inventory, equipment: session.equipment }
     });
+    ctx.broadcastInZone(session.zoneId, {
+      type: PacketType.ENTITY_EQUIPMENT,
+      timestamp: Date.now(),
+      data: { entityId: characterId, equipment: equipmentSummary(session.equipment) }
+    });
+
     ctx.sendToPlayer(characterId, {
       type: PacketType.STATS_UPDATE,
       timestamp: Date.now(),
@@ -86,6 +93,12 @@ function handleItemUse(ctx: NetworkContext, socket: Socket, data: any): void {
       timestamp: Date.now(),
       data: { inventory: session.inventory, equipment: session.equipment }
     });
+    ctx.broadcastInZone(session.zoneId, {
+      type: PacketType.ENTITY_EQUIPMENT,
+      timestamp: Date.now(),
+      data: { entityId: characterId, equipment: equipmentSummary(session.equipment) }
+    });
+
     ctx.sendToPlayer(characterId, {
       type: PacketType.NOTIFICATION,
       timestamp: Date.now(),
@@ -109,6 +122,12 @@ function handleEquipItem(ctx: NetworkContext, socket: Socket, data: any): void {
       timestamp: Date.now(),
       data: { inventory: session.inventory, equipment: session.equipment }
     });
+    ctx.broadcastInZone(session.zoneId, {
+      type: PacketType.ENTITY_EQUIPMENT,
+      timestamp: Date.now(),
+      data: { entityId: characterId, equipment: equipmentSummary(session.equipment) }
+    });
+
     ctx.sendToPlayer(characterId, {
       type: PacketType.STATS_UPDATE,
       timestamp: Date.now(),
@@ -139,6 +158,12 @@ function handleUnequipItem(ctx: NetworkContext, socket: Socket, data: any): void
       timestamp: Date.now(),
       data: { inventory: session.inventory, equipment: session.equipment }
     });
+    ctx.broadcastInZone(session.zoneId, {
+      type: PacketType.ENTITY_EQUIPMENT,
+      timestamp: Date.now(),
+      data: { entityId: characterId, equipment: equipmentSummary(session.equipment) }
+    });
+
     ctx.sendToPlayer(characterId, {
       type: PacketType.STATS_UPDATE,
       timestamp: Date.now(),
@@ -381,6 +406,12 @@ function handleItemDrop(ctx: NetworkContext, socket: Socket, data: any): void {
       timestamp: Date.now(),
       data: { inventory: session.inventory, equipment: session.equipment }
     });
+    ctx.broadcastInZone(session.zoneId, {
+      type: PacketType.ENTITY_EQUIPMENT,
+      timestamp: Date.now(),
+      data: { entityId: characterId, equipment: equipmentSummary(session.equipment) }
+    });
+
     ctx.sendToPlayer(characterId, {
       type: PacketType.NOTIFICATION,
       timestamp: Date.now(),

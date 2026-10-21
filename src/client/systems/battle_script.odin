@@ -28,6 +28,8 @@ package systems
 // model 011 attack 1055 → atk_pc/atk_pc[0011000_1055].csv.
 
 import "core:fmt"
+import "core:encoding/json"
+import "core:math"
 import "core:os"
 import "core:strconv"
 import "core:strings"
@@ -61,10 +63,37 @@ Battle_Playback :: struct {
 	script:  ^Battle_Script,
 	idx:     int,
 	elapsed: f32,
+	speed:   f32, // action playback rate for MOTION ops (attack speed)
 }
 
 battle_scripts: map[string]^Battle_Script // "<cat>,<model>,<key>"; nil value = known missing
-battle_playback: Battle_Playback
+// One playback per acting entity (local player + remotes), keyed by entity id.
+battle_playbacks: map[Entity_Id]Battle_Playback
+
+// ── phased actions (bow draw start → hold → release) ──────────────────────
+
+Battle_Phased_Phase :: enum { START, HOLD, RELEASE }
+
+Battle_Phased :: struct {
+	phase:      Battle_Phased_Phase,
+	start_idx:  int,  // the draw clip — frozen on its last frame while aiming
+	hold:       string, // hold clip to loop (attack draws); "" = freeze the draw
+	release:    string, // the shot / skill effect
+	release_at: f64,    // local clock seconds when the release fires
+}
+phased_actions: map[Entity_Id]Battle_Phased
+
+// Entities whose release fired this frame (drained by gameplay to loose
+// arrows on the release frame).
+battle_release_events: [dynamic]Entity_Id
+battle_logged_first_hold:  bool
+battle_logged_first_flush: bool
+
+// Entities currently channeling a cast (CAST_START/CAST_CANCEL broadcasts),
+// by expiry in local clock seconds. The sweep in battle_script_update ends
+// the loop even when a cancel is lost (disconnect, zone edge cases).
+remote_cast_ends: map[Entity_Id]f64
+REMOTE_CAST_GRACE_S :: 1.5
 
 // One-time verification logs (see battle script plan.md).
 battle_logged_first_load:    bool
@@ -271,53 +300,279 @@ battle_note_unknown_op :: proc(name: string) {
 
 // ── playback ──────────────────────────────────────────────────────────────
 
-// Start a script; returns it (nil when none exists). A new start replaces any
-// playback in flight.
-battle_start :: proc(category, model_id, key: string) -> ^Battle_Script {
+// Start a script for `entity`; returns it (nil when none exists). A new start
+// replaces that entity's playback in flight. `speed` scales MOTION clips.
+battle_start :: proc(entity: Entity_Id, category, model_id, key: string, speed: f32) -> ^Battle_Script {
 	script := battle_get_script(category, model_id, key)
 	if script == nil do return nil
-	battle_playback.script = script
-	battle_playback.idx = 0
-	battle_playback.elapsed = 0
+	if phased_actions != nil do delete_key(&phased_actions, entity) // script supersedes a draw
+	battle_playbacks[entity] = Battle_Playback{script = script, speed = speed}
 	return script
 }
 
-// Advance the running script: fire every op whose time has come. Call once
-// per frame with the local avatar.
-battle_script_update :: proc(av: ^Chara_Avatar, dt: f32) {
-	pb := &battle_playback
-	if pb.script == nil do return
-	pb.elapsed += dt
+// Drop an entity's playback and any phased draw in flight (entity removed /
+// playback superseded).
+battle_playback_stop :: proc(entity: Entity_Id) {
+	if battle_playbacks != nil do delete_key(&battle_playbacks, entity)
+	if phased_actions != nil do delete_key(&phased_actions, entity)
+}
 
-	ops := pb.script.ops
-	for pb.idx < len(ops) {
-		op := &ops[pb.idx]
-		if op.at > pb.elapsed do break
-		pb.idx += 1
-		switch op.kind {
-		case .MOTION:
-			if av != nil && chara_clip(av.cm, op.code) >= 0 {
-				chara_avatar_play_action(av, op.code, false)
-			}
-		case .SE:
-			audio_play(op.se_path, 1.0)
-		case .FX:
-			if !battle_logged_fx_stub {
-				battle_logged_fx_stub = true
-				if path, ok := battle_fx_path(op.fx_type, op.fx_id); ok {
-					rl.TraceLog(.INFO, "battle_script: fx stub type=%d id=%d -> %s",
-						op.fx_type, op.fx_id, assets_cstring(path))
-				} else {
-					rl.TraceLog(.INFO, "battle_script: fx stub type=%d id=%d (no fx.csv row)",
-						op.fx_type, op.fx_id)
+// Start a phased draw (bow-style): `start` plays one-shot, then the aim holds
+// — `hold` looping when the family ships a dedicated hold clip, otherwise the
+// draw's last frame frozen (skill channels: the shipped 1864 carries a whole
+// nock-and-raise sequence we don't want) — until `hold_ms` elapses and
+// `release` plays the shot. `release_lead_ms` fires the release that much
+// early (attack cycles lead so the shot reads before the next swing); skill
+// channels pass 0 — they must hold until the cast actually completes.
+// Returns false when the model doesn't ship the clips — the caller falls
+// back to the plain swing path.
+battle_start_phased :: proc(entity: Entity_Id, av: ^Chara_Avatar, start, hold, release: string, hold_ms, release_lead_ms: f64, freeze_hold: bool) -> bool {
+	if av == nil do return false
+	if chara_clip(av.cm, start) < 0 || chara_clip(av.cm, release) < 0 do return false
+	if !freeze_hold && chara_clip(av.cm, hold) < 0 do return false
+
+	battle_playback_stop(entity) // a fresh draw supersedes script playback
+	hold_eff := math.max(hold_ms - release_lead_ms, hold_ms * 0.4)
+
+	chara_avatar_play_action(av, start, false)
+	if phased_actions == nil do phased_actions = make(map[Entity_Id]Battle_Phased)
+	phased_actions[entity] = Battle_Phased{
+		start_idx  = chara_clip(av.cm, start),
+		hold       = hold,
+		release    = release,
+		release_at = f64(now_ms_local()) / 1000.0 + hold_eff / 1000.0,
+	}
+	return true
+}
+
+// Advance every phased action: start clip finishes → hold loop; deadline
+// passes → release one-shot; release finishes → done.
+battle_phased_update :: proc(scene: ^Scene, local_avatar: ^Chara_Avatar) {
+	if phased_actions == nil do return
+	now := f64(now_ms_local()) / 1000.0
+	finished: [dynamic]Entity_Id
+	for entity, &pa in phased_actions {
+		av := local_avatar
+		if entity != scene.player_id {
+			av = nil
+			idx := find_index(scene, entity)
+			if idx >= 0 do av = scene.renderables[idx].avatar
+		}
+		if av == nil {
+			append(&finished, entity) // owner gone
+			continue
+		}
+
+		if pa.phase != .RELEASE {
+			if now >= pa.release_at {
+				chara_avatar_play_action(av, pa.release, false)
+				pa.phase = .RELEASE
+				append(&battle_release_events, entity)
+			} else if pa.phase == .START {
+				// Switch to the hold JUST BEFORE the draw clip ends: if it
+				// auto-clears first, the avatar falls to its locomotion pose
+				// for a frame and the hold then blends back up from idle —
+				// the sag-to-neutral the cast frames showed.
+				frames := f32(anim_keyframe_count(av, pa.start_idx))
+				end_frame := f32(av.anim_time) * CHARA_ANIM_FPS
+				if (frames > 0 && end_frame >= frames - 2) || av.action_clip < 0 {
+					if pa.hold != "" {
+						chara_avatar_play_action(av, pa.hold, true)
+					} else {
+						chara_avatar_freeze_action(av, pa.start_idx)
+					}
+					pa.phase = .HOLD
 				}
 			}
-		case .HIT, .SKIPPED:
-			// HIT: the server's DAMAGE packet stays authoritative for impact
-			// feedback. SKIPPED: parsed but not playable this round.
+		} else if av.action_clip < 0 {
+			append(&finished, entity)
 		}
 	}
-	if pb.idx >= len(ops) do pb.script = nil
+	for e in finished do delete_key(&phased_actions, e)
+	delete(finished)
+}
+
+// True while `entity` has a phased action (draw → hold → release) in flight.
+battle_phased_active :: proc(entity: Entity_Id) -> bool {
+	if phased_actions == nil do return false
+	_, ok := phased_actions[entity]
+	return ok
+}
+
+// Hand the caller this frame's release events (entity ids); the caller owns
+// and frees the returned array.
+battle_take_release_events :: proc() -> [dynamic]Entity_Id {
+	out := battle_release_events
+	battle_release_events = nil
+	return out
+}
+
+// ── release-synced impact feedback ────────────────────────────────────────
+// The local player's ranged damage result is held until the arrow's release
+// frame so the floating number and impact sound land with the shot. The
+// server stays authoritative and instant — on high ping the DAMAGE packet
+// usually arrives after the release anyway and displays immediately, so
+// nothing waits on the network twice.
+
+held_impacts: [dynamic]^JSON_Value
+
+// Called from handle_damage: true when the result belongs to the local
+// player's phased ranged attack and is held until its release.
+battle_hold_local_impact :: proc(ctx: ^Game_Context, data: ^JSON_Value) -> bool {
+	if data == nil do return false
+	id := ctx.scene.player_id
+	if phased_actions == nil do return false
+	pa, ok := phased_actions[id]
+	if !ok || pa.phase == .RELEASE do return false
+	attacker := get_string(obj_of(data^), "attackerId")
+	if len(attacker) == 0 do return false
+	if string_to_entity_id(attacker) != id do return false
+	append(&held_impacts, clone_value(data^)) // caller frees the original
+	if !battle_logged_first_hold {
+		battle_logged_first_hold = true
+		rl.TraceLog(.INFO, "battle_script: holding local impact until arrow release")
+	}
+	return true
+}
+
+// Replay (and free) everything held for the release that just fired.
+battle_flush_held_impacts :: proc(ctx: ^Game_Context) {
+	if len(held_impacts) == 0 do return
+	if !battle_logged_first_flush {
+		battle_logged_first_flush = true
+		rl.TraceLog(.INFO, "battle_script: flushing %d held impact(s) on release", len(held_impacts))
+	}
+	for d in held_impacts {
+		handle_damage(ctx, d)
+		json.destroy_value(d^)
+	}
+	clear(&held_impacts)
+}
+
+// True when impact results are waiting for a release.
+battle_held_impacts_pending :: proc() -> bool {
+	return len(held_impacts) > 0
+}
+
+// Drop held impacts without replaying (zone change / shutdown).
+battle_held_impacts_clear :: proc() {
+	for d in held_impacts do json.destroy_value(d^)
+	clear(&held_impacts)
+}
+
+// Advance every running script: fire each owner's ops whose time has come.
+// The local player owns no scene entity, so it resolves to `local_avatar`;
+// every other owner resolves through the scene. Call once per frame.
+battle_script_update :: proc(scene: ^Scene, local_avatar: ^Chara_Avatar, dt: f32) {
+	// Phased draws and cast sweeps run even when no script has ever loaded —
+	// a bow user never touches the script cache (their attacks are phased),
+	// and gating on it here stalled the whole machinery: draws never held or
+	// released, and held damage numbers never flushed.
+	battle_phased_update(scene, local_avatar)
+	battle_cast_sweep(scene)
+
+	if battle_playbacks == nil do return
+	finished: [dynamic]Entity_Id
+	for entity, &pb in battle_playbacks {
+		av := local_avatar
+		if entity != scene.player_id {
+			av = nil
+			idx := find_index(scene, entity)
+			if idx >= 0 do av = scene.renderables[idx].avatar
+		}
+		if av == nil {
+			append(&finished, entity) // owner gone — drop the playback
+			continue
+		}
+		pb.elapsed += dt
+
+		ops := pb.script.ops
+		for pb.idx < len(ops) {
+			op := &ops[pb.idx]
+			if op.at > pb.elapsed do break
+			pb.idx += 1
+			switch op.kind {
+			case .MOTION:
+				if av != nil && chara_clip(av.cm, op.code) >= 0 {
+					chara_avatar_play_action(av, op.code, false)
+					av.action_speed = pb.speed
+				}
+			case .SE:
+				audio_play(op.se_path, 1.0)
+			case .FX:
+				if !battle_logged_fx_stub {
+					battle_logged_fx_stub = true
+					if path, ok := battle_fx_path(op.fx_type, op.fx_id); ok {
+						rl.TraceLog(.INFO, "battle_script: fx stub type=%d id=%d -> %s",
+							op.fx_type, op.fx_id, assets_cstring(path))
+					} else {
+						rl.TraceLog(.INFO, "battle_script: fx stub type=%d id=%d (no fx.csv row)",
+							op.fx_type, op.fx_id)
+					}
+				}
+			case .HIT, .SKIPPED:
+				// HIT: the server's DAMAGE packet stays authoritative for impact
+				// feedback. SKIPPED: parsed but not playable this round.
+			}
+		}
+		if pb.idx >= len(ops) do append(&finished, entity)
+	}
+	for e in finished do delete_key(&battle_playbacks, e)
+	delete(finished)
+}
+
+// End remote cast loops whose cast should have finished by now but whose
+// CAST_CANCEL / execution animation never arrived.
+battle_cast_sweep :: proc(scene: ^Scene) {
+	if remote_cast_ends == nil do return
+	now := f64(now_ms_local()) / 1000.0
+	expired: [dynamic]Entity_Id
+	for entity, end_s in remote_cast_ends {
+		if now < end_s do continue
+		append(&expired, entity)
+		if entity == scene.player_id do continue // local player never loops remotely
+		idx := find_index(scene, entity)
+		if idx < 0 do continue
+		battle_cast_stop_visuals(&scene.renderables[idx])
+	}
+	for e in expired do delete_key(&remote_cast_ends, e)
+	delete(expired)
+}
+
+// End an entity's channeling pose on whichever model path it renders with.
+battle_cast_stop_visuals :: proc(r: ^Renderable) {
+	if r == nil do return
+	if r.avatar != nil {
+		chara_avatar_stop_action(r.avatar)
+	} else if r.monster.valid {
+		monster_instance_stop(&r.monster)
+	}
+}
+
+// Track a channeling entity so the sweep can end the loop even when the
+// cancel/execution packet is lost.
+battle_cast_track :: proc(entity: Entity_Id, cast_time_ms: int) {
+	if remote_cast_ends == nil do remote_cast_ends = make(map[Entity_Id]f64)
+	remote_cast_ends[entity] = f64(now_ms_local()) / 1000.0 + f64(cast_time_ms) / 1000.0 + REMOTE_CAST_GRACE_S
+}
+
+// Remote character began channeling: loop the neutral cast stance (remotes
+// carry no weapon family) until the execution animation or a cancel.
+battle_cast_start :: proc(entity: Entity_Id, av: ^Chara_Avatar, cast_time_ms: int) {
+	if av == nil do return
+	chara_avatar_play_action_any(av, true, CLIP_CODE_CAST_LOOP)
+	battle_cast_track(entity, cast_time_ms)
+}
+
+// Remote entity's cast was cancelled or interrupted: drop the loop.
+battle_cast_cancel :: proc(entity: Entity_Id, r: ^Renderable) {
+	if remote_cast_ends != nil do delete_key(&remote_cast_ends, entity)
+	battle_cast_stop_visuals(r)
+}
+
+// Drop an entity's cast state without touching its avatar (entity removal).
+battle_cast_forget :: proc(entity: Entity_Id) {
+	if remote_cast_ends != nil do delete_key(&remote_cast_ends, entity)
 }
 
 // True when the script carries a motion the model can actually play — used
@@ -331,14 +586,48 @@ battle_script_has_motion :: proc(script: ^Battle_Script, av: ^Chara_Avatar) -> b
 	return false
 }
 
-// Auto-attack entry point. Picks the family swing exactly like
-// chara_avatar_play_attack (advancing attack_cycle once either way), then
-// plays the model's atk_pc script for that code — its motion/se/hit timeline
-// replaces the plain swing — falling back to the bare clip when the model
-// ships no script.
-battle_script_start_attack :: proc(av: ^Chara_Avatar, kind: Weapon_Kind) {
+// Playback rate that fits the swing into `interval_ms` (0 = native): a clip
+// runs frames/FPS seconds; speed it up so it fills the attacker's attack
+// interval. Never slows a clip below native.
+battle_action_speed :: proc(av: ^Chara_Avatar, code: string, interval_ms: f64) -> f32 {
+	if interval_ms <= 0 || av == nil do return 1
+	idx := chara_clip(av.cm, code)
+	if idx < 0 do return 1
+	frames := f32(anim_keyframe_count(av, idx))
+	if frames <= 0 do return 1
+	speed := (frames / CHARA_ANIM_FPS) / (f32(interval_ms) / 1000.0)
+	return math.clamp(speed, 1.0, 4.0)
+}
+
+battle_action_speed_any :: proc(av: ^Chara_Avatar, codes: []string, interval_ms: f64) -> f32 {
+	for c in codes {
+		if chara_clip(av.cm, c) >= 0 do return battle_action_speed(av, c, interval_ms)
+	}
+	return 1
+}
+
+// Auto-attack entry point (local player and remote entities alike). Picks the
+// family swing exactly like chara_avatar_play_attack (advancing attack_cycle
+// once either way), then plays the model's atk_pc script for that code — its
+// motion/se/hit timeline replaces the plain swing — falling back to the bare
+// clip when the model ships no script. `interval_ms` scales the swing to the
+// attacker's attack speed.
+battle_script_start_attack :: proc(entity: Entity_Id, av: ^Chara_Avatar, kind: Weapon_Kind, interval_ms: f64) {
 	if av == nil do return
 	fam := chara_weapon_family(kind)
+	// Bow-style families draw → aim → loose instead of swinging; plain
+	// swings remain the fallback when the model lacks the phased clips.
+	if fam.ranged_start != "" {
+		// attack cycles lead the release so the shot reads before the next
+		// swing takes the action slot
+		idx := chara_clip(av.cm, fam.ranged_release)
+		lead := f64(150)
+		if idx >= 0 {
+			frames := f32(anim_keyframe_count(av, idx))
+			if frames > 0 do lead = f64(math.min(frames / CHARA_ANIM_FPS * 500.0, 400))
+		}
+		if battle_start_phased(entity, av, fam.ranged_start, fam.ranged_hold, fam.ranged_release, interval_ms, lead, false) do return
+	}
 	family := [3]string{fam.a1, fam.a2, fam.a3}
 	codes: [3]string
 	n := 0
@@ -352,19 +641,120 @@ battle_script_start_attack :: proc(av: ^Chara_Avatar, kind: Weapon_Kind) {
 	code := codes[av.attack_cycle % n]
 	av.attack_cycle += 1
 
-	if battle_start("atk_pc", av.cm.id, code) != nil do return
+	speed := battle_action_speed(av, code, interval_ms)
+	if battle_start(entity, "atk_pc", av.cm.id, code, speed) != nil do return
 	chara_avatar_play_action(av, code, false)
+	av.action_speed = speed
 }
 
 // Skill-execution entry point: resolves the skill's serial id by display
 // name, then starts the model's skill_exec script. Returns nil when the name
 // isn't in skill.csv or the model has no script (caller falls back).
-battle_script_start_skill :: proc(av: ^Chara_Avatar, skill_name: string) -> ^Battle_Script {
+battle_script_start_skill :: proc(entity: Entity_Id, av: ^Chara_Avatar, skill_name: string) -> ^Battle_Script {
 	if av == nil do return nil
 	serial, ok := battle_skill_serial(skill_name)
 	if !ok do return nil
 	key := fmt.tprintf("%d", serial)
-	return battle_start("skill", av.cm.id, key)
+	return battle_start(entity, "skill", av.cm.id, key, 1)
+}
+
+// Which default execution animation backs a skill whose battle script carries
+// no playable motion (or has none at all).
+Battle_Skill_Fallback :: enum {
+	WEAPON_SWING, // physical damage — the attacker's weapon family
+	CAST_ATTACK,  // magical damage — cast finish flourish with attack
+	CAST_SUPPORT, // everything else — plain cast finish
+}
+
+// Wire name for a skill's sub-category, mirroring the server's `anim`
+// category strings (the shipped sub-category → animation mapping).
+sub_category_anim_name :: proc "contextless" (sc: Sub_Category) -> string {
+	switch sc {
+	case .SLASH:         return "Slash"
+	case .THRUST:        return "Thrust"
+	case .CLEAVE:        return "Cleave"
+	case .BASH:          return "Bash"
+	case .DEFEND:        return "Block"
+	case .SHOT:          return "Shoot"
+	case .ASSASSINATION: return "Slash"
+	case .TRAP:          return "Throw"
+	case .DODGE:         return "Dash"
+	case .GRACE:         return "CastHeal"
+	case .BLESSING:      return "CastBuff"
+	case .EXORCISM:      return "Cast"
+	case .HYMN:          return "Cast"
+	case .ELEMENTAL:     return "Cast"
+	case .INVOCATION:    return "Cast"
+	case .DARKNESS:      return "Cast"
+	case .CONFUSION:     return "Cast"
+	case .ALCHEMY:       return "Cast"
+	case .HORSEMANSHIP:  return "Charge"
+	case .RACIAL:        return "Attack"
+	}
+	return ""
+}
+
+// Draw/hold/release codes for a Shot-category skill: the family's dedicated
+// skill sequence when it ships one (bow 1863/1864 → 1856), else the plain
+// ranged draw (crossbow skills loose the normal bolt, 1955).
+battle_shot_draw_codes :: proc(kind: Weapon_Kind) -> (start, hold, release: string) {
+	fam := chara_weapon_family(kind)
+	if fam.skill_start != "" do return fam.skill_start, fam.skill_hold, fam.skill_release
+	return fam.ranged_start, fam.ranged_hold, fam.ranged_release
+}
+
+// True when the category names a Shot-family skill (bow/crossbow draws).
+// The server emits "Shoot" (the TS enum value); the local sub-category
+// mapper produces "Shot" — accept both.
+battle_anim_is_shot :: proc "contextless" (anim_category: string) -> bool {
+	return anim_category == "Shoot" || anim_category == "Shot"
+}
+
+// Execution animation for a server-confirmed skill, shared by the local
+// player and remote entities: the model's skill_exec battle script plays its
+// motion/se timeline when one ships. Otherwise the shipped sub-category
+// mapping (`anim_category`: "Slash", "Shot", "CastHeal", …) picks the family
+// — weapon swings for melee/shot categories, cast flourishes otherwise —
+// falling back to the damage-kind hint when the category is unknown.
+// `weapon` is the attacker's equipped weapon kind (remotes without weapon
+// data pass .NONE); `interval_ms` times swings to the attacker's attack speed.
+battle_play_skill_execution :: proc(entity: Entity_Id, av: ^Chara_Avatar, skill_name: string, fallback: Battle_Skill_Fallback, weapon: Weapon_Kind, anim_category: string, interval_ms: f64) {
+	if av == nil do return
+	script := battle_script_start_skill(entity, av, skill_name)
+	if script != nil && battle_script_has_motion(script, av) do return
+
+	swing := false
+	cast_attack := false
+	switch anim_category {
+	case "Slash", "Thrust", "Cleave", "Bash", "Shot", "Shoot", "Attack":
+		swing = true
+	case "Cast":
+		cast_attack = true
+	case "CastHeal", "CastBuff", "Block", "Dash", "Charge", "Roar", "Trip", "Throw":
+		// cast-finish family
+	case:
+		// unknown category — the kind hint decides
+		if fallback == .WEAPON_SWING do swing = true
+		if fallback == .CAST_ATTACK do cast_attack = true
+	}
+
+	fam := chara_weapon_family(weapon)
+	if swing {
+		// Shot-category skills (arrow rain/storm) draw → aim → loose their
+		// own release when the family ships one (bow 1863/64 → 1856);
+		// otherwise (crossbow) they loose the plain ranged draw's bolt.
+		if anim_category == "Shot" {
+			s, h, r := battle_shot_draw_codes(weapon)
+			if battle_start_phased(entity, av, s, h, r, interval_ms, 0, true) do return
+		}
+		battle_script_start_attack(entity, av, weapon, interval_ms)
+		return
+	}
+
+	codes := [2]string{fam.cast_finish, CLIP_CODE_CAST_END}
+	if cast_attack do codes = [2]string{fam.cast_finish_attack, CLIP_CODE_CAST_END_ATTACK}
+	chara_avatar_play_action_any(av, false, codes[0], codes[1])
+	av.action_speed = battle_action_speed_any(av, codes[:], interval_ms)
 }
 
 // ── shutdown ──────────────────────────────────────────────────────────────
@@ -384,9 +774,30 @@ battle_script_shutdown :: proc() {
 		delete(battle_scripts)
 		battle_scripts = nil
 	}
-	battle_playback.script = nil
-	battle_playback.idx = 0
-	battle_playback.elapsed = 0
+	if battle_playbacks != nil {
+		clear(&battle_playbacks)
+		delete(battle_playbacks)
+		battle_playbacks = nil
+	}
+
+	if remote_cast_ends != nil {
+		clear(&remote_cast_ends)
+		delete(remote_cast_ends)
+		remote_cast_ends = nil
+	}
+
+	if phased_actions != nil {
+		clear(&phased_actions)
+		delete(phased_actions)
+		phased_actions = nil
+	}
+
+	if battle_release_events != nil {
+		delete(battle_release_events)
+		battle_release_events = nil
+	}
+
+	battle_held_impacts_clear()
 
 	if fx_paths != nil {
 		for key, path in fx_paths {

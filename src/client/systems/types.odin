@@ -303,6 +303,11 @@ Cast_State :: struct {
 	elapsed:    f64, // time since cast_start (ms)
 	active:     bool,
 	used_pending: bool, // server confirmed execution — play the skill animation
+	// Animation category from the server ("Shot", "CastHeal", …) — drives
+	// bow-style draws for Shot skills even when the local skill table
+	// doesn't know the skill.
+	anim:       [16]u8,
+	anim_len:   int,
 }
 
 Skill_Cooldown :: struct {

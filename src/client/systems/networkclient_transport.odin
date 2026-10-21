@@ -298,21 +298,21 @@ handle_sio_event :: proc(nc: ^Network_Client, rest: []u8) {
 }
 
 // Reverse-map a wire integer to a Packet_Type, rejecting values that aren't
-// named members of the enum. The valid-bit table is seeded from the enum
-// itself on first use, so it stays in sync automatically — no hand-maintained
-// switch to update when packets are added.
-PACKET_TYPE_MAX_WIRE :: 212 // == int(Packet_Type.ENTITY_GUILD_TAG), the highest value
-packet_type_valid: [PACKET_TYPE_MAX_WIRE + 1]bool
+// named members of the enum. The valid-id set is seeded from the enum itself
+// on first use. It's a map, not a max-sized array, precisely so adding a
+// packet can't desync it — a [MAX_WIRE+1]bool keyed to the old highest value
+// panicked on the first inbound packet the moment the enum grew past it.
+packet_type_valid: map[int]bool
 packet_type_valid_seeded: bool
 
 int_to_packet_type :: proc(n: int) -> (Packet_Type, bool) {
 	if !packet_type_valid_seeded {
+		packet_type_valid = make(map[int]bool)
 		for pt in Packet_Type do packet_type_valid[int(pt)] = true
 		packet_type_valid_seeded = true
 	}
-	if n < 0 || n > PACKET_TYPE_MAX_WIRE do return .CONNECT, false
-	if !packet_type_valid[n] do return .CONNECT, false
-	return cast(Packet_Type)n, true
+	if packet_type_valid[n] do return cast(Packet_Type)n, true
+	return .CONNECT, false
 }
 
 // ── WebSocket send helpers ────────────────────────────────────────────────

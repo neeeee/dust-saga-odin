@@ -345,6 +345,14 @@ handle_packet :: proc(ctx: ^Game_Context, p: ^Packet, free_after: bool) {
 		handle_npc_dialog(ctx, p.data)
 	case .ENTITY_ANIMATION:
 		handle_entity_animation(ctx, p.data)
+	case .CAST_START:
+		handle_cast_start(ctx, p.data)
+	case .CAST_CANCEL:
+		handle_cast_cancel(ctx, p.data)
+	case .ENTITY_EQUIPMENT:
+		handle_entity_equipment(ctx, p.data)
+	case .ENTITY_STANCE:
+		handle_entity_stance(ctx, p.data)
 	case .QUEST_ACCEPT:
 		handle_quest_accept(ctx, p.data)
 	case .QUEST_PROGRESS:
@@ -517,12 +525,13 @@ spawn_one_entity :: proc(ctx: ^Game_Context, o: JSON_Object, kind: Entity_Kind) 
 		set_entity_name(ctx.scene, idx, get_string(d, "name"))
 
 		// Shipped monster glb when one exists for this type; capsule
-		// otherwise (acquire negative-caches misses).
+		// otherwise (acquire negative-caches misses). Each entity animates
+		// its own state against the shared species model.
 		model_file := get_string(d, "modelFile")
 		if len(model_file) > 0 {
 			m := monster_model_acquire(model_file)
 			if m.valid {
-				r.monster = m
+				r.monster = monster_instance_init(m)
 				r.model_scale = get_f32(d, "modelScale", 1.0)
 			}
 		}
@@ -532,7 +541,9 @@ spawn_one_entity :: proc(ctx: ^Game_Context, o: JSON_Object, kind: Entity_Kind) 
 		r.radius = 0.5
 		set_entity_name(ctx.scene, idx, get_string(d, "name"))
 	case .PLAYER:
-		r.color = {80, 220, 120, 255}
+		// Untinted like the local player — the old green wash poisoned the
+		// whole avatar (skin/armor) instead of just marking friendliness.
+		r.color = rl.WHITE
 		r.height = 1.8
 		r.radius = 0.5
 		set_entity_name(ctx.scene, idx, get_string(d, "name"))
@@ -549,6 +560,7 @@ spawn_one_entity :: proc(ctx: ^Game_Context, o: JSON_Object, kind: Entity_Kind) 
 				if r.avatar == nil do chara_model_release(cm)
 			}
 		}
+		entity_equipment_from_spawn(string_to_entity_id(id_str), d)
 	case .SUMMON:
 		r.color = {180, 120, 220, 255}
 		r.height = 1.5
@@ -565,21 +577,140 @@ handle_entity_animation :: proc(ctx: ^Game_Context, data: ^JSON_Value) {
 	root := obj_of(data^)
 	if is_null(data^) do return
 
-	// "UnarmedAttack": the performance arena's test players. "Attack": live
-	// remote swings (auto-attacks and skill executions). Remote entities
-	// carry no weapon data yet, so both play the unarmed family — the
-	// closest approximation until equipment reaches the spawn packet.
 	anim := get_string(root, "animation")
-	if anim != "UnarmedAttack" && anim != "Attack" do return
 
+	// "UnarmedAttack": the performance arena's test players. "Attack": live
+	// remote auto-attack swings — the attacker's own weapon family (from its
+	// equipment summary) via the per-model atk_pc script when one ships,
+	// unarmed otherwise. `intervalMs` times the swing to the attacker's
+	// attack speed.
+	if anim == "UnarmedAttack" || anim == "Attack" {
+		idx := entity_index_from_animation(ctx, root)
+		if idx < 0 do return
+		av := ctx.scene.renderables[idx].avatar
+		if av == nil do return
+		entity := string_to_entity_id(get_string(root, "entityId"))
+		entity_mark_drawn(entity)
+		battle_script_start_attack(
+			entity,
+			av,
+			entity_weapon_kind(entity),
+			f64(get_f32(root, "intervalMs")),
+		)
+		return
+	}
+
+	// "Skill": a skill execution. Resolve the attacker's per-model
+	// skill_exec battle script and play its motion/se timeline on the remote
+	// avatar; otherwise the server's shipped sub-category mapping (`anim`:
+	// "Slash", "Shot", "CastHeal", …) picks the animation family, falling
+	// back to the coarse kind hint when even that is unknown.
+	if anim == "Skill" {
+		idx := entity_index_from_animation(ctx, root)
+		if idx < 0 do return
+		r := &ctx.scene.renderables[idx]
+
+		// Monsters ship no battle scripts: their glb's own clips by kind.
+		if !r.monster.valid && r.avatar == nil do return
+
+		entity := string_to_entity_id(get_string(root, "entityId"))
+		entity_mark_drawn(entity)
+		kind := get_string(root, "kind")
+		fallback := Battle_Skill_Fallback.CAST_SUPPORT
+		if kind == "physical" {
+			fallback = .WEAPON_SWING
+		} else if kind == "magical" {
+			fallback = .CAST_ATTACK
+		}
+
+		if r.avatar != nil {
+			battle_play_skill_execution(
+				entity,
+				r.avatar,
+				get_string(root, "skillName"),
+				fallback,
+				entity_weapon_kind(entity),
+				get_string(root, "anim"),
+				f64(get_f32(root, "intervalMs")),
+			)
+		} else {
+			monster_play_skill_execution(&r.monster, kind)
+		}
+	}
+}
+
+// A player's visible equipment changed: re-store it and re-sync the avatar's
+// armor immediately (the per-frame update also converges on change).
+handle_entity_equipment :: proc(ctx: ^Game_Context, data: ^JSON_Value) {
+	if data == nil do return
+	root := obj_of(data^)
+	if is_null(data^) do return
 	id_str := get_string(root, "entityId")
 	if len(id_str) == 0 do return
-	idx := find_index(ctx.scene, string_to_entity_id(id_str))
-	if idx < 0 do return
+	entity := string_to_entity_id(id_str)
+	eq := get_object(root, "equipment")
+	if eq == nil do return
+	entity_equipment_apply(entity, eq)
 
+	idx := find_index(ctx.scene, entity)
+	if idx < 0 do return
 	av := ctx.scene.renderables[idx].avatar
 	if av == nil do return
-	chara_avatar_play_attack(av, .NONE)
+	inv, ok := entity_equipment[entity]
+	if !ok do return
+	chara_avatar_sync_armor(av, &inv)
+	chara_avatar_update_armor(av)
+}
+
+// A player's sheath/drawn stance changed: other clients render it
+// immediately (it overrides the combat auto-draw window).
+handle_entity_stance :: proc(ctx: ^Game_Context, data: ^JSON_Value) {
+	if data == nil do return
+	root := obj_of(data^)
+	if is_null(data^) do return
+	id_str := get_string(root, "entityId")
+	if len(id_str) == 0 do return
+	entity_stance_set(string_to_entity_id(id_str), get_bool(root, "drawn"))
+}
+
+// Resolve the entityId field of an animation packet to a scene index.
+entity_index_from_animation :: proc(ctx: ^Game_Context, root: JSON_Object) -> int {
+	id_str := get_string(root, "entityId")
+	if len(id_str) == 0 do return -1
+	return find_index(ctx.scene, string_to_entity_id(id_str))
+}
+
+// A remote entity began channeling a skill: loop the cast stance until the
+// execution animation replaces it or a cancel arrives.
+handle_cast_start :: proc(ctx: ^Game_Context, data: ^JSON_Value) {
+	if data == nil do return
+	root := obj_of(data^)
+	if is_null(data^) do return
+	idx := entity_index_from_animation(ctx, root)
+	if idx < 0 do return
+	entity := string_to_entity_id(get_string(root, "entityId"))
+	cast_ms := get_int(root, "castTime")
+
+	r := &ctx.scene.renderables[idx]
+	if r.avatar != nil {
+		battle_cast_start(entity, r.avatar, cast_ms)
+	} else if r.monster.valid {
+		monster_cast_start(&r.monster)
+		battle_cast_track(entity, cast_ms)
+	}
+}
+
+// A remote entity's cast was cancelled or interrupted.
+handle_cast_cancel :: proc(ctx: ^Game_Context, data: ^JSON_Value) {
+	if data == nil do return
+	root := obj_of(data^)
+	if is_null(data^) do return
+	idx := entity_index_from_animation(ctx, root)
+	if idx < 0 do return
+	battle_cast_cancel(
+		string_to_entity_id(get_string(root, "entityId")),
+		&ctx.scene.renderables[idx],
+	)
 }
 
 handle_position_update :: proc(ctx: ^Game_Context, data: ^JSON_Value) {
@@ -1214,6 +1345,8 @@ element_color :: proc(element: string) -> rl.Color {
 
 handle_damage :: proc(ctx: ^Game_Context, data: ^JSON_Value) {
 	if data == nil do return
+	// The local player's ranged hit waits for its arrow's release frame.
+	if battle_hold_local_impact(ctx, data) do return
 	o := obj_of(data^)
 	target_id := get_string(o, "targetId")
 	if len(target_id) == 0 do return
@@ -1592,10 +1725,13 @@ handle_cooldown :: proc(ctx: ^Game_Context, data: ^JSON_Value) {
 	skill := get_string(o, "skillName")
 	switch kind {
 	case "cast_start":
+		rl.TraceLog(.INFO, "[anim-debug] cast_start %s anim=%s cast=%f ms",
+			assets_cstring(skill), assets_cstring(get_string(o, "anim")), get_f64(o, "castTime"))
 		ctx.player.casting.active = true
 		ctx.player.casting.cast_time = get_f64(o, "castTime")
 		ctx.player.casting.elapsed = 0
 		copy_string_to_buffer(ctx.player.casting.skill_name[:], &ctx.player.casting.name_len, skill)
+		set_casting_anim(ctx, get_string(o, "anim"))
 	case "cast_cancel":
 		ctx.player.casting.active = false
 	case "used":
@@ -1604,7 +1740,12 @@ handle_cooldown :: proc(ctx: ^Game_Context, data: ^JSON_Value) {
 		// the execution animation, resolved against the skill def in
 		// gameplay's tick_cast.
 		ctx.player.casting.used_pending = true
+		rl.TraceLog(.INFO, "[anim-debug] used %s anim=%s",
+			assets_cstring(skill), assets_cstring(get_string(o, "anim")))
 		copy_string_to_buffer(ctx.player.casting.skill_name[:], &ctx.player.casting.name_len, skill)
+		used_anim := get_string(o, "anim")
+		if len(used_anim) > 0 do set_casting_anim(ctx, used_anim)
+		// else: keep the category cast_start delivered
 		// Track remaining cooldown for the HUD.
 		remaining := get_f64(o, "cooldownRemaining")
 		found := false
@@ -1628,6 +1769,16 @@ handle_cooldown :: proc(ctx: ^Game_Context, data: ^JSON_Value) {
 		}
 	case:
 	}
+}
+
+// Store the casting skill's animation category (drawn vs held in a fixed
+// buffer so the cast state stays allocation-free).
+set_casting_anim :: proc(ctx: ^Game_Context, anim: string) {
+	copy_string_to_buffer(ctx.player.casting.anim[:], &ctx.player.casting.anim_len, anim)
+}
+
+casting_anim :: proc(ctx: ^Game_Context) -> string {
+	return string(ctx.player.casting.anim[:ctx.player.casting.anim_len])
 }
 
 // Inbound SKILL_USE only carries an `error` field (the server's rejection

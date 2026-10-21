@@ -149,6 +149,29 @@ export enum PacketType {
   GUILD_BANK_ITEM = 210,
   GUILD_DISBAND = 211,
   ENTITY_GUILD_TAG = 212,
+
+  // Skill-cast presentation: zone broadcasts so remote clients see an entity
+  // channeling (looping cast stance) and drop it on interrupt/cancel. A
+  // completed cast needs no end packet — the ENTITY_ANIMATION 'Skill' payload
+  // that fires on execution replaces the loop.
+  CAST_START = 213,
+  CAST_CANCEL = 214,
+
+  // Visible equipment of a player entity (slot → item id), broadcast when it
+  // changes so other clients render armor/weapon swaps immediately. The same
+  // summary also rides the player spawn payload.
+  ENTITY_EQUIPMENT = 215,
+
+  // Client → server sheath/drawn stance report; the server rebroadcasts it to
+  // the zone so other clients render the stance near-immediately. Sent only
+  // on state transitions, rate-limited server-side against keybind mashing.
+  STANCE_UPDATE = 216,
+  ENTITY_STANCE = 217,
+
+  // Client → server animation-playback debug relay (temporary diagnostics):
+  // the client reports every animation clip it plays and the server prints
+  // it to its console.
+  ANIM_DEBUG = 218,
 }
 
 export interface Packet {

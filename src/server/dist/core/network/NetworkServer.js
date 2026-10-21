@@ -1069,6 +1069,54 @@ class NetworkServer {
             knockbackVelocity: { dx: dx / len, dz: dz / len, remaining: distance },
         });
     }
+    // Damage packets + health sync for a landed monster hit — shared by the
+    // basic-attack and enemy-skill execution paths.
+    applyEnemyAttackResult(enemyId, target, result) {
+        const targetId = target.characterId;
+        if (result.missed) {
+            this.broadcastInZone(target.zoneId, {
+                type: shared_1.PacketType.DAMAGE,
+                timestamp: Date.now(),
+                data: { attackerId: enemyId, targetId, damage: 0, isCritical: false, damageType: 'physical', missed: true }
+            });
+            return;
+        }
+        const enemy = this.spawnMgr.getEnemy(enemyId);
+        const dmgResult = this.applyPlayerDamage(target, result.damage, enemyId, 'physical', result.isCritical || false, target.zoneId, enemy?.position);
+        if (!dmgResult.redirected) {
+            this.sendToPlayer(targetId, {
+                type: shared_1.PacketType.DAMAGE,
+                timestamp: Date.now(),
+                data: { attackerId: enemyId, targetId, damage: dmgResult.damageTaken, isCritical: result.isCritical, damageType: 'physical' }
+            });
+            this.sendToPlayer(targetId, {
+                type: shared_1.PacketType.STATS_UPDATE,
+                timestamp: Date.now(),
+                data: { characterId: targetId, stats: target.stats, statBreakdown: target.statBreakdown, skillProficiencies: target.skillProficiencies, skillAdeptness: target.skillAdeptness }
+            });
+            this.broadcastInZone(target.zoneId, {
+                type: shared_1.PacketType.DAMAGE,
+                timestamp: Date.now(),
+                data: { attackerId: enemyId, targetId, damage: dmgResult.damageTaken, isCritical: result.isCritical, damageType: 'physical' }
+            }, targetId);
+            this.broadcastInZone(target.zoneId, {
+                type: shared_1.PacketType.STATS_UPDATE,
+                timestamp: Date.now(),
+                data: { entityId: targetId, health: target.stats.health, maxHealth: target.stats.maxHealth }
+            });
+            this.refreshPartyForMember(targetId);
+            if (target.stats.health <= 0) {
+                this.handlePlayerDeath(target);
+            }
+        }
+        else {
+            this.broadcastInZone(target.zoneId, {
+                type: shared_1.PacketType.DAMAGE,
+                timestamp: Date.now(),
+                data: { attackerId: enemyId, targetId, damage: 0, isCritical: false, damageType: 'physical' }
+            });
+        }
+    }
     tryInterruptCast(target) {
         if (!target.activeCast)
             return;
@@ -1085,6 +1133,12 @@ class NetworkServer {
                 timestamp: Date.now(),
                 data: { skillName, type: 'cast_cancel' }
             });
+            // Drop the channeling stance other clients are showing for this cast.
+            this.broadcastInZone(target.zoneId, {
+                type: shared_1.PacketType.CAST_CANCEL,
+                timestamp: Date.now(),
+                data: { entityId: target.characterId }
+            }, target.characterId);
         }
     }
     damageEnemy(enemy, damage, attackerId) {
@@ -1507,49 +1561,50 @@ class NetworkServer {
             const result = this.combat.processEnemyAttack(enemy, target);
             if (!result)
                 return;
-            if (result.missed) {
-                this.broadcastInZone(target.zoneId, {
-                    type: shared_1.PacketType.DAMAGE,
-                    timestamp: Date.now(),
-                    data: { attackerId: enemyId, targetId, damage: 0, isCritical: false, damageType: 'physical', missed: true }
-                });
-            }
-            else {
-                const dmgResult = this.applyPlayerDamage(target, result.damage, enemyId, 'physical', result.isCritical || false, target.zoneId, enemy.position);
-                if (!dmgResult.redirected) {
-                    this.sendToPlayer(targetId, {
-                        type: shared_1.PacketType.DAMAGE,
-                        timestamp: Date.now(),
-                        data: { attackerId: enemyId, targetId, damage: dmgResult.damageTaken, isCritical: result.isCritical, damageType: 'physical' }
-                    });
-                    this.sendToPlayer(targetId, {
-                        type: shared_1.PacketType.STATS_UPDATE,
-                        timestamp: Date.now(),
-                        data: { characterId: targetId, stats: target.stats, statBreakdown: target.statBreakdown, skillProficiencies: target.skillProficiencies, skillAdeptness: target.skillAdeptness }
-                    });
-                    this.broadcastInZone(target.zoneId, {
-                        type: shared_1.PacketType.DAMAGE,
-                        timestamp: Date.now(),
-                        data: { attackerId: enemyId, targetId, damage: dmgResult.damageTaken, isCritical: result.isCritical, damageType: 'physical' }
-                    }, targetId);
-                    this.broadcastInZone(target.zoneId, {
-                        type: shared_1.PacketType.STATS_UPDATE,
-                        timestamp: Date.now(),
-                        data: { entityId: targetId, health: target.stats.health, maxHealth: target.stats.maxHealth }
-                    });
-                    this.refreshPartyForMember(targetId);
-                    if (target.stats.health <= 0) {
-                        this.handlePlayerDeath(target);
-                    }
-                }
-                else {
-                    this.broadcastInZone(target.zoneId, {
-                        type: shared_1.PacketType.DAMAGE,
-                        timestamp: Date.now(),
-                        data: { attackerId: enemyId, targetId, damage: 0, isCritical: false, damageType: 'physical' }
-                    });
-                }
-            }
+            this.applyEnemyAttackResult(enemyId, target, result);
+        });
+        // Monster skill casts share the player-cast presentation packets: the
+        // zone sees the channeling stance (CAST_START), the skill execution
+        // animation ('Skill'), and a CAST_CANCEL on interruption. Nothing is
+        // excluded — the "actor" is an entity, not a socket client.
+        this.ai.onEnemySkillCastStart((enemyId, targetId, _skillName, castTimeMs) => {
+            const target = this.findPlayerByCharacterId(targetId);
+            if (!target)
+                return;
+            this.broadcastInZone(target.zoneId, {
+                type: shared_1.PacketType.CAST_START,
+                timestamp: Date.now(),
+                data: { entityId: enemyId, castTime: castTimeMs }
+            });
+        });
+        this.ai.onEnemySkillExecute((enemyId, targetId, skill) => {
+            const target = this.findPlayerByCharacterId(targetId);
+            if (!target)
+                return;
+            if (target.invulnerableUntil > Date.now())
+                return;
+            const enemy = this.spawnMgr.getEnemy(enemyId);
+            if (!enemy || enemy.state === 'dead')
+                return;
+            this.broadcastInZone(target.zoneId, {
+                type: shared_1.PacketType.ENTITY_ANIMATION,
+                timestamp: Date.now(),
+                data: { entityId: enemyId, animation: 'Skill', skillName: skill.name, kind: skill.kind }
+            });
+            const result = this.combat.processEnemyAttack(enemy, target, skill.powerMult);
+            if (!result)
+                return;
+            this.applyEnemyAttackResult(enemyId, target, result);
+        });
+        this.ai.onEnemySkillCancel((enemyId, targetId) => {
+            const target = this.findPlayerByCharacterId(targetId);
+            if (!target)
+                return;
+            this.broadcastInZone(target.zoneId, {
+                type: shared_1.PacketType.CAST_CANCEL,
+                timestamp: Date.now(),
+                data: { entityId: enemyId }
+            });
         });
         this.ai.onEnemyAttackSummon((enemyId, summonId, damage) => {
             const summon = this.summonMgr.getSummon(summonId);
@@ -1788,7 +1843,7 @@ class NetworkServer {
                 type: 'player',
                 position: player.position,
                 rotation: player.rotation,
-                data: { name: player.characterName, class: player.jobId, race: player.race, jobId: player.jobId, level: player.stats.level, health: player.stats.health, maxHealth: player.stats.maxHealth, modelFile: shared_1.JOB_DEFINITIONS[player.jobId]?.modelFile, modelId: player.modelId || '011', faceIndex: player.faceIndex ?? 0, hairIndex: player.hairIndex ?? 0, hairColor: player.hairColor ?? 0, invisible: player.statusEffects?.some(e => e.type === shared_1.StatusEffectType.INVISIBLE) || false, isResting: player.isResting, role: player.role, guildTag: player.guildTag || '' }
+                data: { name: player.characterName, class: player.jobId, race: player.race, jobId: player.jobId, level: player.stats.level, health: player.stats.health, maxHealth: player.stats.maxHealth, modelFile: shared_1.JOB_DEFINITIONS[player.jobId]?.modelFile, modelId: player.modelId || '011', faceIndex: player.faceIndex ?? 0, hairIndex: player.hairIndex ?? 0, hairColor: player.hairColor ?? 0, invisible: player.statusEffects?.some(e => e.type === shared_1.StatusEffectType.INVISIBLE) || false, isResting: player.isResting, role: player.role, guildTag: player.guildTag || '', equipment: (0, shared_1.equipmentSummary)(player.equipment) }
             });
         });
         const summons = this.summonMgr.getSummonsInZone(zoneId);
@@ -1869,6 +1924,7 @@ class NetworkServer {
     executeAOESkillInternal(session, skillName, aoePosition) {
         const characterId = session.characterId;
         const skill = this.skillSys.findSkillDefinition(skillName);
+        console.log(`[anim-debug] AOE exec: ${skillName} anim=${(0, shared_1.skillAnimCategory)(skill)}`);
         const aoeRadius = skill?.aoeRadius || shared_1.DEFAULT_AOE_RADIUS;
         const firstTarget = this.findClosestEntityToPosition(session, aoePosition, aoeRadius);
         const firstTargetId = firstTarget?.id || null;
@@ -1895,6 +1951,7 @@ class NetworkServer {
             data: {
                 skillName,
                 type: 'used',
+                anim: (0, shared_1.skillAnimCategory)(skill),
                 mpCost: skill?.mpCost || 0,
                 cooldownRemaining: session.skillCooldowns.find(c => c.skillName === skillName)?.readyAt
                     ? Math.max(0, (session.skillCooldowns.find(c => c.skillName === skillName).readyAt - Date.now()))
@@ -1904,7 +1961,7 @@ class NetworkServer {
         this.broadcastInZone(session.zoneId, {
             type: shared_1.PacketType.ENTITY_ANIMATION,
             timestamp: Date.now(),
-            data: { entityId: characterId, animation: 'Attack' }
+            data: { entityId: characterId, animation: 'Skill', skillName, kind: (0, shared_1.skillAnimKind)(skill), anim: (0, shared_1.skillAnimCategory)(skill), intervalMs: 1000 }
         }, characterId);
         this.sendToPlayer(characterId, {
             type: shared_1.PacketType.STATS_UPDATE,
@@ -2184,6 +2241,7 @@ class NetworkServer {
             data: {
                 skillName,
                 type: 'used',
+                anim: (0, shared_1.skillAnimCategory)(skill),
                 mpCost: skill.mpCost || 0,
                 cooldownRemaining: session.skillCooldowns.find(c => c.skillName === skillName)?.readyAt
                     ? Math.max(0, (session.skillCooldowns.find(c => c.skillName === skillName).readyAt - Date.now()))
@@ -2193,7 +2251,7 @@ class NetworkServer {
         this.broadcastInZone(session.zoneId, {
             type: shared_1.PacketType.ENTITY_ANIMATION,
             timestamp: Date.now(),
-            data: { entityId: characterId, animation: 'Attack' }
+            data: { entityId: characterId, animation: 'Skill', skillName, kind: (0, shared_1.skillAnimKind)(skill), anim: (0, shared_1.skillAnimCategory)(skill), intervalMs: 1000 }
         }, characterId);
     }
     applyDevotionRefund(session, skillName, devotionFx) {
@@ -2827,12 +2885,22 @@ class NetworkServer {
                     data: {
                         skillName: castResult.skillName,
                         type: 'used',
+                        anim: (0, shared_1.skillAnimCategory)(completedSkillDef),
                         mpCost: this.skillSys.findSkillDefinition(castResult.skillName)?.mpCost || 0,
                         cooldownRemaining: session.skillCooldowns.find(c => c.skillName === castResult.skillName)?.readyAt
                             ? Math.max(0, (session.skillCooldowns.find(c => c.skillName === castResult.skillName).readyAt - Date.now()))
                             : 0
                     }
                 });
+                // Skill execution animation for the zone, sent before the
+                // early-returning toggle-off branches (same reason as the 'used'
+                // send above) — and it also replaces the CAST_START loop remotes
+                // are showing for this cast.
+                this.broadcastInZone(session.zoneId, {
+                    type: shared_1.PacketType.ENTITY_ANIMATION,
+                    timestamp: Date.now(),
+                    data: { entityId: session.characterId, animation: 'Skill', skillName: castResult.skillName, kind: (0, shared_1.skillAnimKind)(completedSkillDef), anim: (0, shared_1.skillAnimCategory)(completedSkillDef), intervalMs: 1000 }
+                }, session.characterId);
                 if (result.songToggledOff) {
                     this.removeSongProximityBuffs(session);
                     this.sendToPlayer(session.characterId, {
@@ -2991,11 +3059,6 @@ class NetworkServer {
                     });
                     this.skillSys.lastBuffDebug = undefined;
                 }
-                this.broadcastInZone(session.zoneId, {
-                    type: shared_1.PacketType.ENTITY_ANIMATION,
-                    timestamp: Date.now(),
-                    data: { entityId: session.characterId, animation: 'Attack' }
-                }, session.characterId);
                 if (result.missed && castResult.targetId) {
                     this.broadcastInZone(session.zoneId, {
                         type: shared_1.PacketType.DAMAGE,
