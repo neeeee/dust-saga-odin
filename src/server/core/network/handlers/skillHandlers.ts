@@ -258,10 +258,12 @@ function handleSkillUse(ctx: NetworkContext, socket: Socket, data: any): void {
     });
     // Show the channeling stance to everyone else in the zone; the 'Skill'
     // execution animation broadcast replaces it on completion.
+    // anim lets remotes play the same channel animation as the caster
+    // (bow skill draw for Shot, the weapon family's cast stance otherwise).
     ctx.broadcastInZone(session.zoneId, {
       type: PacketType.CAST_START,
       timestamp: Date.now(),
-      data: { entityId: characterId, castTime }
+      data: { entityId: characterId, castTime, skillName, anim: skillAnimCategory(ctx.skillSys.findSkillDefinition(skillName)) }
     }, characterId);
     return;
   }
@@ -756,10 +758,12 @@ function handleGroundAOESkillUse(
       timestamp: Date.now(),
       data: { skillName, castTime, type: 'cast_start', aoePosition , anim: skillAnimCategory(ctx.skillSys.findSkillDefinition(skillName)) }
     });
+    // anim lets remotes play the same channel animation as the caster
+    // (bow skill draw for Shot, the weapon family's cast stance otherwise).
     ctx.broadcastInZone(session.zoneId, {
       type: PacketType.CAST_START,
       timestamp: Date.now(),
-      data: { entityId: characterId, castTime }
+      data: { entityId: characterId, castTime, skillName, anim: skillAnimCategory(ctx.skillSys.findSkillDefinition(skillName)) }
     }, characterId);
     return;
   }
@@ -846,10 +850,12 @@ function handleConeSkillUse(
       timestamp: Date.now(),
       data: { skillName, castTime, type: 'cast_start' , anim: skillAnimCategory(ctx.skillSys.findSkillDefinition(skillName)) }
     });
+    // anim lets remotes play the same channel animation as the caster
+    // (bow skill draw for Shot, the weapon family's cast stance otherwise).
     ctx.broadcastInZone(session.zoneId, {
       type: PacketType.CAST_START,
       timestamp: Date.now(),
-      data: { entityId: characterId, castTime }
+      data: { entityId: characterId, castTime, skillName, anim: skillAnimCategory(ctx.skillSys.findSkillDefinition(skillName)) }
     }, characterId);
     return;
   }

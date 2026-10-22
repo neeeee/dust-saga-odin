@@ -565,7 +565,7 @@ function handleReturn(ctx: NetworkContext, socket: Socket, session: PlayerSessio
         type: 'player',
         position: session.position,
         rotation: session.rotation,
-        data: { name: session.characterName, class: session.jobId, race: session.race, jobId: session.jobId, level: session.stats.level, health: session.stats.health, maxHealth: session.stats.maxHealth }
+        data: { name: session.characterName, class: session.jobId, race: session.race, jobId: session.jobId, level: session.stats.level, health: session.stats.health, maxHealth: session.stats.maxHealth, weaponDrawn: session.weaponDrawn || false }
       }
     });
     ctx.sendZoneState(socket, spawnZoneId, session.characterId);
@@ -690,7 +690,8 @@ function handleWarp(ctx: NetworkContext, socket: Socket, session: PlayerSession,
         name: session.characterName, class: session.jobId, race: session.race, jobId: session.jobId,
         level: session.stats.level, health: session.stats.health, maxHealth: session.stats.maxHealth,
         modelId: session.modelId || '011', faceIndex: session.faceIndex ?? 0,
-        hairIndex: session.hairIndex ?? 0, hairColor: session.hairColor ?? 0
+        hairIndex: session.hairIndex ?? 0, hairColor: session.hairColor ?? 0,
+        weaponDrawn: session.weaponDrawn || false
       }
     }
   });
