@@ -16,8 +16,7 @@ package systems
 //             for impact feedback.
 //   others  → parsed and skipped with a one-time log per op name
 //             (reset_motion is redundant — our one-shot actions already
-//             return to locomotion; motion_type uses 2-digit generic motion
-//             ids with no clip mapping in the client yet).
+//             return to locomotion).
 //
 // item_use scripts are deferred until the client has an in-world item-use
 // flow; their parse path already works (same op syntax), only the trigger is
@@ -262,8 +261,12 @@ battle_parse_script :: proc(text: string) -> ^Battle_Script {
 
 		// Numeric args after the motion code (unk, 50.0, 1.0) have unverified
 		// meaning; clips play one-shot at native speed for now.
+		// <motion_type> carries the code in the same slot as <motion> — the
+		// shipped scripts use 2-digit family-generic ids there ("55" = first
+		// weapon swing of whatever family the attacker holds);
+		// battle_motion_clip_index resolves them per weapon at playback.
 		switch name {
-		case "motion":
+		case "motion", "motion_type":
 			code := csv_field_at(args, 0)
 			if len(code) > 0 {
 				append(&s.ops, Battle_Op{kind = .MOTION, at = t, code = strings.clone(code)})
@@ -306,6 +309,26 @@ battle_note_unknown_op :: proc(name: string) {
 }
 
 // ── playback ──────────────────────────────────────────────────────────────
+
+// Resolve a script motion code to a clip index on this avatar. Four-digit
+// codes ("1256") are model clip codes, used verbatim. Two-digit motion_type
+// ids ("56") are family-generic: the attacker's weapon family supplies the
+// two-digit prefix (1h sword → 1256, bow → 1856, unarmed → 1056), falling
+// back to the unarmed family when the weapon's family doesn't ship that
+// clip (bows have no third swing, so "57" plays the unarmed 1057). Returns
+// -1 when neither exists — the op is skipped.
+battle_motion_clip_index :: proc(av: ^Chara_Avatar, code: string) -> int {
+	if av == nil || len(code) == 0 do return -1
+	if len(code) >= 4 do return chara_clip(av.cm, code)
+	fam := chara_weapon_family(av.weapon_kind)
+	if len(fam.idle) == 4 {
+		if idx := chara_clip(av.cm, fmt.tprintf("%s%s", fam.idle[:2], code)); idx >= 0 do return idx
+	}
+	if len(fam.idle) != 4 || fam.idle[:2] != "10" {
+		if idx := chara_clip(av.cm, fmt.tprintf("10%s", code)); idx >= 0 do return idx
+	}
+	return -1
+}
 
 // Start a script for `entity`; returns it (nil when none exists). A new start
 // replaces that entity's playback in flight. `speed` scales MOTION clips.
@@ -515,8 +538,9 @@ battle_script_update :: proc(scene: ^Scene, local_avatar: ^Chara_Avatar, dt: f32
 			pb.idx += 1
 			switch op.kind {
 			case .MOTION:
-				if av != nil && chara_clip(av.cm, op.code) >= 0 {
-					chara_avatar_play_action(av, op.code, false)
+				idx := battle_motion_clip_index(av, op.code)
+				if idx >= 0 {
+					chara_avatar_play_action_index(av, idx, false)
 					av.action_speed = pb.speed
 				}
 			case .SE:
@@ -616,7 +640,7 @@ battle_cast_forget :: proc(entity: Entity_Id) {
 battle_script_has_motion :: proc(script: ^Battle_Script, av: ^Chara_Avatar) -> bool {
 	if script == nil || av == nil do return false
 	for &op in script.ops {
-		if op.kind == .MOTION && chara_clip(av.cm, op.code) >= 0 do return true
+		if op.kind == .MOTION && battle_motion_clip_index(av, op.code) >= 0 do return true
 	}
 	return false
 }
