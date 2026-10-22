@@ -561,6 +561,10 @@ spawn_one_entity :: proc(ctx: ^Game_Context, o: JSON_Object, kind: Entity_Kind) 
 			}
 		}
 		entity_equipment_from_spawn(string_to_entity_id(id_str), d)
+		// Sheath/drawn stance at spawn time (players who toggled before this
+		// client saw them). Only drawn is recorded — sheathed stays absent so
+		// the combat auto-draw window keeps working.
+		if get_bool(d, "weaponDrawn") do entity_stance_set(string_to_entity_id(id_str), true)
 	case .SUMMON:
 		r.color = {180, 120, 220, 255}
 		r.height = 1.5
@@ -693,7 +697,7 @@ handle_cast_start :: proc(ctx: ^Game_Context, data: ^JSON_Value) {
 
 	r := &ctx.scene.renderables[idx]
 	if r.avatar != nil {
-		battle_cast_start(entity, r.avatar, cast_ms)
+		battle_cast_start(entity, r.avatar, cast_ms, get_string(root, "anim"), entity_weapon_kind(entity))
 	} else if r.monster.valid {
 		monster_cast_start(&r.monster)
 		battle_cast_track(entity, cast_ms)

@@ -232,10 +232,12 @@ function handleSkillUse(ctx, socket, data) {
         });
         // Show the channeling stance to everyone else in the zone; the 'Skill'
         // execution animation broadcast replaces it on completion.
+        // anim lets remotes play the same channel animation as the caster
+        // (bow skill draw for Shot, the weapon family's cast stance otherwise).
         ctx.broadcastInZone(session.zoneId, {
             type: shared_1.PacketType.CAST_START,
             timestamp: Date.now(),
-            data: { entityId: characterId, castTime }
+            data: { entityId: characterId, castTime, skillName, anim: (0, shared_1.skillAnimCategory)(ctx.skillSys.findSkillDefinition(skillName)) }
         }, characterId);
         return;
     }
@@ -710,10 +712,12 @@ function handleGroundAOESkillUse(ctx, session, skillName, aoePosition) {
             timestamp: Date.now(),
             data: { skillName, castTime, type: 'cast_start', aoePosition, anim: (0, shared_1.skillAnimCategory)(ctx.skillSys.findSkillDefinition(skillName)) }
         });
+        // anim lets remotes play the same channel animation as the caster
+        // (bow skill draw for Shot, the weapon family's cast stance otherwise).
         ctx.broadcastInZone(session.zoneId, {
             type: shared_1.PacketType.CAST_START,
             timestamp: Date.now(),
-            data: { entityId: characterId, castTime }
+            data: { entityId: characterId, castTime, skillName, anim: (0, shared_1.skillAnimCategory)(ctx.skillSys.findSkillDefinition(skillName)) }
         }, characterId);
         return;
     }
@@ -789,10 +793,12 @@ function handleConeSkillUse(ctx, session, skillName, targetId) {
             timestamp: Date.now(),
             data: { skillName, castTime, type: 'cast_start', anim: (0, shared_1.skillAnimCategory)(ctx.skillSys.findSkillDefinition(skillName)) }
         });
+        // anim lets remotes play the same channel animation as the caster
+        // (bow skill draw for Shot, the weapon family's cast stance otherwise).
         ctx.broadcastInZone(session.zoneId, {
             type: shared_1.PacketType.CAST_START,
             timestamp: Date.now(),
-            data: { entityId: characterId, castTime }
+            data: { entityId: characterId, castTime, skillName, anim: (0, shared_1.skillAnimCategory)(ctx.skillSys.findSkillDefinition(skillName)) }
         }, characterId);
         return;
     }

@@ -236,6 +236,7 @@ remove_entity :: proc(s: ^Scene, id: Entity_Id) {
 scene_clear :: proc(s: ^Scene) {
 	if battle_playbacks != nil do clear(&battle_playbacks)
 	if remote_cast_ends != nil do clear(&remote_cast_ends)
+	if phased_released_at != nil do clear(&phased_released_at)
 	entity_equipment_clear_all()
 	if phased_actions != nil do clear(&phased_actions)
 	battle_held_impacts_clear()

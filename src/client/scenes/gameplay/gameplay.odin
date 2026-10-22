@@ -849,7 +849,7 @@ tick_cast :: proc(dt: f32) {
 			if sys.battle_anim_is_shot(anim) {
 				s, h, r := sys.battle_shot_draw_codes(equipped_weapon_kind())
 				draw_started = sys.battle_start_phased(state.scene.player_id,
-					state.local_avatar, s, h, r, c.cast_time, 0, false)
+					state.local_avatar, s, h, r, c.cast_time, 0, false, true)
 				state.cast_draw_phased = draw_started
 				anim_log(fmt.tprintf("%s channel: cat=%s draw=%s/%s/%s phased=%v cast=%.1fs",
 					name, anim, s, h, r, draw_started, c.cast_time / 1000.0))
@@ -933,7 +933,7 @@ play_skill_execution :: proc(skill: string) {
 		}
 		if !sys.battle_phased_active(state.scene.player_id) {
 			s, h, r := sys.battle_shot_draw_codes(equipped_weapon_kind())
-			sys.battle_start_phased(state.scene.player_id, av, s, h, r, 1000, 0, false)
+			sys.battle_start_phased(state.scene.player_id, av, s, h, r, 1000, 0, false, true)
 		}
 		return
 	}

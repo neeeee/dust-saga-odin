@@ -3,6 +3,8 @@ ols.json
 *.txt
 dust_saga
 dust_saga_debug
+src/server/dist/
+src/shared/dist/
 
 # runtime user config (regenerated with defaults on first run)
 src/client/keybinds.json

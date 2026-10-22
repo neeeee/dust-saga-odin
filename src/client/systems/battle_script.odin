@@ -80,8 +80,15 @@ Battle_Phased :: struct {
 	hold:       string, // hold clip to loop (attack draws); "" = freeze the draw
 	release:    string, // the shot / skill effect
 	release_at: f64,    // local clock seconds when the release fires
+	skill:      bool, // a Shot-skill draw (its release suppresses a re-exec)
 }
 phased_actions: map[Entity_Id]Battle_Phased
+
+// When each entity's last phased release fired (local clock seconds): an
+// execution packet arriving just after the channel draw loosed must not
+// start a second draw (mirrors the local player's re-exec suppress window).
+phased_released_at: map[Entity_Id]f64
+SHOT_RELEASE_SUPPRESS_S :: 1.5
 
 // Entities whose release fired this frame (drained by gameplay to loose
 // arrows on the release frame).
@@ -326,7 +333,7 @@ battle_playback_stop :: proc(entity: Entity_Id) {
 // channels pass 0 — they must hold until the cast actually completes.
 // Returns false when the model doesn't ship the clips — the caller falls
 // back to the plain swing path.
-battle_start_phased :: proc(entity: Entity_Id, av: ^Chara_Avatar, start, hold, release: string, hold_ms, release_lead_ms: f64, freeze_hold: bool) -> bool {
+battle_start_phased :: proc(entity: Entity_Id, av: ^Chara_Avatar, start, hold, release: string, hold_ms, release_lead_ms: f64, freeze_hold, is_skill: bool) -> bool {
 	if av == nil do return false
 	if chara_clip(av.cm, start) < 0 || chara_clip(av.cm, release) < 0 do return false
 	if !freeze_hold && chara_clip(av.cm, hold) < 0 do return false
@@ -341,6 +348,7 @@ battle_start_phased :: proc(entity: Entity_Id, av: ^Chara_Avatar, start, hold, r
 		hold       = hold,
 		release    = release,
 		release_at = f64(now_ms_local()) / 1000.0 + hold_eff / 1000.0,
+		skill      = is_skill,
 	}
 	return true
 }
@@ -367,6 +375,10 @@ battle_phased_update :: proc(scene: ^Scene, local_avatar: ^Chara_Avatar) {
 			if now >= pa.release_at {
 				chara_avatar_play_action(av, pa.release, false)
 				pa.phase = .RELEASE
+				if pa.skill {
+					if phased_released_at == nil do phased_released_at = make(map[Entity_Id]f64)
+					phased_released_at[entity] = now
+				}
 				append(&battle_release_events, entity)
 			} else if pa.phase == .START {
 				// Switch to the hold JUST BEFORE the draw clip ends: if it
@@ -397,6 +409,16 @@ battle_phased_active :: proc(entity: Entity_Id) -> bool {
 	if phased_actions == nil do return false
 	_, ok := phased_actions[entity]
 	return ok
+}
+
+// True shortly after `entity`'s phased release fired — a skill execution for
+// a Shot-category skill within this window is the packet for the draw that
+// just loosed, not a request to draw again.
+battle_phased_released_recently :: proc(entity: Entity_Id) -> bool {
+	if phased_released_at == nil do return false
+	t, ok := phased_released_at[entity]
+	if !ok do return false
+	return f64(now_ms_local()) / 1000.0 - t < SHOT_RELEASE_SUPPRESS_S
 }
 
 // Hand the caller this frame's release events (entity ids); the caller owns
@@ -556,23 +578,36 @@ battle_cast_track :: proc(entity: Entity_Id, cast_time_ms: int) {
 	remote_cast_ends[entity] = f64(now_ms_local()) / 1000.0 + f64(cast_time_ms) / 1000.0 + REMOTE_CAST_GRACE_S
 }
 
-// Remote character began channeling: loop the neutral cast stance (remotes
-// carry no weapon family) until the execution animation or a cancel.
-battle_cast_start :: proc(entity: Entity_Id, av: ^Chara_Avatar, cast_time_ms: int) {
+// Remote character began channeling: play exactly what the caster plays —
+// the Shot draw sequence for Shot-category skills (Arrow Rain/Storm), the
+// weapon family's cast stance (neutral cast loop when the weapon is unknown)
+// for everything else — until the execution animation or a cancel replaces
+// it. The phased draw is self-terminating (its hold deadline fires the
+// release), so only the looping stances are tracked for the lost-packet sweep.
+battle_cast_start :: proc(entity: Entity_Id, av: ^Chara_Avatar, cast_time_ms: int, anim_category: string, weapon: Weapon_Kind) {
 	if av == nil do return
-	chara_avatar_play_action_any(av, true, CLIP_CODE_CAST_LOOP)
+	if battle_anim_is_shot(anim_category) {
+		s, h, r := battle_shot_draw_codes(weapon)
+		if battle_start_phased(entity, av, s, h, r, f64(cast_time_ms), 0, false, true) do return
+	}
+	fam := chara_weapon_family(weapon)
+	chara_avatar_play_action_any(av, true, fam.cast_start, CLIP_CODE_CAST_LOOP)
 	battle_cast_track(entity, cast_time_ms)
 }
 
-// Remote entity's cast was cancelled or interrupted: drop the loop.
+// Remote entity's cast was cancelled or interrupted: drop the loop — and any
+// phased channel draw in flight, which would otherwise revive into its hold
+// and loose at the deadline despite the cancel.
 battle_cast_cancel :: proc(entity: Entity_Id, r: ^Renderable) {
 	if remote_cast_ends != nil do delete_key(&remote_cast_ends, entity)
+	battle_playback_stop(entity)
 	battle_cast_stop_visuals(r)
 }
 
 // Drop an entity's cast state without touching its avatar (entity removal).
 battle_cast_forget :: proc(entity: Entity_Id) {
 	if remote_cast_ends != nil do delete_key(&remote_cast_ends, entity)
+	if phased_released_at != nil do delete_key(&phased_released_at, entity)
 }
 
 // True when the script carries a motion the model can actually play — used
@@ -626,7 +661,7 @@ battle_script_start_attack :: proc(entity: Entity_Id, av: ^Chara_Avatar, kind: W
 			frames := f32(anim_keyframe_count(av, idx))
 			if frames > 0 do lead = f64(math.min(frames / CHARA_ANIM_FPS * 500.0, 400))
 		}
-		if battle_start_phased(entity, av, fam.ranged_start, fam.ranged_hold, fam.ranged_release, interval_ms, lead, false) do return
+		if battle_start_phased(entity, av, fam.ranged_start, fam.ranged_hold, fam.ranged_release, interval_ms, lead, false, false) do return
 	}
 	family := [3]string{fam.a1, fam.a2, fam.a3}
 	codes: [3]string
@@ -741,11 +776,14 @@ battle_play_skill_execution :: proc(entity: Entity_Id, av: ^Chara_Avatar, skill_
 	fam := chara_weapon_family(weapon)
 	if swing {
 		// Shot-category skills (arrow rain/storm) draw → aim → loose their
-		// own release when the family ships one (bow 1863/64 → 1856);
-		// otherwise (crossbow) they loose the plain ranged draw's bolt.
-		if anim_category == "Shot" {
+		// own skill draw (bow 1863/64 → 1856), matching the caster's channel;
+		// crossbows fall back to the plain ranged draw's bolt. When the cast
+		// channel's draw is still in flight (or loosed a beat ago) the
+		// execution IS that draw — don't start a second one over it.
+		if battle_anim_is_shot(anim_category) {
+			if battle_phased_active(entity) || battle_phased_released_recently(entity) do return
 			s, h, r := battle_shot_draw_codes(weapon)
-			if battle_start_phased(entity, av, s, h, r, interval_ms, 0, true) do return
+			if battle_start_phased(entity, av, s, h, r, interval_ms, 0, false, true) do return
 		}
 		battle_script_start_attack(entity, av, weapon, interval_ms)
 		return
@@ -790,6 +828,12 @@ battle_script_shutdown :: proc() {
 		clear(&phased_actions)
 		delete(phased_actions)
 		phased_actions = nil
+	}
+
+	if phased_released_at != nil {
+		clear(&phased_released_at)
+		delete(phased_released_at)
+		phased_released_at = nil
 	}
 
 	if battle_release_events != nil {

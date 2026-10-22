@@ -57,7 +57,7 @@ function handleRespawnRequest(ctx, socket, _data) {
                 type: 'player',
                 position: session.position,
                 rotation: session.rotation,
-                data: { name: session.characterName, class: session.jobId, race: session.race, jobId: session.jobId, level: session.stats.level, health: session.stats.health, maxHealth: session.stats.maxHealth, isResting: false }
+                data: { name: session.characterName, class: session.jobId, race: session.race, jobId: session.jobId, level: session.stats.level, health: session.stats.health, maxHealth: session.stats.maxHealth, isResting: false, weaponDrawn: session.weaponDrawn || false }
             }
         });
         ctx.sendZoneState(socket, respawnZoneId, characterId);
