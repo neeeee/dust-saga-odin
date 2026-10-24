@@ -677,6 +677,12 @@ Chara_Avatar :: struct {
 	combat_idle:  int,  // weapon drawn idle (xx01) while fighting, -1 = none
 	combat_run:   int,  // weapon drawn run (xx18) while fighting, -1 = none
 	weapon_kind:  Weapon_Kind, // equipped family — drives the carry socket
+	// block stance (buff_blocking_stance): block_stationary (0131) standing,
+	// block_march (0130) moving — motion under the flag only happens with
+	// Defensive March, since plain block can't move server-side.
+	blocking:              bool,
+	block_stationary_anim: int, // -1 = model lacks the clip
+	block_march_anim:      int,
 	// worn armor (local player): resolved appearance per layer. Models come
 	// from the session held-model cache and are re-posed every frame with the
 	// avatar's clip (see chara_avatar_update_armor).
@@ -684,6 +690,9 @@ Chara_Avatar :: struct {
 	armor_parts:  [CHARA_ARMOR_LAYER_COUNT]int,        // EM part code
 	armor_models: [CHARA_ARMOR_LAYER_COUNT]^Model_Entry,
 	armor_rigid:  [CHARA_ARMOR_LAYER_COUNT]bool,       // helmets: bone-attach draw
+	// SHIELD slot: rigid race-independent glb, always drawn on the left-arm
+	// socket (see chara_avatar_draw_shield). Set by chara_avatar_sync_armor.
+	shield_model: ^Model_Entry,
 	// per sub mesh: the equipped armor replaces this body region (swapped out,
 	// not wrapped over) — recomputed by chara_avatar_sync_armor
 	body_hidden: [dynamic]bool,
@@ -698,6 +707,11 @@ Chara_Avatar :: struct {
 	scale:       f32,
 	lift:        f32,   // world-space feet offset from the posed bounds
 	measured:    bool,
+	// Mount state (MOUNT_UPDATE / Local_Player.mounted): while set, the
+	// avatar plays the mounted_* stances and rides at HORSE_RIDER_LIFT over
+	// the horse model drawn beneath it (see horses.odin).
+	mounted:     bool,
+	base_lift:   f32,  // measured feet-on-origin lift (restored on dismount)
 	// movement tracking (the owner computes speed, see ecs.update)
 	prev_x:      f32,
 	prev_z:      f32,
@@ -752,6 +766,8 @@ chara_avatar_create :: proc(cm: ^Chara_Model, face_i, hair_i, color_i: int) -> ^
 	av.action_speed = 1
 	av.combat_idle = -1
 	av.combat_run = -1
+	av.block_stationary_anim = chara_clip(cm, CLIP_CODE_BLOCK_STATIONARY)
+	av.block_march_anim = chara_clip(cm, CLIP_CODE_BLOCK_MARCH)
 	av.applied_clip = -1
 	av.blend_from = -1
 	for i in 0..<int(av.sub.model.meshCount) do append(&av.body_hidden, false)
@@ -765,9 +781,24 @@ chara_avatar_create :: proc(cm: ^Chara_Model, face_i, hair_i, color_i: int) -> ^
 CLIP_CODE_IDLE            :: "0001"
 CLIP_CODE_WALK            :: "0015"
 CLIP_CODE_RUN             :: "0018"
+CLIP_CODE_BLOCK_MARCH     :: "0130"
+CLIP_CODE_BLOCK_STATIONARY :: "0131"
 CLIP_CODE_CAST_LOOP       :: "0071"
 CLIP_CODE_CAST_END        :: "0072"
 CLIP_CODE_CAST_END_ATTACK :: "0073"
+
+// Mounted stances (anim_ref.json). The unarmed set: vault on/off one-shots,
+// idle, movement, gallop ("charge"). The armed set mirrors it; the block
+// stance replaces both gaits while buff_blocking_stance holds.
+CLIP_CODE_MOUNT               :: "0011"
+CLIP_CODE_DISMOUNT            :: "0012"
+CLIP_CODE_MOUNTED_IDLE        :: "0201"
+CLIP_CODE_MOUNTED_MOVE        :: "0217"
+CLIP_CODE_MOUNTED_CHARGE      :: "0218"
+CLIP_CODE_MOUNTED_ARMED_IDLE   :: "0301"
+CLIP_CODE_MOUNTED_ARMED_MOVE   :: "0316"
+CLIP_CODE_MOUNTED_ARMED_CHARGE :: "0318"
+CLIP_CODE_MOUNTED_BLOCK        :: "0331"
 
 // Auto-attack clip codes per weapon kind: every family animates its basic
 // swings as three ..._drawn_attack one-shots (codes f055/f056/f057). The
@@ -824,6 +855,44 @@ chara_clip :: proc(cm: ^Chara_Model, code: string) -> int {
 	idx, ok := cm.clips[code]
 	if !ok do return -1
 	return idx
+}
+
+// Mounted weapon families (the 3xxx codes): per-family drawn idles/runs and
+// swings, generic mounted cast stances for the castable sets. Same shape as
+// the on-foot families so every battle-script resolver works unchanged while
+// riding; clips a model doesn't ship fall back at the play sites.
+chara_mounted_weapon_family :: proc(kind: Weapon_Kind) -> (f: Chara_Weapon_Family) {
+	switch kind {
+	case .DAGGER:           return {idle = "3101", run = "3118", a1 = "3155", a2 = "3156", a3 = "3157",
+	                                cast_start = "3271", cast_finish = "3272", cast_finish_attack = "3273"}
+	case .SWORD, .AXE, .BLUNT, .WAND: // 1h weapons ride the 1h castable family
+		                        return {idle = "3201", run = "3218", a1 = "3255", a2 = "3256", a3 = "3257",
+		                                cast_start = "3271", cast_finish = "3272", cast_finish_attack = "3273"}
+	case .SPEAR:            return {idle = "3601", run = "3618", a1 = "3655", a2 = "3656", a3 = "3657"} // 1h lance
+	case .TWO_HANDED_SWORD: return {idle = "3401", run = "3418", a1 = "3455", a2 = "3456", a3 = "3457"}
+	case .TWO_HANDED_AXE, .TWO_HANDED_BLUNT:
+		                        return {idle = "3301", run = "3318", a1 = "3355", a2 = "3356", a3 = "3357"}
+	case .TWO_HANDED_SPEAR: return {idle = "3501", run = "3518", a1 = "3555", a2 = "3556", a3 = "3557"}
+	case .STAFF:            return {idle = "3701", run = "3718", a1 = "3755", a2 = "3756", a3 = "3757",
+	                                cast_start = "3271", cast_finish = "3272", cast_finish_attack = "3273"}
+	case .BOW:              return {idle = "3801", run = "3818", a1 = "3855", a2 = "3856", a3 = "3857",
+	                                ranged_start = "3861", ranged_hold = "3862", ranged_release = "3855",
+	                                skill_start = "3863",  skill_hold = "3864",  skill_release = "3856"}
+	case .CROSSBOW:         return {idle = "3901", run = "3918", a1 = "3955", a2 = "3956", a3 = "3957",
+	                                ranged_start = "3961", ranged_hold = "3962", ranged_release = "3955"}
+	case .KNUCKLES:         return {idle = "3001", run = "3018", a1 = "3255", a2 = "3256", a3 = "3257"} // claws ride the 1h swings
+	case .NONE:             return {idle = "0201", run = "0217", a1 = "3255", a2 = "3256", a3 = "3257"}
+	}
+	return {idle = "0201", run = "0217", a1 = "3255", a2 = "3256", a3 = "3257"} // unreachable: every kind covered
+}
+
+// The family for an avatar's CURRENT stance: mounted families while riding,
+// the on-foot families otherwise. All battle-script motion resolution and
+// cast stances go through this so a rider's swings, draws and casts swap to
+// the 3xxx mounted clips as a unit.
+chara_weapon_family_for :: proc(av: ^Chara_Avatar, kind: Weapon_Kind) -> (f: Chara_Weapon_Family) {
+	if av != nil && av.mounted do return chara_mounted_weapon_family(kind)
+	return chara_weapon_family(kind)
 }
 
 // Last '_'-separated token of an animation name (the clip code).
@@ -930,9 +999,16 @@ chara_avatar_freeze_action :: proc(av: ^Chara_Avatar, clip_idx: int) {
 // map lookup) — equipment swaps then apply instantly.
 chara_avatar_set_weapon_kind :: proc(av: ^Chara_Avatar, kind: Weapon_Kind) {
 	if av == nil do return
-	fam := chara_weapon_family(kind)
+	fam := chara_weapon_family_for(av, kind)
 	av.combat_idle = chara_clip(av.cm, fam.idle)
 	av.combat_run = chara_clip(av.cm, fam.run)
+	// Mounted family stances are spotty per model (the human male ships no
+	// family run/idle clips at all) — the generic armed mounted stances are
+	// the fallback when the family's own are missing.
+	if av.mounted {
+		if av.combat_idle < 0 do av.combat_idle = chara_clip(av.cm, CLIP_CODE_MOUNTED_ARMED_IDLE)
+		if av.combat_run < 0 do av.combat_run = chara_clip(av.cm, CLIP_CODE_MOUNTED_ARMED_CHARGE)
+	}
 	av.weapon_kind = kind
 }
 
@@ -944,12 +1020,13 @@ chara_avatar_stop_action :: proc(av: ^Chara_Avatar) {
 }
 
 // Plays one weapon attack swing on the avatar: the kind's family clips from
-// chara_weapon_family, cycled 1→2→3 across consecutive swings. Clips the
-// model lacks are skipped (the bow/crossbow sets ship only attack_1/2);
-// no-op when the model has none of the family's clips at all.
+// chara_weapon_family (the mounted families while riding), cycled 1→2→3
+// across consecutive swings. Clips the model lacks are skipped (the
+// bow/crossbow sets ship only attack_1/2); no-op when the model has none of
+// the family's clips at all.
 chara_avatar_play_attack :: proc(av: ^Chara_Avatar, kind: Weapon_Kind) {
 	if av == nil do return
-	fam := chara_weapon_family(kind)
+	fam := chara_weapon_family_for(av, kind)
 	family := [3]string{fam.a1, fam.a2, fam.a3}
 	codes: [3]string
 	n := 0
@@ -1014,21 +1091,63 @@ chara_avatar_update :: proc(av: ^Chara_Avatar, clip: Chara_Clip, dt: f32, combat
 
 	if clip_idx < 0 {
 		clip_idx = av.cm.idle_anim
+		if av.mounted {
+			// Mounted stances: the legs ride, the torso fights — unarmed
+			// idle/move/charge 0201/0217/0218, armed riders use their weapon
+			// family's mounted stance (combat_idle / 0316 / the family run
+			// resolved into combat_run by set_weapon_kind). The block stance
+			// replaces every gait while it holds.
+			move_idx := chara_clip(av.cm, combat ? CLIP_CODE_MOUNTED_ARMED_MOVE : CLIP_CODE_MOUNTED_MOVE)
+			idle_idx := combat && av.combat_idle >= 0 ? av.combat_idle : chara_clip(av.cm, combat ? CLIP_CODE_MOUNTED_ARMED_IDLE : CLIP_CODE_MOUNTED_IDLE)
+			charge_idx := -1
+			if combat {
+				charge_idx = av.combat_run >= 0 ? av.combat_run : chara_clip(av.cm, CLIP_CODE_MOUNTED_ARMED_CHARGE)
+			} else {
+				charge_idx = chara_clip(av.cm, CLIP_CODE_MOUNTED_CHARGE)
+			}
+			block_idx := chara_clip(av.cm, CLIP_CODE_MOUNTED_BLOCK)
+			#partial switch clip {
+			case .IDLE:
+				if av.blocking && block_idx >= 0 do clip_idx = block_idx
+				else if idle_idx >= 0 do clip_idx = idle_idx
+			case .WALK:
+				if av.blocking && block_idx >= 0 do clip_idx = block_idx
+				else if move_idx >= 0 do clip_idx = move_idx
+				else if idle_idx >= 0 do clip_idx = idle_idx
+			case .RUN:
+				if av.blocking && block_idx >= 0 do clip_idx = block_idx
+				else if charge_idx >= 0 do clip_idx = charge_idx
+				else if move_idx >= 0 do clip_idx = move_idx
+			case:
+			}
+			if clip_idx < 0 do clip_idx = av.cm.idle_anim
+		} else {
 		#partial switch clip {
 		case .WALK:
-			if av.cm.walk_anim >= 0 do clip_idx = av.cm.walk_anim
+			// Block stance rides block_march at any pace (plain block can't
+			// move server-side — motion under the flag is Defensive March).
+			if av.blocking && av.block_march_anim >= 0 {
+				clip_idx = av.block_march_anim
+			} else if av.cm.walk_anim >= 0 do clip_idx = av.cm.walk_anim
 		case .RUN:
 			// Drawn stance runs on the weapon family's drawn run (xx18); the
-			// normal run (0018) is the sheathed/unarmed gait.
-			if combat && av.combat_run >= 0 {
+			// normal run (0018) is the sheathed/unarmed gait. Blocking wins
+			// over both (block_march).
+			if av.blocking && av.block_march_anim >= 0 {
+				clip_idx = av.block_march_anim
+			} else if combat && av.combat_run >= 0 {
 				clip_idx = av.combat_run
 			} else if av.cm.run_anim >= 0 {
 				clip_idx = av.cm.run_anim
 			}
 		case .IDLE:
-			// In combat the character holds the weapon family's drawn stance.
-			if combat && av.combat_idle >= 0 do clip_idx = av.combat_idle
+			// In combat the character holds the weapon family's drawn stance;
+			// block stance (0131) wins over that too.
+			if av.blocking && av.block_stationary_anim >= 0 {
+				clip_idx = av.block_stationary_anim
+			} else if combat && av.combat_idle >= 0 do clip_idx = av.combat_idle
 		case:
+		}
 		}
 		if clip_idx != av.current_clip {
 			av.current_clip = clip_idx
@@ -1061,14 +1180,37 @@ chara_avatar_update :: proc(av: ^Chara_Avatar, clip: Chara_Clip, dt: f32, combat
 		if !blending do av.blend_from = -1
 		av.applied_clip = clip_idx
 		av.applied_frame = frame
-		chara_apply_current_pose(av, av.sub.model)
+		// Pose application happens at DRAW time (chara_avatar_draw_body): the
+		// CPU-skinned vertex buffers and currentPose are shared per race
+		// model, so skinning here would stamp this avatar's pose onto every
+		// same-race character — update order, not draw order, would decide
+		// who renders whose animation.
 	}
 
+	// One-time ground-lift measure reads the skinned vertices, so stamp this
+	// avatar's pose first. Harmless at update time: every draw re-poses the
+	// shared model before drawing anyway.
 	if !av.measured {
 		av.measured = true
+		chara_apply_current_pose(av, av.sub.model)
 		b := chara_skin_bounds(av.cm, &av.sub.model)
-		av.lift = -b.min.y * av.scale
+		av.base_lift = -b.min.y * av.scale
 	}
+	// Riders lift off their own feet: while mounted the avatar hangs at the
+	// horse's saddle height (see horses.odin) instead of the ground.
+	av.lift = av.mounted ? HORSE_RIDER_LIFT : av.base_lift
+}
+
+// Flip an avatar's mount state. While mounted the update loop plays the
+// mounted_* stances (chara_avatar_update) and combat motion resolves through
+// the mounted weapon families; the vault-on/vault-off one-shot covers the
+// transition when the model ships it.
+chara_avatar_set_mounted :: proc(av: ^Chara_Avatar, mounted: bool) {
+	if av == nil || av.mounted == mounted do return
+	av.mounted = mounted
+	// combat_idle/combat_run re-resolve to the mounted families on the next
+	// set_weapon_kind call (both owners call it every frame).
+	chara_avatar_play_action_any(av, false, mounted ? CLIP_CODE_MOUNT : CLIP_CODE_DISMOUNT)
 }
 
 // Replays the avatar's current pose — the exact clip, frame and blend state
@@ -1104,10 +1246,10 @@ anim_keyframe_count :: proc(av: ^Chara_Avatar, clip_idx: int) -> i32 {
 // the held-item "floating + flailing" bug).
 //
 // NOTE: currentPose/boneMatrices are shared per BASE model (the subset copy
-// re-points at them), so this reads the pose of whichever avatar updated
-// last. True for the local player — update_local_avatar runs after the scene
-// update — which is the only holder today. Remote held items will need a
-// per-avatar pose snapshot.
+// re-points at them). chara_avatar_draw_body poses the avatar immediately
+// before its meshes, and the held/shield draws run after it in the same
+// entity's draw sequence, so these reads always see the drawing avatar's own
+// pose — never pose-read outside a body→held→armor→shield draw sequence.
 
 CHARA_HAND_BONE :: "Bip01 R Hand"
 CHARA_HAND_L_BONE :: "Bip01 L Hand"
@@ -1146,6 +1288,37 @@ chara_avatar_bone_matrix :: proc(av: ^Chara_Avatar, bone_name: string) -> (rl.Ma
 	// Column-vector TRS compose (verified against raylib's deformed vertices
 	// in tools/bone_test.odin: translation outermost, Vector3Transform = M·v).
 	t := av.sub.model.currentPose[bidx]
+	return rl.MatrixTranslate(t.translation.x, t.translation.y, t.translation.z) *
+		rl.QuaternionToMatrix(t.rotation) *
+		rl.MatrixScale(t.scale.x, t.scale.y, t.scale.z), true
+}
+
+// Global (model-space) BIND matrix of `bone_name` — where the bone sits in the
+// rig's shipped rest pose. With chara_avatar_bone_matrix this forms the
+// pose·bind⁻¹ delta for meshes authored in bind space (rigid helmets).
+chara_avatar_bone_bind_matrix :: proc(av: ^Chara_Avatar, bone_name: string) -> (rl.Matrix, bool) {
+	identity := rl.Matrix {
+		1, 0, 0, 0,
+		0, 1, 0, 0,
+		0, 0, 1, 0,
+		0, 0, 0, 1,
+	}
+	if av == nil || av.cm == nil do return identity, false
+
+	skel := &av.sub.model.skeleton
+	if skel.bones == nil do return identity, false
+	bone_count := int(skel.boneCount)
+
+	bidx := -1
+	for i in 0..<bone_count {
+		if chara_bone_name(&skel.bones[i]) == bone_name {
+			bidx = i
+			break
+		}
+	}
+	if bidx < 0 do return identity, false
+
+	t := skel.bindPose[bidx]
 	return rl.MatrixTranslate(t.translation.x, t.translation.y, t.translation.z) *
 		rl.QuaternionToMatrix(t.rotation) *
 		rl.MatrixScale(t.scale.x, t.scale.y, t.scale.z), true
@@ -1269,6 +1442,23 @@ CHARA_SOCKET_BACK_1H  :: Chara_Socket_Seat{"Bip01", rl.Vector3{0.20626, 0.19618,
 // Rendered WITHOUT the end-for-end flip.
 CHARA_SOCKET_CROSSBOW  :: Chara_Socket_Seat{"Bip01", rl.Vector3{0.10372, -0.01382, 0.03586}, rl.Quaternion(quaternion(x = 0.48073, y = 0.18492, z = -0.47469, w = 0.71370))}
 
+// Shield: strapped to the outer face of the left forearm, disc plane vertical,
+// face out (+x). Solved from the bind skeleton (mid-forearm, outward normal);
+// ships as a starting seat — override via sheath_tuning.json's "shield" entry
+// (sheath_t / sheath_q) or tune it in tools/sheath_tune's "shield" category.
+CHARA_SOCKET_SHIELD :: Chara_Socket_Seat{"Bip01 L Forearm", rl.Vector3{-0.13922, -0.08206, -0.13019}, rl.Quaternion(quaternion(x = -0.09885, y = 0.70258, z = 0.11031, w = 0.69602))}
+
+// The shield seat: baked constant, overridden by sheath_tuning.json's
+// "shield" entry when present (see chara_tuning.odin).
+chara_shield_seat :: proc() -> Chara_Socket_Seat {
+	seat := CHARA_SOCKET_SHIELD
+	if shield_tuned_on {
+		seat.t = shield_tuned_t
+		seat.q = shield_tuned_q
+	}
+	return seat
+}
+
 // The sheath seat for a weapon kind (stance defaults + per-kind overrides).
 chara_sheath_seat :: proc(kind: Weapon_Kind) -> Chara_Socket_Seat {
 	stance := chara_held_stance(kind)
@@ -1298,6 +1488,9 @@ chara_debug_sheath_on:        bool
 chara_debug_drawn_t:          rl.Vector3
 chara_debug_drawn_q:          rl.Quaternion // drawn-grip orientation
 chara_debug_drawn_on:         bool
+chara_debug_shield_t:         rl.Vector3    // shield seat translation
+chara_debug_shield_q:         rl.Quaternion // shield seat orientation
+chara_debug_shield_on:        bool
 
 // World matrix of a carry socket on the avatar's current pose.
 chara_avatar_socket_matrix :: proc(av: ^Chara_Avatar, seat: Chara_Socket_Seat) -> (rl.Matrix, bool) {
@@ -1425,10 +1618,16 @@ chara_layer_body_region_mask :: proc(layer: Chara_Armor_Layer) -> u8 {
 }
 
 // Race index for the item.csv per-race override columns (viewer decode):
-// 11→0 12→1 21→2 22→3 31→4 42→5 51→6 63→7.
+// 11→0 12→1 21→2 22→3 31→4 42→5 51→6 63→7. Accepts the bare race code
+// ("12") or the chara model id ("012") — ids on disk are the race code
+// with a leading 0. Returns -1 when the code isn't digits; callers must
+// bounds-check before indexing the per-race columns.
 chara_race_index :: proc(id: string) -> i8 {
-	if len(id) < 2 do return 0
-	rc := (int(id[0] - '0')) * 10 + int(id[1] - '0')
+	if len(id) < 2 do return -1
+	code := id
+	if len(code) > 2 do code = code[len(code)-2:]
+	if code[0] < '0' || code[0] > '9' || code[1] < '0' || code[1] > '9' do return -1
+	rc := (int(code[0] - '0')) * 10 + int(code[1] - '0')
 	race, sex := rc / 10, rc % 10
 	if race <= 2 do return i8((race - 1) * 2 + (sex - 1))
 	return i8(race + 1)
@@ -1479,11 +1678,28 @@ chara_avatar_sync_armor :: proc(av: ^Chara_Avatar, inv: ^Inventory) {
 				// REPLACES the hair with a helmet-fit style. We bake only the
 				// full (variant-0) hair, so a nonzero override hides the hair
 				// instead of letting it clip through the helmet.
-				hide_hair = def.hair_override[chara_race_index(av.cm.id)] != 0
+				if ri := chara_race_index(av.cm.id); ri >= 0 && ri < 8 {
+					hide_hair = def.hair_override[ri] != 0
+				}
 			}
 		}
 	}
 	chara_avatar_refresh_body_hidden(av, hide_hair)
+}
+
+// Re-resolves the SHIELD slot's appearance: the item's rigid glb (EM part 22,
+// race-independent — one file serves every race). Always drawn, sheathed or
+// not, on the left-arm socket.
+chara_avatar_sync_shield :: proc(av: ^Chara_Avatar, inv: ^Inventory) {
+	if av == nil do return
+	shield: ^Model_Entry
+	sit := &inv.equipment[int(EQUIP_SLOT.SHIELD)]
+	if sit.item_id_len > 0 {
+		if def, ok := item_def(item_id_string(sit)); ok && len(def.model) > 0 {
+			shield = held_model_acquire(def.model)
+		}
+	}
+	av.shield_model = shield
 }
 
 // Recomputes av.body_hidden from the currently resolved armor layers.
@@ -1508,39 +1724,46 @@ chara_avatar_refresh_body_hidden :: proc(av: ^Chara_Avatar, hide_hair: bool) {
 	}
 }
 
-// Poses every equipped skinned armor piece with the avatar's current clip —
-// one UpdateModelAnimation per piece, after chara_avatar_update. Posing the
-// shared cached model directly is safe today: only the local player wears
-// armor (one pose per model, the monster-model approach).
-// Column-vector TRS helper for global poses already exists (chara_pose_matrix).
-
-chara_avatar_update_armor :: proc(av: ^Chara_Avatar) {
+// Poses ONE skinned armor layer against the avatar's current clip — the same
+// delta form raylib computes in UpdateModelAnimation (boneMatrices =
+// pose·bind⁻¹, pose FIRST: Odin `*` mirrors raylib's MatrixMultiply argument
+// order) — but the current pose comes from the WEARER's rig, by bone name,
+// and the bind term is the WEARER's bind too (bind⁻¹·pose instead flings
+// every vertex whose pose deviates from bind: arms → the horizontal pauldron
+// wings). Several armor glbs bake a POSED skeleton as their bind (Fornid
+// cuisses: splayed A-legs under a straight-authored mesh), so the armor's own
+// bindPose can't be trusted — the meshes were skinned against the one master
+// skeleton the characters use, which is exactly the wearer's bindPose.
+//
+// Called at draw time (chara_avatar_draw_armor): armor pieces are cached per
+// sid+race and share their vertex buffers across every wearer, so each draw
+// must re-skin with its own avatar's pose or the last updater wins.
+chara_pose_armor_layer :: proc(av: ^Chara_Avatar, layer: int) {
 	if av == nil || av.cm == nil do return
+	if av.armor_rigid[layer] do return
+	e := av.armor_models[layer]
+	if e == nil do return
 	base := &av.cm.entry.model
 	if base.currentPose == nil do return
-
-	for layer in 0..<CHARA_ARMOR_LAYER_COUNT {
-		if av.armor_rigid[layer] do continue
-		e := av.armor_models[layer]
-		if e == nil do continue
-		m := &e.model
-		remap := chara_armor_remap(e, av.cm)
-		n_cur := int(base.skeleton.boneCount)
-		for b in 0..<int(m.skeleton.boneCount) {
-			if b >= len(remap) do break
-			ci := remap[b]
-			if ci < 0 || ci >= n_cur do continue // defense: bone stays identity
-			// Same delta form raylib computes in UpdateModelAnimation —
-			// boneMatrices = pose·bind⁻¹ (pose FIRST: Odin `*` mirrors
-			// raylib's MatrixMultiply argument order) — but the current pose
-			// comes from the WEARER's rig, by bone name. bind⁻¹·pose instead
-			// flings every vertex whose pose deviates from bind (arms → the
-			// horizontal pauldron wings).
-			m.boneMatrices[b] = chara_pose_matrix(base.currentPose[ci]) *
-				rl.MatrixInvert(chara_pose_matrix(m.skeleton.bindPose[b]))
-		}
-		chara_skin_model_cpu(m)
+	m := &e.model
+	remap := chara_armor_remap(e, av.cm)
+	n_cur := int(base.skeleton.boneCount)
+	for b in 0..<int(m.skeleton.boneCount) {
+		if b >= len(remap) do break
+		ci := remap[b]
+		if ci < 0 || ci >= n_cur do continue // defense: bone stays identity
+		m.boneMatrices[b] = chara_pose_matrix(base.currentPose[ci]) *
+			rl.MatrixInvert(chara_pose_matrix(base.skeleton.bindPose[ci]))
 	}
+	chara_skin_model_cpu(m)
+}
+
+// Poses every equipped skinned armor layer with the avatar's current clip.
+// The live pipeline poses per layer inside chara_avatar_draw_armor instead —
+// this remains for tools, which set an explicit pose then draw.
+chara_avatar_update_armor :: proc(av: ^Chara_Avatar) {
+	if av == nil do return
+	for layer in 0..<CHARA_ARMOR_LAYER_COUNT do chara_pose_armor_layer(av, layer)
 }
 
 // Armor glbs carry MORE bones than the character models (the N50..N62 grip
@@ -1644,6 +1867,13 @@ chara_skin_model_cpu :: proc(model: ^rl.Model) {
 // convention) and mirrors its tint handling.
 chara_avatar_draw_body :: proc(av: ^Chara_Avatar, position: rl.Vector3, yaw_rad: f32, tint: rl.Color) {
 	if av == nil do return
+	// Pose the shared race model with THIS avatar's clip immediately before
+	// drawing — the CPU-skinned vertex buffers (and currentPose) belong to
+	// the one cached model per race, so pose+draw must be adjacent for every
+	// avatar on screen (same trick as monster_model_draw and the mount). All
+	// socket reads for this avatar (held item, shield, rigid helmet) must
+	// happen after this call.
+	chara_apply_current_pose(av, av.sub.model)
 	axis, angle := euler_y_to_raylib(yaw_rad)
 	m := rl.MatrixTranslate(position.x, position.y + av.lift, position.z) *
 		rl.MatrixRotate(axis, (angle + AVATAR_YAW_OFFSET_DEG) * 0.017453293) *
@@ -1665,8 +1895,13 @@ chara_avatar_draw_body :: proc(av: ^Chara_Avatar, position: rl.Vector3, yaw_rad:
 }
 
 // Draws the equipped armor pieces. Skinned pieces share the body's exact
-// model transform; the rigid helmet composes onto the head bone like the
-// held weapon minus the grip seat (its mesh is authored in bind space).
+// model transform; the rigid helmet composes the head bone's full
+// pose·bind⁻¹ delta around the mesh's bind-space park→head translation.
+// The meshes are authored upright near the origin (parked at the feet in
+// the source packages), so applying the raw head frame laid them sideways,
+// and position-only attach kept them level but stranded them when the head
+// rotates away from bind (run: forehead sliding out of the helm). The delta
+// is identical to position-only at bind and tracks the skull otherwise.
 chara_avatar_draw_armor :: proc(av: ^Chara_Avatar, position: rl.Vector3, yaw_rad: f32, tint: rl.Color) {
 	if av == nil do return
 	axis, angle := euler_y_to_raylib(yaw_rad)
@@ -1674,19 +1909,43 @@ chara_avatar_draw_armor :: proc(av: ^Chara_Avatar, position: rl.Vector3, yaw_rad
 		e := av.armor_models[layer]
 		if e == nil do continue
 		if av.armor_rigid[layer] {
-			bone, ok := chara_avatar_bone_matrix(av, CHARA_HEAD_BONE)
-			if !ok do continue
+			pose, ok := chara_avatar_bone_matrix(av, CHARA_HEAD_BONE)
+			bind, ok2 := chara_avatar_bone_bind_matrix(av, CHARA_HEAD_BONE)
+			if !ok || !ok2 do continue
+			bind_t := rl.Vector3Transform({0, 0, 0}, bind)
 			m := rl.MatrixTranslate(position.x, position.y + av.lift, position.z) *
 				rl.MatrixRotate({0, 1, 0}, yaw_rad + AVATAR_YAW_OFFSET_DEG * 0.017453293)
 			m = m * rl.MatrixScale(av.scale, av.scale, av.scale)
-			m = m * bone
+			m = m * (pose * rl.MatrixInvert(bind) *
+				rl.MatrixTranslate(bind_t.x, bind_t.y, bind_t.z))
 			for i in 0..<int(e.model.meshCount) {
 				rl.DrawMesh(e.model.meshes[i], e.model.materials[int(e.model.meshMaterial[i])], m)
 			}
 		} else {
+			// Re-skin the shared piece with THIS avatar's pose right before
+			// its draw — pieces are cached per sid+race, so two wearers of
+			// the same gear would otherwise share whoever skinned last.
+			chara_pose_armor_layer(av, layer)
 			rl.DrawModelEx(e.model,
 				{position.x, position.y + av.lift, position.z},
 				axis, angle + AVATAR_YAW_OFFSET_DEG, {av.scale, av.scale, av.scale}, tint)
 		}
 	}
+}
+
+// Draws the left-arm shield. Always visible — drawn weapon or sheathed —
+// bolted to the left forearm socket (CHARA_SOCKET_SHIELD). Rigid single
+// mesh, drawn untinted like the helmet path.
+chara_avatar_draw_shield :: proc(av: ^Chara_Avatar, position: rl.Vector3, yaw_rad: f32) {
+	if av == nil || av.shield_model == nil do return
+	chara_tuning_tick() // pick up sheath_tuning.json "shield" edits ~2x/second
+	seat := chara_shield_seat()
+	if chara_debug_shield_on {
+		seat.t = chara_debug_shield_t
+		seat.q = chara_debug_shield_q
+	}
+	attach, ok := chara_avatar_socket_matrix(av, seat)
+	if !ok do return
+	m := chara_held_base_matrix(av, position, yaw_rad, 1.0) * attach
+	draw_held_meshes(av.shield_model, m)
 }

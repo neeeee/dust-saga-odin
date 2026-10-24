@@ -519,6 +519,32 @@ skill_req_points :: proc(sk: ^Skill_Def) -> u8 {
 	}
 }
 
+// Upgrade chains: once the replacement's requirements are met the original is
+// replaced — the server refuses the old skill and the hotbar button fires the
+// replacement transparently. Keep in sync with SKILL_REPLACEMENTS in
+// shared/constants/skills.ts.
+Skill_Replacement :: struct {
+	old, new: string,
+}
+skill_replacements := []Skill_Replacement{
+	{"Ice Storm", "Ice Tempest"},
+	{"Arrow Rain", "Arrow Storm"},
+	{"Whirling Strike", "True Whirling Strike"},
+}
+
+// The replacement for `old_name` when its own requirements are currently met.
+skill_replacement_for :: proc(p: ^Local_Player, old_name: string) -> (repl: string, ok: bool) {
+	for &r in skill_replacements {
+		if r.old == old_name {
+			if sk := get_skill(r.new); sk != nil && skill_req_met(sk, p) {
+				return r.new, true
+			}
+			return "", false
+		}
+	}
+	return "", false
+}
+
 // Whether the player currently meets a skill's requirement — level for kit
 // skills, sub-category adeptness (and cross-tree prereqs) for tree skills.
 skill_req_met :: proc(sk: ^Skill_Def, p: ^Local_Player) -> bool {

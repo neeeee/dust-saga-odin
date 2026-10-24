@@ -30,6 +30,12 @@ chara_tuned:       map[Weapon_Kind]Tuned_Seats
 chara_tuned_check: f64 // next rl.GetTime() at which the file is re-polled
 chara_tuned_count: int // last loaded entry count, for change logging
 
+// The json file's "shield" entry (sheath_t / sheath_q) overrides the baked
+// CHARA_SOCKET_SHIELD — see chara_shield_seat in chara_models.odin.
+shield_tuned_t:  rl.Vector3
+shield_tuned_q:  rl.Quaternion
+shield_tuned_on: bool
+
 chara_tuned_kind :: proc(name: string) -> Weapon_Kind {
 	switch name {
 	case "wand1h":   return .WAND
@@ -73,7 +79,18 @@ chara_tuning_reload :: proc() -> bool {
 	defer json.destroy_value(root)
 
 	tuned := make(map[Weapon_Kind]Tuned_Seats)
+	shield_on := false
 	for name, v in as_map(obj_of(root)) {
+		if name == "shield" {
+			e := obj_of(v)
+			shield_tuned_t = tuned_vec3(get_array(e, "sheath_t"))
+			shield_tuned_q = tuned_quat(e, "sheath_q")
+			if tuned_quat_is_zero(shield_tuned_q) {
+				shield_tuned_q = chara_euler_deg_to_quat(tuned_vec3(get_array(e, "sheath_e")))
+			}
+			shield_on = true
+			continue
+		}
 		kind := chara_tuned_kind(name)
 		if kind == .NONE do continue
 		e := obj_of(v)
@@ -94,6 +111,7 @@ chara_tuning_reload :: proc() -> bool {
 	}
 	delete(chara_tuned)
 	chara_tuned = tuned
+	shield_tuned_on = shield_on
 	if len(tuned) != chara_tuned_count {
 		chara_tuned_count = len(tuned)
 		rl.TraceLog(.INFO, "chara: sheath_tuning.json loaded (%d seat overrides)", chara_tuned_count)

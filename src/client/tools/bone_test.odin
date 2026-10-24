@@ -120,6 +120,14 @@ main :: proc() {
 		sheath_shot()
 		return
 	}
+	if len(os.args) > 1 && os.args[1] == "armor" {
+		armor_shot()
+		return
+	}
+	if len(os.args) > 1 && os.args[1] == "mount" {
+		mount_shot()
+		return
+	}
 	if len(os.args) > 1 && os.args[1] == "tune" {
 		sheath_tune()
 		return

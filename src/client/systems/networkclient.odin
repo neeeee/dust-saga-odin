@@ -196,6 +196,9 @@ Packet_Type :: enum u32 {
 	STANCE_UPDATE              = 216,
 	ENTITY_STANCE              = 217,
 	ANIM_DEBUG                 = 218,
+	// Mount state changes (Summon Horse / stable keeper / death) — zone
+	// broadcast including the rider.
+	MOUNT_UPDATE               = 219,
 }
 
 // A decoded inbound packet. `data` is an owned (deep-cloned) JSON payload; the

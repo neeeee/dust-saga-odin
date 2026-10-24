@@ -33,6 +33,7 @@ main :: proc() {
 	defer sys.assets_destroy()
 	defer sys.chara_shutdown()
 	defer sys.monster_models_shutdown()
+	defer sys.horse_models_shutdown()
 
 	// Audio (SE cache + one BGM stream) and the battle-script interpreter
 	// (attack/skill timelines driving animations and sounds).

@@ -37,6 +37,16 @@ export const COMBAT_CONFIG = {
   MIN_DAMAGE: 1
 } as const;
 
+// Mounted combat. The horse carries the rider into melee: extra reach and a
+// flat damage bonus while `session.mounted` is set (the client mirrors the
+// speed multiplier for its predicted movement — MOUNT in the Odin config.odin).
+export const MOUNT_CONFIG = {
+  SPEED_MULTIPLIER: 1.7,
+  DAMAGE_MULTIPLIER: 0.4,
+  MELEE_RANGE_BONUS: 1.0,
+  DEFAULT_VARIANT: 20, // coat 020: the saddled white horse
+} as const;
+
 export const REGEN_CONFIG = {
   TICK_INTERVAL_MS: 10000,
   LP_DIVISOR: 80,

@@ -1,6 +1,7 @@
 import { Socket } from 'socket.io';
 import {
   Packet, PacketType, NPC_DATABASE, getNPCsInZone, NATION_ZONE_MAP, getZoneDefinition, JobId,
+  MOUNT_CONFIG,
 } from '@dust-saga/shared';
 import { NetworkContext, PacketHandler } from '../NetworkContext';
 
@@ -42,6 +43,12 @@ function handleNPCInteract(ctx: NetworkContext, socket: Socket, data: any): void
   // Performance arena dialog actions: "perf:spawn:<count>" / "perf:clear"
   if (typeof data.dialogId === 'string' && data.dialogId.startsWith('perf:')) {
     handlePerfArenaAction(ctx, characterId, session, npc, data.dialogId);
+    return;
+  }
+
+  // Stable-keeper mount services: "stable:mount" / "stable:dismount"
+  if (typeof data.dialogId === 'string' && data.dialogId.startsWith('stable:')) {
+    handleStableAction(ctx, characterId, session, npc, data.dialogId);
     return;
   }
 
@@ -302,6 +309,47 @@ function handleAdvancementAction(
     session.currentNpcId = null;
     return;
   }
+}
+
+/**
+ * Stable-keeper mount actions. The client sends NPC_INTERACT with
+ * dialogId = "stable:<action>" (the dialog option's nextDialogId, same
+ * channel as "adv:"/"perf:") and the server flips the rider's mount state,
+ * broadcasts MOUNT_UPDATE to the zone, then serves the matching stable page.
+ * Riding from the stable has NO Horsemanship requirement — the Summon Horse
+ * skill (reqPoints 20) is the field alternative.
+ */
+function handleStableAction(
+  ctx: NetworkContext,
+  characterId: string,
+  session: any,
+  npc: any,
+  dialogId: string
+): void {
+  const action = dialogId.slice('stable:'.length);
+
+  if (action === 'mount') {
+    if (!session.mounted) {
+      session.mounted = true;
+      session.mountType = 'horse';
+      session.mountVariant = session.mountVariant ?? MOUNT_CONFIG.DEFAULT_VARIANT;
+      ctx.broadcastMountState(session);
+    }
+    serveDialog(ctx, characterId, npc, 'mounted');
+    return;
+  }
+
+  if (action === 'dismount') {
+    if (session.mounted) {
+      session.mounted = false;
+      session.mountType = undefined;
+      ctx.broadcastMountState(session);
+    }
+    serveDialog(ctx, characterId, npc, 'dismounted');
+    return;
+  }
+
+  serveDialog(ctx, characterId, npc, 'greeting');
 }
 
 /** Helper: look up a dialog page from the NPC and send it to the player. */

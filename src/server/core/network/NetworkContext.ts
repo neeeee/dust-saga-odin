@@ -79,6 +79,8 @@ export interface NetworkContext {
   refreshPartyForMember(characterId: string): void;
   sendPartyUpdate(partyId: string): void;
   broadcastEntityEffects(session: PlayerSession): void;
+  /** Zone-wide MOUNT_UPDATE for a player whose mount state just changed. */
+  broadcastMountState(session: PlayerSession): void;
 
   handlePlayerDeath(session: PlayerSession): void;
   handleEnemyKill(enemyId: string, killerId: string): void;

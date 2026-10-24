@@ -387,6 +387,10 @@ Local_Player :: struct {
 	death_start_ms:        u64, // 0 = not counting; set on death, cleared on revive
 	respawn_sent:          bool, // RESPAWN_REQUEST sent, waiting for PLAYER_REVIVED
 	is_resting:            bool,
+	// mount state (server-authoritative via MOUNT_UPDATE; drives the horse
+	// render, the mounted animation stances and the movement speed boost)
+	mounted:               bool,
+	mount_variant:         i32, // horse coat id → assets/horses/horse_<v>_000.glb
 
 	// combat timers (client-side cooldown gating; server is authoritative)
 	last_auto_attack_ms:   u64,

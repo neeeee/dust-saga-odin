@@ -27,7 +27,8 @@ import { ItemSystem } from '../../systems/ItemSystem';
  * authoritative from the CSVs.
  *
  * Items register through ItemSystem.registerShippedItems (insert-if-absent in
- * both cache and DB — hand-authored items and admin edits always win).
+ * both cache and DB — hand-authored items and admin edits always win, except
+ * equipment_slot which refreshes from the CSV so stale seeds heal).
  * Monsters register through shared registerEnemyDefinition (same no-overwrite
  * rule) before SpawnManager.initialize().
  */

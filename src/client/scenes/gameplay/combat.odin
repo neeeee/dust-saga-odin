@@ -25,15 +25,25 @@ set_weapon_drawn :: proc(drawn: bool) {
 
 apply_combat :: proc(inp: sys.Input_State) {
 	// B: toggle the sheath/drawn stance — works without a target (drawn is
-	// purely visual until there's something to attack). Sheathing also
-	// cancels auto-attack; engaging auto-attack draws the weapon.
+	// purely visual until there's something to attack). Sheathing cancels
+	// auto-attack AND any executing skill/manual-attack motion (the battle
+	// playback + action stop below); the server drops a held block on the
+	// same stance change. A spell about to cast pins the stance — the sheath
+	// input is ignored while channeling.
 	if inp.attack {
-		set_weapon_drawn(!state.weapon_drawn)
-		if !state.weapon_drawn {
-			state.auto_attack_active = false
-		} else if state.player.target_id != sys.INVALID_ENTITY {
-			state.auto_attack_active = true
-			try_auto_attack()
+		if state.weapon_drawn && state.player.casting.active {
+			// channeling: no sheath
+		} else {
+			set_weapon_drawn(!state.weapon_drawn)
+			if !state.weapon_drawn {
+				state.auto_attack_active = false
+				sys.battle_playback_stop(state.scene.player_id)
+				if state.local_avatar != nil do sys.chara_avatar_stop_action(state.local_avatar)
+				state.cast_draw_phased = false
+			} else if state.player.target_id != sys.INVALID_ENTITY {
+				state.auto_attack_active = true
+				try_auto_attack()
+			}
 		}
 	}
 
@@ -141,6 +151,9 @@ fire_pending_arrow :: proc() {
 // gate the send here — no attack, no animation, when too far).
 try_auto_attack :: proc() {
 	if state.player.target_id == sys.INVALID_ENTITY do return
+	// No auto-attacks while blocking — the stance holds them off entirely
+	// (manual attacks are what drop it, server-side).
+	if state.ctx.player_blocking do return
 	// A skill owns the character while it channels or resolves — no auto-
 	// swings during it (the attack draw would also stomp the channel
 	// animation, which shares the action slot).
@@ -342,6 +355,11 @@ pick_target_id :: proc() -> sys.Entity_Id {
 		t := &s.transforms[i]
 		r := s.renderables[i].radius + 0.5
 		center := rl.Vector3{t.position.x, t.position.y + 1.0, t.position.z}
+		// Mounted riders pick against the horse's body, not the rider capsule.
+		if s.renderables[i].mount.valid {
+			center = rl.Vector3{t.position.x, t.position.y + 1.5, t.position.z}
+			r = 1.6
+		}
 		// Loot bags are short boxes sitting on the ground — pick against a
 		// lower, roomier sphere so clicking the visible box connects.
 		if s.metas[i].kind == .LOOT {

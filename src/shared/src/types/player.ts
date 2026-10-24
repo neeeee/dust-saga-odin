@@ -52,6 +52,11 @@ export interface PlayerSession {
   /** Sheath/drawn stance (STANCE_UPDATE); rebroadcast as ENTITY_STANCE. */
   weaponDrawn?: boolean;
   lastStanceAt?: number;
+  /** Mount state (MOUNT_UPDATE). Session-only — riders always log out afoot. */
+  mounted?: boolean;
+  mountType?: 'horse';
+  /** Horse coat variant; selects assets/horses/horse_<variant>_000.glb. */
+  mountVariant?: number;
   jobId: JobId;
   baseClass: BaseClass;
   // Character creator appearance (character model + face/hair/color picks)

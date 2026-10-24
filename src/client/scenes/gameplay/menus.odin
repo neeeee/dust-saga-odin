@@ -1949,6 +1949,10 @@ refresh_skills_menu :: proc() {
 		sk := sys.registry_get(&sys.skill_registry, sid)
 		name := sys.registry_name(&sys.skill_registry, sid)
 		lvl := sys.skill_req_level(sk)
+		if repl, ok := sys.skill_replacement_for(p, name); ok {
+			ui.menu_add_label(m, fmt.tprintf("[x] %-18s replaced by %s", name, repl))
+			continue
+		}
 		can_assign := sk.kind != .PASSIVE && sys.skill_req_met(sk, p)
 		if sk.requires.weapon_count > 0 && !has_weapon do can_assign = false
 		tag := can_assign ? "OK" : (sk.kind == .PASSIVE ? "passive" : fmt.tprintf("Lv%d", lvl))
@@ -1976,6 +1980,10 @@ refresh_skills_menu :: proc() {
 			sk := sys.registry_get(&sys.skill_registry, sid)
 			name := sys.registry_name(&sys.skill_registry, sid)
 			pts := sys.skill_req_points(sk)
+			if repl, ok := sys.skill_replacement_for(p, name); ok {
+				ui.menu_add_label(m, fmt.tprintf("   [x] %-18s replaced by %s", name, repl))
+				continue
+			}
 			can_assign := sk.kind != .PASSIVE && sys.skill_req_met(sk, p)
 			if sk.requires.weapon_count > 0 && !has_weapon do can_assign = false
 			tag := can_assign ? "OK" : (sk.kind == .PASSIVE ? "passive" : (pts > 0 ? fmt.tprintf("%d", pts) : "x"))

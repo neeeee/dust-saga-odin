@@ -287,6 +287,12 @@ load_item_csv :: proc() {
 			if sid_ok && sid_n > 0 {
 				model = strings.clone(fmt.tprintf("item/EM_%06d_20_000.glb", sid_n))
 			}
+		} else if slot == "shield" {
+			// Shields: rigid race-independent glb, EM part code 22
+			// (item/EM_017021_22_000.glb for the targe).
+			if sid_ok && sid_n > 0 {
+				model = strings.clone(fmt.tprintf("item/EM_%06d_22_000.glb", sid_n))
+			}
 		} else if armor_part > 0 {
 			// Armor: same RDR-SID column is the appearance id; meshes are
 			// race-specific (Blaze Helm ships sid 11002's file, and items can

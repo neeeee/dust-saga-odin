@@ -1,6 +1,7 @@
 import { Socket } from 'socket.io';
 import {
   Packet, PacketType, PlayerSession, isZonePvpEnabled, GAME_CONFIG,
+  StatusEffectType,
 } from '@dust-saga/shared';
 import { NetworkContext, PacketHandler } from '../NetworkContext';
 
@@ -24,10 +25,29 @@ function handleStanceUpdate(ctx: NetworkContext, socket: Socket, data: any): voi
 
   const drawn = !!data?.drawn;
   const now = Date.now();
+  // A spell about to cast pins the stance — sheathe requests are refused.
+  if (!drawn && session.activeCast) return;
   if (session.weaponDrawn === drawn) return;
   if (session.lastStanceAt && now - session.lastStanceAt < 150) return;
   session.weaponDrawn = drawn;
   session.lastStanceAt = now;
+
+  // Sheathing drops the block stance (stationary or Defensive March alike) —
+  // same rule as moving. The effect change rides back before the stance
+  // broadcast so the blocker's own client sees the gait release immediately.
+  if (!drawn) {
+    const blockFx = session.statusEffects?.find(e => e.type === StatusEffectType.BUFF_BLOCKING_STANCE);
+    if (blockFx) {
+      session.statusEffects = session.statusEffects.filter(e => e !== blockFx);
+      ctx.removeBlockingProtectedBuffs(characterId);
+      ctx.sendToPlayer(characterId, {
+        type: PacketType.STATUS_EFFECT_UPDATE,
+        timestamp: Date.now(),
+        data: { effects: session.statusEffects }
+      });
+      ctx.broadcastEntityEffects(session);
+    }
+  }
 
   ctx.broadcastInZone(session.zoneId, {
     type: PacketType.ENTITY_STANCE,
@@ -62,6 +82,10 @@ function handleAttack(ctx: NetworkContext, socket: Socket, data: any): void {
   if (session.currentNpcId) return;
   // No auto-attacks while a skill is channeling.
   if (session.activeCast) return;
+  // No auto-attacks while blocking (stationary or Defensive March) — the
+  // stance holds and this packet is silently dropped. Manual swings land via
+  // MANUAL_ATTACK, which drops the stance instead.
+  if (session.statusEffects?.some(e => e.type === StatusEffectType.BUFF_BLOCKING_STANCE)) return;
 
   ctx.cancelRest(session);
 
@@ -161,6 +185,21 @@ function handleManualAttack(ctx: NetworkContext, socket: Socket, data: any): voi
   if (session.currentNpcId) return;
   // No manual attacks while a skill is channeling.
   if (session.activeCast) return;
+
+  // A manual swing drops the block stance (stationary block or Defensive
+  // March alike) — attack input doubles as the stance cancel, action-game
+  // style. The effect change is broadcast before the swing resolves.
+  const blockFx = session.statusEffects?.find(e => e.type === StatusEffectType.BUFF_BLOCKING_STANCE);
+  if (blockFx) {
+    session.statusEffects = session.statusEffects.filter(e => e !== blockFx);
+    ctx.removeBlockingProtectedBuffs(characterId);
+    ctx.sendToPlayer(characterId, {
+      type: PacketType.STATUS_EFFECT_UPDATE,
+      timestamp: Date.now(),
+      data: { effects: session.statusEffects }
+    });
+    ctx.broadcastEntityEffects(session);
+  }
 
   ctx.cancelRest(session);
 

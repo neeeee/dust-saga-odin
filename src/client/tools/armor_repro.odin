@@ -63,8 +63,9 @@ armor_repro :: proc(race: string, armor_glb: string) {
 
 	for b in 0..<int(m.skeleton.boneCount) {
 		if b >= len(remap) do break
+		// wearer's pose AND wearer's bind — see chara_avatar_update_armor
 		m.boneMatrices[b] = sys.chara_pose_matrix(cm.entry.model.currentPose[remap[b]]) *
-			rl.MatrixInvert(sys.chara_pose_matrix(m.skeleton.bindPose[b]))
+			rl.MatrixInvert(sys.chara_pose_matrix(cm.entry.model.skeleton.bindPose[remap[b]]))
 	}
 	sys.chara_skin_model_cpu(m)
 

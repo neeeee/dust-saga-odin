@@ -1,15 +1,45 @@
-import { NPCDefinition, NPCType } from '../types/npc';
+import { NPCDefinition, NPCType, NPCAppearance } from '../types/npc';
 import { CraftProfession } from '../types/recipes';
+
+// ── appearance cheat sheet ─────────────────────────────────────────────────
+// Races: human (m/f), elf (m/f), dwarf, myrine, enkidu, lapin. Gear ids are
+// item.csv entries with shipped visuals (per-race armor meshes; rigid held
+// weapons/shields). Verified visual sets:
+//   helmets  11001 Leather Cap · 11002 Illyrian · 11007 Obsidian Night · 11011 Kettle
+//   torsos   12001 Tunic · 12002 Hermit Tunic · 12011 Gambeson · 12021 Leather
+//            12101 Gothic Plate · 12102 Valiant Plate
+//   legs     13001 Pants · 13011 Cuisses · 13012 Silk Pants · 13021 Tassets · 13031 Chausses
+//   gloves   14001 Quilted · 14003 Silk
+//   boots    15001 Quilted · 15003 Norma
+//   shields  16001 Small Shield · 17001 Adarga
+//   weapons  1 Gladius · 401 Claymore · 601 Hand Axe · 1001 Bludgeon ·
+//            1201 Quarterstaff · 1401 Spear · 2201 Shortbow · 2601 Twisted Wand ·
+//            2801 Spirit Wand
+// Enemy models: paths under assets, e.g. 'monster/monster_11108_Grey Wolf.glb'.
+
+const SMITH_OUTFIT: NPCAppearance['equipment'] = {
+  armor: '12021', legs: '13021', gloves: '14001', boots: '15001', weapon: '1001',
+};
+const ALCHEMIST_OUTFIT: NPCAppearance['equipment'] = {
+  armor: '12001', legs: '13012', gloves: '14003', weapon: '2601',
+};
+const ENCHANTER_OUTFIT: NPCAppearance['equipment'] = {
+  armor: '12002', legs: '13012', boots: '15001', weapon: '2801',
+};
 
 export const NPC_DATABASE: Record<string, NPCDefinition> = {
   'elder_miriam': {
     id: 'elder_miriam',
     name: 'Elder Miriam',
     type: NPCType.QUEST_GIVER,
-    modelFile: 'Witch.glb',
     position: { x: 5, y: 0, z: 5 },
     rotation: 0,
     zoneId: 'starter_zone',
+    appearance: {
+      race: 'human', female: true,
+      faceIndex: 1, hairIndex: 1, hairColor: 4,
+      equipment: { armor: '12002', legs: '13012', weapon: '2801' },
+    },
     dialogs: [
       {
         id: 'greeting',
@@ -48,10 +78,14 @@ export const NPC_DATABASE: Record<string, NPCDefinition> = {
     id: 'blacksmith_garn',
     name: 'Blacksmith Garn',
     type: NPCType.BLACKSMITH,
-    modelFile: 'Worker.glb',
     position: { x: -8, y: 0, z: 3 },
     rotation: Math.PI / 4,
     zoneId: 'starter_zone',
+    appearance: {
+      race: 'dwarf',
+      faceIndex: 1, hairIndex: 1,
+      equipment: SMITH_OUTFIT,
+    },
     dialogs: [
       {
         id: 'greeting',
@@ -68,10 +102,14 @@ export const NPC_DATABASE: Record<string, NPCDefinition> = {
     id: 'healer_rosa',
     name: 'Healer Rosa',
     type: NPCType.HEALER,
-    modelFile: 'Beach Character.glb',
     position: { x: -3, y: 0, z: 8 },
     rotation: -Math.PI / 6,
     zoneId: 'starter_zone',
+    appearance: {
+      race: 'elf', female: true,
+      faceIndex: 0, hairIndex: 2, hairColor: 0,
+      equipment: { armor: '12001', legs: '13012', gloves: '14003', weapon: '2601' },
+    },
     dialogs: [
       {
         id: 'greeting',
@@ -83,14 +121,40 @@ export const NPC_DATABASE: Record<string, NPCDefinition> = {
       }
     ]
   },
+  // A beast NPC: the elder's old wolfhound, rendered with a shipped monster
+  // glb instead of a chara model.
+  'elder_wolfhound_bram': {
+    id: 'elder_wolfhound_bram',
+    name: 'Bram the Wolfhound',
+    type: NPCType.GENERIC,
+    position: { x: 7, y: 0, z: 6.5 },
+    rotation: -Math.PI / 4,
+    zoneId: 'starter_zone',
+    appearance: {
+      monsterModel: 'monster/monster_11108_Grey Wolf.glb',
+    },
+    dialogs: [
+      {
+        id: 'greeting',
+        text: 'Bram tilts his head at you, then yawns mightily. His tail thumps the grass twice — you have been acknowledged.',
+        options: [
+          { text: 'Good dog.', action: 'close' }
+        ]
+      }
+    ]
+  },
   'ranger_finn': {
     id: 'ranger_finn',
     name: 'Ranger Finn',
     type: NPCType.QUEST_GIVER,
-    modelFile: 'Farmer.glb',
     position: { x: 0, y: 0, z: -50 },
     rotation: Math.PI,
     zoneId: 'forest_zone',
+    appearance: {
+      race: 'elf',
+      faceIndex: 0, hairIndex: 0, hairColor: 2,
+      equipment: { helmet: '11001', armor: '12021', legs: '13031', boots: '15001', weapon: '2201' },
+    },
     dialogs: [
       {
         id: 'greeting',
@@ -129,10 +193,14 @@ export const NPC_DATABASE: Record<string, NPCDefinition> = {
     id: 'merchant_li',
     name: 'Merchant Li',
     type: NPCType.MERCHANT,
-    modelFile: 'Casual Character.glb',
     position: { x: 10, y: 0, z: -30 },
     rotation: -Math.PI / 3,
     zoneId: 'forest_zone',
+    appearance: {
+      race: 'human', female: true,
+      faceIndex: 2, hairIndex: 0, hairColor: 2,
+      equipment: { armor: '12001', legs: '13012', gloves: '14003' },
+    },
     dialogs: [
       {
         id: 'greeting',
@@ -145,14 +213,64 @@ export const NPC_DATABASE: Record<string, NPCDefinition> = {
     ],
     shopItems: ['iron_sword', 'chainmail', 'iron_helmet', 'swift_boots', 'health_potion', 'mana_potion']
   },
+  // Another beast NPC: a reformed kobold running a small trade of his own.
+  'kobold_peddler_snib': {
+    id: 'kobold_peddler_snib',
+    name: 'Snib the Peddler',
+    type: NPCType.MERCHANT,
+    position: { x: 12.5, y: 0, z: -32.5 },
+    rotation: Math.PI / 3,
+    zoneId: 'forest_zone',
+    appearance: {
+      monsterModel: 'monster/monster_21201_Kobold.glb',
+      modelScale: 0.9,
+    },
+    dialogs: [
+      {
+        id: 'greeting',
+        text: 'Snib not bite! Snib trade. Shiny potions, good rope, sharp stick — Snib have it all. You buy, yes?',
+        options: [
+          { text: 'Show me your wares.', action: 'open_shop', actionData: { shopId: 'snib_shop' } },
+          { text: 'Maybe later, Snib.', action: 'close' }
+        ]
+      }
+    ],
+    shopItems: ['health_potion', 'mana_potion', 'wooden_sword', 'leather_boots', 'antidote']
+  },
+  // And a third: an ancient guardian beast watching over the grove path.
+  'grove_guardian': {
+    id: 'grove_guardian',
+    name: 'Old Grove Guardian',
+    type: NPCType.GENERIC,
+    position: { x: 3, y: 0, z: -47 },
+    rotation: Math.PI / 2,
+    zoneId: 'forest_zone',
+    appearance: {
+      monsterModel: 'monster/monster_12104_Elder Beast.glb',
+      modelScale: 1.1,
+    },
+    dialogs: [
+      {
+        id: 'greeting',
+        text: 'The great beast regards you with old, patient eyes. The forest hums around it — you feel it has judged you, and found you harmless.',
+        options: [
+          { text: 'Bow respectfully.', action: 'close' }
+        ]
+      }
+    ]
+  },
   'guard_varik': {
     id: 'guard_varik',
     name: 'Varik Border Guard',
     type: NPCType.GENERIC,
-    modelFile: 'Witch.glb',
     position: { x: 0, y: 0, z: -60 },
     rotation: 0,
     zoneId: 'mountains_of_jortio',
+    appearance: {
+      race: 'human',
+      faceIndex: 0, hairIndex: 0, hairColor: 1,
+      equipment: { helmet: '11011', armor: '12011', legs: '13001', boots: '15003', weapon: '1', shield: '16001' },
+    },
     dialogs: [
       {
         id: 'greeting',
@@ -168,10 +286,14 @@ export const NPC_DATABASE: Record<string, NPCDefinition> = {
     id: 'guard_pfelstein',
     name: 'Pfelstein Border Guard',
     type: NPCType.GENERIC,
-    modelFile: 'Witch.glb',
     position: { x: 0, y: 0, z: -60 },
     rotation: 0,
     zoneId: 'nelstadt_plains',
+    appearance: {
+      race: 'elf',
+      faceIndex: 1, hairIndex: 0, hairColor: 3,
+      equipment: { helmet: '11002', armor: '12101', legs: '13011', boots: '15003', weapon: '401' },
+    },
     dialogs: [
       {
         id: 'greeting',
@@ -187,10 +309,14 @@ export const NPC_DATABASE: Record<string, NPCDefinition> = {
     id: 'guard_latugan',
     name: 'Latugan Border Guard',
     type: NPCType.GENERIC,
-    modelFile: 'Witch.glb',
     position: { x: 0, y: 0, z: -60 },
     rotation: 0,
     zoneId: 'himurart_desert',
+    appearance: {
+      race: 'enkidu',
+      faceIndex: 0, hairIndex: 0,
+      equipment: { helmet: '11007', armor: '12011', legs: '13031', boots: '15001', weapon: '1401', shield: '17001' },
+    },
     dialogs: [
       {
         id: 'greeting',
@@ -207,17 +333,110 @@ export const NPC_DATABASE: Record<string, NPCDefinition> = {
   // Each nation has a BLACKSMITH (weapons/armor), ALCHEMIST (potions), and
   // ENCHANTER (gems/accessories). Players must visit the nation's capital to
   // craft; recipes must match the NPC's craftProfession.
-  'varik_blacksmith': craftNpc('varik_blacksmith', 'Borin Ironhand', 'varik_confederation', CraftProfession.BLACKSMITH, { x: -10, y: 0, z: 5 }),
-  'varik_alchemist': craftNpc('varik_alchemist', 'Maven Frostbloom', 'varik_confederation', CraftProfession.ALCHEMIST, { x: 10, y: 0, z: 5 }),
-  'varik_enchanter': craftNpc('varik_enchanter', 'Aldric rune-Hand', 'varik_confederation', CraftProfession.ENCHANTER, { x: 0, y: 0, z: 15 }),
+  'varik_blacksmith': craftNpc('varik_blacksmith', 'Borin Ironhand', 'varik_confederation', CraftProfession.BLACKSMITH, { x: -10, y: 0, z: 5 },
+    { race: 'dwarf', faceIndex: 0, hairIndex: 0, equipment: SMITH_OUTFIT }),
+  'varik_alchemist': craftNpc('varik_alchemist', 'Maven Frostbloom', 'varik_confederation', CraftProfession.ALCHEMIST, { x: 10, y: 0, z: 5 },
+    { race: 'elf', female: true, faceIndex: 1, hairIndex: 0, hairColor: 3, equipment: ALCHEMIST_OUTFIT }),
+  'varik_enchanter': craftNpc('varik_enchanter', 'Aldric rune-Hand', 'varik_confederation', CraftProfession.ENCHANTER, { x: 0, y: 0, z: 15 },
+    { race: 'myrine', faceIndex: 0, hairIndex: 0, equipment: ENCHANTER_OUTFIT }),
 
-  'pfelstein_blacksmith': craftNpc('pfelstein_blacksmith', 'Sir Roland the Smith', 'kingdom_pfelstein', CraftProfession.BLACKSMITH, { x: -10, y: 0, z: 5 }),
-  'pfelstein_alchemist': craftNpc('pfelstein_alchemist', 'Sister Beatrix', 'kingdom_pfelstein', CraftProfession.ALCHEMIST, { x: 10, y: 0, z: 5 }),
-  'pfelstein_enchanter': craftNpc('pfelstein_enchanter', 'Father Cassian', 'kingdom_pfelstein', CraftProfession.ENCHANTER, { x: 0, y: 0, z: 15 }),
+  'pfelstein_blacksmith': craftNpc('pfelstein_blacksmith', 'Sir Roland the Smith', 'kingdom_pfelstein', CraftProfession.BLACKSMITH, { x: -10, y: 0, z: 5 },
+    { race: 'dwarf', faceIndex: 2, hairIndex: 2, equipment: SMITH_OUTFIT }),
+  'pfelstein_alchemist': craftNpc('pfelstein_alchemist', 'Sister Beatrix', 'kingdom_pfelstein', CraftProfession.ALCHEMIST, { x: 10, y: 0, z: 5 },
+    { race: 'human', female: true, faceIndex: 0, hairIndex: 2, hairColor: 0, equipment: ALCHEMIST_OUTFIT }),
+  'pfelstein_enchanter': craftNpc('pfelstein_enchanter', 'Father Cassian', 'kingdom_pfelstein', CraftProfession.ENCHANTER, { x: 0, y: 0, z: 15 },
+    { race: 'lapin', faceIndex: 0, hairIndex: 0, equipment: ENCHANTER_OUTFIT }),
 
-  'latugan_blacksmith': craftNpc('latugan_blacksmith', 'Hassan Scorpionsbane', 'latugan_empire', CraftProfession.BLACKSMITH, { x: -10, y: 0, z: 5 }),
-  'latugan_alchemist': craftNpc('latugan_alchemist', 'Zahra the Herbalist', 'latugan_empire', CraftProfession.ALCHEMIST, { x: 10, y: 0, z: 5 }),
-  'latugan_enchanter': craftNpc('latugan_enchanter', 'Khalid gem-Etcher', 'latugan_empire', CraftProfession.ENCHANTER, { x: 0, y: 0, z: 15 }),
+  'latugan_blacksmith': craftNpc('latugan_blacksmith', 'Hassan Scorpionsbane', 'latugan_empire', CraftProfession.BLACKSMITH, { x: -10, y: 0, z: 5 },
+    { race: 'human', faceIndex: 1, hairIndex: 0, hairColor: 0, equipment: SMITH_OUTFIT }),
+  'latugan_alchemist': craftNpc('latugan_alchemist', 'Zahra the Herbalist', 'latugan_empire', CraftProfession.ALCHEMIST, { x: 10, y: 0, z: 5 },
+    { race: 'elf', female: true, faceIndex: 2, hairIndex: 1, hairColor: 1, equipment: ALCHEMIST_OUTFIT }),
+  'latugan_enchanter': craftNpc('latugan_enchanter', 'Khalid gem-Etcher', 'latugan_empire', CraftProfession.ENCHANTER, { x: 0, y: 0, z: 15 },
+    { race: 'enkidu', faceIndex: 1, hairIndex: 0, equipment: ENCHANTER_OUTFIT }),
+
+  // ── Stable keepers ──────────────────────────────────────────────────────
+  // Mount/dismount services. Options route through the "stable:" dialogId
+  // prefix, intercepted server-side in npcHandlers (same pattern as
+  // "cutscene:"/"adv:"/"perf:"). Riding from the stable needs no Horsemanship
+  // — the Summon Horse skill (20 Horsemanship) is the field alternative.
+  'stable_keep_odwin': {
+    id: 'stable_keep_odwin',
+    name: 'Odwin the Stable Keep',
+    type: NPCType.GENERIC,
+    position: { x: 12, y: 0, z: 2 },
+    rotation: -Math.PI / 3,
+    zoneId: 'starter_zone',
+    appearance: {
+      race: 'human',
+      faceIndex: 0, hairIndex: 1, hairColor: 1,
+      equipment: { armor: '12011', legs: '13001', boots: '15003', weapon: '1201' },
+    },
+    dialogs: [
+      {
+        id: 'greeting',
+        text: 'Morning, traveler! My horses are fed, brushed and ready to ride. Care to take one out?',
+        options: [
+          { text: 'I would like to ride.', nextDialogId: 'stable:mount' },
+          { text: 'I would like to dismount.', nextDialogId: 'stable:dismount' },
+          { text: 'Just looking.', action: 'close' }
+        ]
+      },
+      {
+        id: 'mounted',
+        text: 'A fine steed, isn\'t she? Treat her well out there — and do come back before dark.',
+        options: [
+          { text: 'Dismount.', nextDialogId: 'stable:dismount' },
+          { text: 'Off I go!', action: 'close' }
+        ]
+      },
+      {
+        id: 'dismounted',
+        text: 'I\'ll put her in her stall. Come back whenever you need her again.',
+        options: [
+          { text: 'Thanks!', action: 'close' }
+        ]
+      }
+    ]
+  },
+  'stable_keep_marla': {
+    id: 'stable_keep_marla',
+    name: 'Marla the Stable Keep',
+    type: NPCType.GENERIC,
+    position: { x: 14, y: 0, z: -28 },
+    rotation: Math.PI / 4,
+    zoneId: 'forest_zone',
+    appearance: {
+      race: 'human', female: true,
+      faceIndex: 1, hairIndex: 2, hairColor: 3,
+      equipment: { armor: '12002', legs: '13001', boots: '15001' },
+    },
+    dialogs: [
+      {
+        id: 'greeting',
+        text: 'Need a horse through the woods? Mine know these trails blindfolded.',
+        options: [
+          { text: 'I would like to ride.', nextDialogId: 'stable:mount' },
+          { text: 'I would like to dismount.', nextDialogId: 'stable:dismount' },
+          { text: 'Not today.', action: 'close' }
+        ]
+      },
+      {
+        id: 'mounted',
+        text: 'She\'ll carry you well. Mind the wolves past the border guard!',
+        options: [
+          { text: 'Dismount.', nextDialogId: 'stable:dismount' },
+          { text: 'Off I go!', action: 'close' }
+        ]
+      },
+      {
+        id: 'dismounted',
+        text: 'Back safe! She\'ll rest in the stable until you need her.',
+        options: [
+          { text: 'Thanks!', action: 'close' }
+        ]
+      }
+    ]
+  },
 
   // ── Performance test arena ─────────────────────────────────────────────
   // Dialog options route through the "perf:" dialogId prefix, intercepted
@@ -226,10 +445,14 @@ export const NPC_DATABASE: Record<string, NPCDefinition> = {
     id: 'perf_test_controller',
     name: 'Arena Engineer',
     type: NPCType.GENERIC,
-    modelFile: 'Casual Character.glb',
     position: { x: 4, y: 0, z: -18 },
     rotation: -2.03,
     zoneId: 'performance_test',
+    appearance: {
+      race: 'human',
+      faceIndex: 0, hairIndex: 0, hairColor: 0,
+      equipment: { armor: '12102', legs: '13011', boots: '15003', weapon: '1' },
+    },
     dialogs: [
       {
         id: 'greeting',
@@ -251,7 +474,8 @@ function craftNpc(
   name: string,
   zoneId: string,
   profession: CraftProfession,
-  position: { x: number; y: number; z: number }
+  position: { x: number; y: number; z: number },
+  appearance: NPCAppearance
 ): NPCDefinition {
   const professionLabel = profession === CraftProfession.BLACKSMITH
     ? 'weapons and armor'
@@ -262,10 +486,10 @@ function craftNpc(
     id,
     name,
     type: NPCType.CRAFTSMAN,
-    modelFile: 'Casual Character.glb',
     position,
     rotation: 0,
     zoneId,
+    appearance,
     craftProfession: profession,
     dialogs: [
       {

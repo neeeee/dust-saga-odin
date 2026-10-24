@@ -28,7 +28,7 @@ export { CUTSCENE_DATABASE, getCutscene } from './constants/cutscenes';
 export { OBELISK_BUFF_TABLE, getObeliskBuffValues } from './constants/obelisk';
 export type { ObeliskBuffValues } from './constants/obelisk';
 export { RACE_DATA, getRaceData, LEVEL_UP_BONUSES, STAT_POINT_COSTS, getStatPointCost, getLevelUpBonuses, MAX_LEVEL, MAX_STAT_VALUE, JOB_BASE_STAT_MODIFIERS, getJobBaseStatModifier } from './constants/races';
-export { SKILL_CATEGORIES, CLASS_SKILL_DATA, GROUND_TARGETED_AOE_SKILLS, DEFAULT_AOE_RADIUS, findSkillDefinition, CATEGORY_LEVEL_SKILLS, CATEGORY_ID_TO_KEY, CATEGORY_DISPLAY_NAMES } from './constants/skills';
+export { SKILL_CATEGORIES, CLASS_SKILL_DATA, GROUND_TARGETED_AOE_SKILLS, DEFAULT_AOE_RADIUS, findSkillDefinition, CATEGORY_LEVEL_SKILLS, CATEGORY_ID_TO_KEY, CATEGORY_DISPLAY_NAMES, SKILL_REPLACEMENTS } from './constants/skills';
 export type { DebuffEffectTable, DebuffDOTType } from './constants/debuffs';
 export {
   SUB_CATEGORY_TO_CATEGORY,

@@ -35,6 +35,15 @@ export const GROUND_TARGETED_AOE_SKILLS = new Set([
   "Summon Turtle",
 ]);
 
+// Upgrade chains: learning the value side replaces the key side — the old
+// skill is refused server-side and the client swaps it transparently on the
+// bar. Keys are the replaced (lower) skill, values the replacement.
+export const SKILL_REPLACEMENTS: Record<string, string> = {
+  "Ice Storm": "Ice Tempest",
+  "Arrow Rain": "Arrow Storm",
+  "Whirling Strike": "True Whirling Strike",
+};
+
 export const DEFAULT_AOE_RADIUS = 5;
 
 export const SKILL_CATEGORIES: Record<number, SkillCategoryData> = {
@@ -99,9 +108,10 @@ export const CLASS_SKILL_DATA: Record<
             castTime: 0,
             cooldown: 10,
             duration: 0,
-            description: "Double attack (1H weapons)",
+            description: "Double attack (1H sword, dagger)",
             damageType: DamageType.PHYSICAL,
             damageSubType: PhysicalDamageSubType.SLASH,
+            requiredWeaponType: [WeaponType.SWORD, WeaponType.DAGGER, WeaponType.TWO_HANDED_SWORD, WeaponType.SPEAR, WeaponType.TWO_HANDED_SPEAR, WeaponType.AXE, WeaponType.TWO_HANDED_AXE, WeaponType.BLUNT, WeaponType.TWO_HANDED_BLUNT, WeaponType.KNUCKLES, WeaponType.WAND, WeaponType.STAFF],
             basePower: 1,
             baseHits: 2,
           },
@@ -115,6 +125,7 @@ export const CLASS_SKILL_DATA: Record<
             description: "360 AOE knockback melee attack (2H swords)",
             damageType: DamageType.PHYSICAL,
             damageSubType: PhysicalDamageSubType.SLASH,
+            requiredWeaponType: [WeaponType.TWO_HANDED_SWORD],
             basePower: 2,
             isAOE: true,
             aoeRadius: 1,
@@ -130,8 +141,9 @@ export const CLASS_SKILL_DATA: Record<
             duration: 2,
             damageType: DamageType.PHYSICAL,
             damageSubType: PhysicalDamageSubType.SLASH,
+            requiredWeaponType: [WeaponType.TWO_HANDED_AXE, WeaponType.TWO_HANDED_BLUNT, WeaponType.TWO_HANDED_SPEAR, WeaponType.TWO_HANDED_AXE],
             description:
-              "Block enemy attacks and stun target if blocked (2H weapons, dagger)",
+              "Block enemy attacks and stun target if blocked (2H weapons).",
           },
           Concentration: {
             name: "Concentration",
@@ -141,7 +153,7 @@ export const CLASS_SKILL_DATA: Record<
             cooldown: 20,
             duration: 120,
             isBuff: true,
-            description: "Increased accuracy of next attack",
+            description: "Increased accuracy of next attack.",
             buffEffectTable: {
               accuracy: 50,
               consumableOnAttack: true,
@@ -154,9 +166,10 @@ export const CLASS_SKILL_DATA: Record<
             castTime: 0,
             cooldown: 10,
             duration: 0,
-            description: "100% chance to ignore armor (melee weapons)",
+            description: "Launches a powerful attack that hits regardless of the enemy's armor. This is a combo skill.",
             damageType: DamageType.PHYSICAL,
             damageSubType: PhysicalDamageSubType.SLASH,
+            requiredWeaponType: [WeaponType.SWORD, WeaponType.TWO_HANDED_SWORD, WeaponType.SPEAR, WeaponType.TWO_HANDED_SPEAR, WeaponType.AXE, WeaponType.TWO_HANDED_AXE, WeaponType.BLUNT, WeaponType.BLUNT, WeaponType.DAGGER, WeaponType.KNUCKLES, WeaponType.WAND, WeaponType.STAFF],
             basePower: 1,
           },
           Swing: {
@@ -170,9 +183,10 @@ export const CLASS_SKILL_DATA: Record<
             cooldown: 0,
             duration: 0,
             description:
-              "360 AOE melee attack (no knockback) that grants +100 dodge for a short duration (sword)",
+              "360 AOE melee attack (no knockback) that grants +100 dodge for a short duration (2h sword)",
             damageType: DamageType.PHYSICAL,
             damageSubType: PhysicalDamageSubType.SLASH,
+            requiredWeaponType: [WeaponType.TWO_HANDED_SWORD],
             basePower: 1,
             isAOE: true,
           },
@@ -183,6 +197,7 @@ export const CLASS_SKILL_DATA: Record<
             castTime: 0,
             cooldown: 0,
             duration: 0,
+            requiredWeaponType: [WeaponType.SWORD, WeaponType.TWO_HANDED_SWORD, WeaponType.DAGGER],
             description:
               "Increased damage with swords and daggers (sword, dagger)",
             isPassive: true,
@@ -195,9 +210,14 @@ export const CLASS_SKILL_DATA: Record<
             cooldown: 10,
             duration: 0,
             description:
-              "Replaces Slice, dealing three swift strikes with a chance to bleed (1H weapons and 2H swords)",
+              "Replaces Slice, dealing three swift strikes with a chance to bleed (2H sword)",
             damageType: DamageType.PHYSICAL,
             damageSubType: PhysicalDamageSubType.SLASH,
+            requiredWeaponType: [WeaponType.TWO_HANDED_SWORD],
+            hasDebuff: true,
+            debuffEffectTable: {
+              debuffCategory: "bleed"
+            },
             basePower: 1,
             baseHits: 3,
           },
@@ -212,6 +232,7 @@ export const CLASS_SKILL_DATA: Record<
               "Replaces Brutal Strike, higher damage with chance to knockdown (melee weapons)",
             damageType: DamageType.PHYSICAL,
             damageSubType: PhysicalDamageSubType.SLASH,
+            requiredWeaponType: [WeaponType.TWO_HANDED_SWORD, WeaponType.SWORD, WeaponType.AXE, WeaponType.TWO_HANDED_AXE, WeaponType.BLUNT, WeaponType.TWO_HANDED_BLUNT, WeaponType.SPEAR, WeaponType.TWO_HANDED_SPEAR, WeaponType.DAGGER, WeaponType.KNUCKLES],
             basePower: 1,
           },
           "True Whirling Strike": {
@@ -225,6 +246,7 @@ export const CLASS_SKILL_DATA: Record<
               "Replaces Whirling Strike, higher damage and wider range (2H swords)",
             damageType: DamageType.PHYSICAL,
             damageSubType: PhysicalDamageSubType.SLASH,
+            requiredWeaponType: [WeaponType.TWO_HANDED_SWORD],
             basePower: 2,
             isAOE: true,
           },
@@ -239,6 +261,7 @@ export const CLASS_SKILL_DATA: Record<
               "Strong single-target attack with a long cooldown and high MP cost",
             damageType: DamageType.PHYSICAL,
             damageSubType: PhysicalDamageSubType.SLASH,
+            requiredWeaponType: [WeaponType.SWORD, WeaponType.TWO_HANDED_SWORD],
             basePower: 4,
           },
         },

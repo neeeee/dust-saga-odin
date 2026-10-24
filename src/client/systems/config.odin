@@ -76,6 +76,11 @@ NET :: NETWORK_CONFIG {
 	MAX_PENDING_SEND         = 128,
 }
 
+// Mount tuning — mirrors MOUNT_CONFIG in src/shared/src/constants/game.ts.
+// The speed multiplier applies to the client-predicted movement (the server
+// doesn't validate displacement); damage/reach live server-side only.
+MOUNT_SPEED_MULTIPLIER :: 1.7
+
 // Culling thresholds live in culling.odin (declared there first).
 
 // Default server address. The TS client defaults to http://localhost:3001.

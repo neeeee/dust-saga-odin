@@ -1,5 +1,5 @@
 import { EntityManager, System } from '../EntityManager';
-import { GAME_CONFIG, COMBAT_CONFIG, PlayerSession, EnemyInstance, DamageInfo, getEnemyDefinition, applyRacialCritChance, processRacialOnDamage, getEffectiveStats, calculateWeaponElementalDamage, calculateAccuracy, calculateHitChance, StatusEffectType, RANGED_WEAPON_TYPES } from '@dust-saga/shared';
+import { GAME_CONFIG, COMBAT_CONFIG, MOUNT_CONFIG, PlayerSession, EnemyInstance, DamageInfo, getEnemyDefinition, applyRacialCritChance, processRacialOnDamage, getEffectiveStats, calculateWeaponElementalDamage, calculateAccuracy, calculateHitChance, StatusEffectType, RANGED_WEAPON_TYPES } from '@dust-saga/shared';
 import { hasLineOfSight } from '../../world/LineOfSight';
 import type { ItemSystem } from '../../../systems/ItemSystem';
 
@@ -32,13 +32,17 @@ export class CombatSystem extends System {
   private computePhysicalDamage(
     attackPower: number,
     targetDefense: number,
-    attackerRacialPassive?: string
+    attackerRacialPassive?: string,
+    mounted: boolean = false
   ): { damage: number; isCritical: boolean } {
     const isCritical = Math.random() < applyRacialCritChance(attackerRacialPassive, COMBAT_CONFIG.CRITICAL_CHANCE);
     let damage = Math.max(
       COMBAT_CONFIG.MIN_DAMAGE,
       attackPower - targetDefense * COMBAT_CONFIG.DAMAGE_REDUCTION_PER_DEFENSE * 10
     );
+    if (mounted) {
+      damage = Math.floor(damage * MOUNT_CONFIG.DAMAGE_MULTIPLIER);
+    }
     if (isCritical) {
       damage = Math.floor(damage * COMBAT_CONFIG.CRITICAL_MULTIPLIER);
     }
@@ -175,7 +179,10 @@ export class CombatSystem extends System {
     const dz = attacker.position.z - targetPosition.z;
     const dist = Math.sqrt(dx * dx + dz * dz);
     const isRanged = this.isRangedWeapon(attacker);
-    const attackRange = isRanged ? COMBAT_CONFIG.RANGED_ATTACK_RANGE : COMBAT_CONFIG.ATTACK_RANGE;
+    // A mounted attacker reaches ~1 unit further with melee (horse reach).
+    const attackRange = isRanged
+      ? COMBAT_CONFIG.RANGED_ATTACK_RANGE
+      : COMBAT_CONFIG.ATTACK_RANGE + (attacker.mounted ? MOUNT_CONFIG.MELEE_RANGE_BONUS : 0);
     if (dist > attackRange) return [];
 
     const effective = attacker.effectiveStats ?? getEffectiveStats(attacker.stats, attacker.statPoints, attacker.statusEffects || []);
@@ -215,7 +222,7 @@ export class CombatSystem extends System {
         continue;
       }
 
-      const { damage, isCritical } = this.computePhysicalDamage(effective.attack, targetDefense, attacker.racialPassive);
+      const { damage, isCritical } = this.computePhysicalDamage(effective.attack, targetDefense, attacker.racialPassive, attacker.mounted);
       const attackerWeaponDef = this.itemSys.getItemDefinition(attacker.equipment?.weapon?.itemId);
       const elementalDamage = calculateWeaponElementalDamage(
         attackerWeaponDef?.stats.weaponElement, attackerWeaponDef?.stats.weaponElementPower,
@@ -257,7 +264,9 @@ export class CombatSystem extends System {
     attacker.lastManualAttackTime = now;
 
     const isRanged = this.isRangedWeapon(attacker);
-    const range = isRanged ? COMBAT_CONFIG.RANGED_ATTACK_RANGE : COMBAT_CONFIG.MANUAL_ATTACK_RANGE;
+    const range = isRanged
+      ? COMBAT_CONFIG.RANGED_ATTACK_RANGE
+      : COMBAT_CONFIG.MANUAL_ATTACK_RANGE + (attacker.mounted ? MOUNT_CONFIG.MELEE_RANGE_BONUS : 0);
     const halfCone = COMBAT_CONFIG.MANUAL_ATTACK_CONE_ANGLE / 2;
     const facingX = Math.sin(facingAngle);
     const facingZ = Math.cos(facingAngle);
@@ -350,7 +359,7 @@ export class CombatSystem extends System {
           continue;
         }
 
-        const { damage: baseDamage, isCritical } = this.computePhysicalDamage(effective.attack, target.defense, attacker.racialPassive);
+        const { damage: baseDamage, isCritical } = this.computePhysicalDamage(effective.attack, target.defense, attacker.racialPassive, attacker.mounted);
         const damage = Math.max(COMBAT_CONFIG.MIN_DAMAGE, Math.floor(baseDamage * falloff));
 
         const attackerWeaponDef = this.itemSys.getItemDefinition(attacker.equipment?.weapon?.itemId);

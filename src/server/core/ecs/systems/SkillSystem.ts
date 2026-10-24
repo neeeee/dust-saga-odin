@@ -2,6 +2,7 @@ import {
   PlayerSession, SkillDefinition, SkillCooldownEntry, ActiveCast,
   isPassiveSkill, meetsRequirements, getRequiredProficiency,
   COMBAT_CONFIG, StatusEffect, StatusEffectType, STATUS_EFFECT_DEFS,
+  MOUNT_CONFIG,
   SKILL_TARGET_RULES, SkillTargetType,
   BuffData, resolveStatTieredValue, SONG_TYPES,
   getEffectiveStats,
@@ -20,7 +21,7 @@ import {
   SkillType, OnHitEffect, HealingEffect, getSkillTargetType,
   AOETargetMode,
 } from '@dust-saga/shared';
-import { CLASS_SKILL_DATA, CATEGORY_LEVEL_SKILLS, CATEGORY_ID_TO_KEY } from '@dust-saga/shared';
+import { CLASS_SKILL_DATA, CATEGORY_LEVEL_SKILLS, CATEGORY_ID_TO_KEY, SKILL_REPLACEMENTS } from '@dust-saga/shared';
 import { CLASS_SPECIFIC_SKILLS, getClassSpecificSkillsForJob } from '@dust-saga/shared';
 import { findSkillDefinition as sharedFindSkillDefinition } from '@dust-saga/shared';
 import type { ItemSystem } from '../../../systems/ItemSystem';
@@ -84,6 +85,19 @@ const CLASS_SPECIFIC_SKILL_LOOKUP: Map<string, SkillDefinition> = ((): Map<strin
 })();
 
 const SKILL_TO_SUBCATEGORY: Record<string, string> = {};
+
+// Skills usable while Defensive March holds. The shipped set: the block
+// toggles themselves (re-pressing is how stances go off), the shield
+// attacks, and the counter stances. EDIT THIS LIST to taste — unknown names
+// simply never match.
+const DEFENSIVE_MARCH_ALLOWED_SKILLS = new Set([
+  'Blocking',
+  'Defensive March',
+  'Shield Charge',
+  'Shield Bash',
+  'Parry',
+  'Riposte',
+]);
 for (const category of Object.values(CLASS_SKILL_DATA)) {
   for (const subSkill of category.skills) {
     for (const skillName of Object.keys(subSkill.skills)) {
@@ -145,12 +159,17 @@ export interface SkillUseResult {
   blockOnly?: boolean;
   element?: string;
   songToggledOff?: boolean;
+  blockingToggledOff?: boolean;
   defensiveMarchToggledOff?: boolean;
   guardianToggledOff?: boolean;
   guardianApplied?: string;
   guardianRemovedTarget?: string;
   manaSwap?: boolean;
   soulSwap?: boolean;
+  /** Summon Horse resolved: session.mounted is set — broadcast MOUNT_UPDATE. */
+  mounted?: boolean;
+  /** Summon Horse pressed while mounted: dismounted — broadcast MOUNT_UPDATE. */
+  mountedToggledOff?: boolean;
 }
 
 type DamageType = 'physical' | 'magical';
@@ -311,6 +330,30 @@ export class SkillSystem {
       }
     }
 
+    // Upgrade chains (SKILL_REPLACEMENTS): once the replacement's point
+    // requirements are met the old skill is replaced — unusable, and the
+    // client stops offering it (its hotbar button fires the replacement).
+    const replacedBy = SKILL_REPLACEMENTS[skillName];
+    if (replacedBy) {
+      const replDef = this.findSkillDefinition(replacedBy);
+      if (replDef && replDef.reqPoints) {
+        const replCatKey = CATEGORY_SKILL_TO_KEY[replacedBy];
+        const replSub = SKILL_TO_SUBCATEGORY[replacedBy];
+        let replMet = false;
+        if (typeof replDef.reqPoints === 'number') {
+          const pts = replCatKey
+            ? (session.skillAdeptness?.[replCatKey] || 0)
+            : (effectiveProficiencies[replSub] || 0);
+          replMet = pts >= replDef.reqPoints;
+        } else if (Array.isArray(replDef.reqPoints)) {
+          replMet = meetsRequirements(replDef.reqPoints, (name: string) => effectiveProficiencies[name] || 0);
+        }
+        if (replMet) {
+          return { canUse: false, error: 'replaced' };
+        }
+      }
+    }
+
     if (session.stats.mana < skill.mpCost) {
       const devotionFx = session.statusEffects?.find(e => e.buffData?.devotionLink);
       if (!devotionFx) {
@@ -328,13 +371,24 @@ export class SkillSystem {
     }
 
     const isBlockStancing = session.statusEffects?.some(e =>
-      e.type === StatusEffectType.BUFF_BLOCKING_STANCE && e.buffData?.blockingStance
+      e.type === StatusEffectType.BUFF_BLOCKING_STANCE && e.buffData?.blockingStance && !e.buffData?.defensiveMarch
     );
     if (isBlockStancing) {
-      const allowedWhileBlocking = ['Shield Bash', 'Shield Tackle', 'Auto-guard', 'Defensive March', 'Defender', 'Blocking'];
+      // Stationary blocking: only the shield charge — plus the toggles, since
+      // re-pressing them is how the stance goes off / switches to march.
+      const allowedWhileBlocking = ['Blocking', 'Defensive March', 'Shield Charge'];
       if (!allowedWhileBlocking.includes(skillName)) {
         return { canUse: false, error: 'blocking' };
       }
+    }
+
+    // Defensive March holds its own allow-list (the shipped game's set — edit
+    // here to taste). Everything else is locked out while marching.
+    const isDefensiveMarching = session.statusEffects?.some(e =>
+      e.type === StatusEffectType.BUFF_BLOCKING_STANCE && e.buffData?.defensiveMarch
+    );
+    if (isDefensiveMarching && !DEFENSIVE_MARCH_ALLOWED_SKILLS.has(skillName)) {
+      return { canUse: false, error: 'blocking' };
     }
 
     if (skill.shieldRequired) {
@@ -500,6 +554,37 @@ export class SkillSystem {
       }
     }
 
+    // Block toggles: re-pressing the active stance turns it OFF — no MP, no
+    // cooldown (the cooldown is the activation price, paid below). Pressing
+    // Blocking while Defensive March holds does NOT toggle; it falls through
+    // and swaps to the stationary stance (buildStatusEffects replaces the
+    // effect). Flagged with defensiveMarchToggledOff so the existing march
+    // cleanup (blocking-protected buffs) still runs.
+    if (skill.buffEffectTable?.blockingStance || skill.buffEffectTable?.defensiveMarch) {
+      const wantMarch = !!skill.buffEffectTable?.defensiveMarch;
+      const active = session.statusEffects?.find(e =>
+        e.type === StatusEffectType.BUFF_BLOCKING_STANCE &&
+        !!e.buffData?.defensiveMarch === wantMarch
+      );
+      if (active) {
+        session.statusEffects = session.statusEffects.filter(e => e !== active);
+        session.activeCast = null;
+        return { success: true, blockingToggledOff: true, defensiveMarchToggledOff: wantMarch };
+      }
+    }
+
+    // Summon Horse doubles as the dismount toggle: pressing it while mounted
+    // hops off — no MP, no cooldown, no cast (the rider walks free instantly).
+    // Mounting itself falls through to the normal flow below: the 20-
+    // Horsemanship reqPoints gate ran in canUseSkill, the 3s cast already
+    // channeled, and MP + the 180s cooldown are paid here.
+    if (skillName === 'Summon Horse' && session.mounted) {
+      session.mounted = false;
+      session.mountType = undefined;
+      session.activeCast = null;
+      return { success: true, mountedToggledOff: true };
+    }
+
     session.stats.mana -= skill.mpCost;
 
     const now = Date.now();
@@ -525,6 +610,15 @@ export class SkillSystem {
 
     if (st === SkillType.REVIVE && targetId) {
       return { success: true, revived: true };
+    }
+
+    // Summon Horse completes: the rider swings up. The zone MOUNT_UPDATE is
+    // broadcast by the handlers off the `mounted` result flag.
+    if (skillName === 'Summon Horse') {
+      session.mounted = true;
+      session.mountType = 'horse';
+      session.mountVariant = session.mountVariant ?? MOUNT_CONFIG.DEFAULT_VARIANT;
+      return { success: true, mounted: true };
     }
 
     if (st === SkillType.PROVOKE) {
@@ -570,14 +664,6 @@ export class SkillSystem {
       || st === SkillType.HEAL_OVER_TIME
       || st === SkillType.INVISIBILITY || st === SkillType.BARRIER;
     if ((isBuffLike && skill.duration > 0) || (skill.buffEffectTable && skill.duration === 0)) {
-      if (skill.buffEffectTable?.defensiveMarch) {
-        const existing = session.statusEffects?.find(e => e.type === StatusEffectType.BUFF_BLOCKING_STANCE && e.buffData?.defensiveMarch && e.skillName === skillName);
-        if (existing) {
-          session.statusEffects = session.statusEffects.filter(e => e !== existing);
-          return { success: true, defensiveMarchToggledOff: true };
-        }
-      }
-
       if (skill.buffEffectTable?.damageRedirect && targetId) {
         const existing = session.statusEffects?.find(e => e.type === StatusEffectType.BUFF_DAMAGE_REDIRECT && e.skillName === skillName);
         if (existing) {
@@ -786,6 +872,12 @@ export class SkillSystem {
     const magicalAidBuff = isMagical ? session.statusEffects?.find(e => e.buffData?.magicalAid) : null;
     if (magicalAidBuff) {
       attackMultiplier *= 1.2;
+    }
+
+    // Mounted charge bonus: physical skills hit harder from horseback
+    // (Equine Charge / Charge are the intended carriers).
+    if (session.mounted && !isMagical) {
+      attackMultiplier *= MOUNT_CONFIG.DAMAGE_MULTIPLIER;
     }
 
     const baseDamage = skill.damageVsLowDefense

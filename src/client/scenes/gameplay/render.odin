@@ -248,9 +248,19 @@ draw_local_player :: proc() {
 	if state.player.is_resting do col = {120, 120, 180, 255}
 	if state.player.is_dead do col = {120, 120, 120, 255}
 	if av := state.local_avatar; av != nil {
+		// The horse under a mounted local player (mirrors the scene-entity
+		// path in ecs.odin: pose the gait, anchor the seat to the horse's
+		// animated spine so the rider bobs/sways with it, then draw).
+		rider_pos := p
+		if state.player.mounted && state.local_mount.valid {
+			sys.horse_instance_pose(&state.local_mount)
+			rider_pos += sys.horse_rider_offset(state.player.yaw)
+			rider_pos += sys.horse_delta_world(state.player.yaw,
+				sys.horse_instance_anchor_delta(&state.local_mount))
+		}
 		// body drawn mesh-by-mesh: regions the equipped armor replaces are
 		// swapped out (see chara_avatar_sync_armor)
-		sys.chara_avatar_draw_body(av, p, state.player.yaw, col)
+		sys.chara_avatar_draw_body(av, rider_pos, state.player.yaw, col)
 
 		// Held weapon: the equipped item's glb (item.csv RDR-SID →
 		// item/EM_*.glb). Drawn: on the right-hand grip, tracking swings;
@@ -264,7 +274,7 @@ draw_local_player :: proc() {
 				if def, ok := sys.item_def(sys.item_id_string(w)); ok {
 					scale_mul = sys.item_race_scale(def, av.cm.id)
 				}
-				sys.chara_avatar_draw_held(av, held, p, state.player.yaw, rl.WHITE,
+				sys.chara_avatar_draw_held(av, held, rider_pos, state.player.yaw, rl.WHITE,
 					state.weapon_drawn, scale_mul)
 			}
 		}
@@ -272,7 +282,17 @@ draw_local_player :: proc() {
 		// Worn armor: per-race wearable glbs (RDR-SID + EM part code) —
 		// skinned pieces play the avatar's current clip, helmets ride the
 		// head bone.
-		sys.chara_avatar_draw_armor(av, p, state.player.yaw, rl.WHITE)
+		sys.chara_avatar_draw_armor(av, rider_pos, state.player.yaw, rl.WHITE)
+
+		// Left-arm shield (SHIELD slot): always shown, sheathed or drawn.
+		sys.chara_avatar_draw_shield(av, rider_pos, state.player.yaw)
+
+		// The horse itself, last (its pose was applied for the seat anchor
+		// above; the draw re-applies the same pose idempotently).
+		if state.player.mounted && state.local_mount.valid {
+			sys.horse_model_draw(&state.local_mount, p, state.player.yaw, col,
+				state.local_mount.base.lift, 1.0)
+		}
 	} else {
 		rl.DrawModelEx(state.scene.model_capsule,
 			{p.x, p.y + 0.9, p.z}, axis, angle, {1, 1, 1}, col)
@@ -288,7 +308,9 @@ draw_local_player_bubble :: proc() {
 
 	cam := state.player.camera
 	p := state.player.position
-	world := rl.Vector3{p.x, p.y + 2.5, p.z}
+	anchor_h := f32(2.5)
+	if state.player.mounted do anchor_h = 3.7
+	world := rl.Vector3{p.x, p.y + anchor_h, p.z}
 	forward := rl.Vector3Normalize(cam.target - cam.position)
 	if rl.Vector3DotProduct(forward, world - cam.position) <= 0.0 do return
 

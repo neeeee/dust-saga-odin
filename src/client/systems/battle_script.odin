@@ -320,7 +320,7 @@ battle_note_unknown_op :: proc(name: string) {
 battle_motion_clip_index :: proc(av: ^Chara_Avatar, code: string) -> int {
 	if av == nil || len(code) == 0 do return -1
 	if len(code) >= 4 do return chara_clip(av.cm, code)
-	fam := chara_weapon_family(av.weapon_kind)
+	fam := chara_weapon_family_for(av, av.weapon_kind)
 	if len(fam.idle) == 4 {
 		if idx := chara_clip(av.cm, fmt.tprintf("%s%s", fam.idle[:2], code)); idx >= 0 do return idx
 	}
@@ -611,10 +611,10 @@ battle_cast_track :: proc(entity: Entity_Id, cast_time_ms: int) {
 battle_cast_start :: proc(entity: Entity_Id, av: ^Chara_Avatar, cast_time_ms: int, anim_category: string, weapon: Weapon_Kind) {
 	if av == nil do return
 	if battle_anim_is_shot(anim_category) {
-		s, h, r := battle_shot_draw_codes(weapon)
+		s, h, r := battle_shot_draw_codes(av, weapon)
 		if battle_start_phased(entity, av, s, h, r, f64(cast_time_ms), 0, false, true) do return
 	}
-	fam := chara_weapon_family(weapon)
+	fam := chara_weapon_family_for(av, weapon)
 	chara_avatar_play_action_any(av, true, fam.cast_start, CLIP_CODE_CAST_LOOP)
 	battle_cast_track(entity, cast_time_ms)
 }
@@ -673,7 +673,7 @@ battle_action_speed_any :: proc(av: ^Chara_Avatar, codes: []string, interval_ms:
 // attacker's attack speed.
 battle_script_start_attack :: proc(entity: Entity_Id, av: ^Chara_Avatar, kind: Weapon_Kind, interval_ms: f64) {
 	if av == nil do return
-	fam := chara_weapon_family(kind)
+	fam := chara_weapon_family_for(av, kind)
 	// Bow-style families draw → aim → loose instead of swinging; plain
 	// swings remain the fallback when the model lacks the phased clips.
 	if fam.ranged_start != "" {
@@ -723,6 +723,8 @@ Battle_Skill_Fallback :: enum {
 	WEAPON_SWING, // physical damage — the attacker's weapon family
 	CAST_ATTACK,  // magical damage — cast finish flourish with attack
 	CAST_SUPPORT, // everything else — plain cast finish
+	NONE,         // status-driven stances (Blocking / Defensive March) — the
+	              // gait IS the animation; script motion only, no flourish
 }
 
 // Wire name for a skill's sub-category, mirroring the server's `anim`
@@ -755,9 +757,10 @@ sub_category_anim_name :: proc "contextless" (sc: Sub_Category) -> string {
 
 // Draw/hold/release codes for a Shot-category skill: the family's dedicated
 // skill sequence when it ships one (bow 1863/1864 → 1856), else the plain
-// ranged draw (crossbow skills loose the normal bolt, 1955).
-battle_shot_draw_codes :: proc(kind: Weapon_Kind) -> (start, hold, release: string) {
-	fam := chara_weapon_family(kind)
+// ranged draw (crossbow skills loose the normal bolt, 1955). Mounted archers
+// resolve through the 38xx/39xx mounted families.
+battle_shot_draw_codes :: proc(av: ^Chara_Avatar, kind: Weapon_Kind) -> (start, hold, release: string) {
+	fam := chara_weapon_family_for(av, kind)
 	if fam.skill_start != "" do return fam.skill_start, fam.skill_hold, fam.skill_release
 	return fam.ranged_start, fam.ranged_hold, fam.ranged_release
 }
@@ -782,6 +785,11 @@ battle_play_skill_execution :: proc(entity: Entity_Id, av: ^Chara_Avatar, skill_
 	script := battle_script_start_skill(entity, av, skill_name)
 	if script != nil && battle_script_has_motion(script, av) do return
 
+	// Status-driven stances: entering the stance swaps the gait itself
+	// (blockStationary / blockMarch via the blocking flag) — a cast flourish
+	// here would stomp the loop animation the moment it starts.
+	if fallback == .NONE do return
+
 	swing := false
 	cast_attack := false
 	switch anim_category {
@@ -797,7 +805,7 @@ battle_play_skill_execution :: proc(entity: Entity_Id, av: ^Chara_Avatar, skill_
 		if fallback == .CAST_ATTACK do cast_attack = true
 	}
 
-	fam := chara_weapon_family(weapon)
+	fam := chara_weapon_family_for(av, weapon)
 	if swing {
 		// Shot-category skills (arrow rain/storm) draw → aim → loose their
 		// own skill draw (bow 1863/64 → 1856), matching the caster's channel;
@@ -806,7 +814,7 @@ battle_play_skill_execution :: proc(entity: Entity_Id, av: ^Chara_Avatar, skill_
 		// execution IS that draw — don't start a second one over it.
 		if battle_anim_is_shot(anim_category) {
 			if battle_phased_active(entity) || battle_phased_released_recently(entity) do return
-			s, h, r := battle_shot_draw_codes(weapon)
+			s, h, r := battle_shot_draw_codes(av, weapon)
 			if battle_start_phased(entity, av, s, h, r, interval_ms, 0, false, true) do return
 		}
 		battle_script_start_attack(entity, av, weapon, interval_ms)

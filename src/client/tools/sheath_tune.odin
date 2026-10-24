@@ -49,6 +49,7 @@ Tune_Category :: struct {
 	sheath_q: rl.Quaternion, // seat orientation, freeform
 	drawn_t:  rl.Vector3,    // right-hand grip translation
 	drawn_q:  rl.Quaternion, // drawn grip orientation, freeform
+	shield:   bool,          // left-arm shield seat (drawn state unused)
 }
 
 tune_cats: []Tune_Category
@@ -114,8 +115,15 @@ tune_defaults :: proc() {
 		{name = "bow",      label = "Bow",                    glb = "item/EM_002224_20_000.glb", kind = .BOW},
 		{name = "crossbow", label = "Crossbow",               glb = "item/EM_002421_20_000.glb", kind = .CROSSBOW},
 		{name = "claw",     label = "Claw (both hips)",       glb = "item/EM_002021_20_000.glb", kind = .KNUCKLES},
+		{name = "shield",   label = "Shield (left forearm)",  glb = "item/EM_017021_22_000.glb", kind = .NONE, shield = true},
 	}
 	for &c in cats {
+		if c.shield {
+			seat := sys.chara_shield_seat()
+			c.sheath_t = seat.t
+			c.sheath_q = seat.q
+			continue
+		}
 		c.sheath_t = sys.chara_sheath_seat(c.kind).t
 		c.sheath_q = sys.chara_sheath_seat(c.kind).q
 		c.drawn_t = sys.chara_drawn_grip_t(c.kind)
@@ -255,7 +263,7 @@ sheath_tune :: proc() {
 		av := tune_av
 		if av != nil {
 			clip := tune_idle
-			if tune_drawn {
+			if tune_drawn && !e.shield {
 				fam := sys.chara_weapon_family(e.kind)
 				drawn_clip := sys.chara_clip(av.cm, fam.idle)
 				if drawn_clip >= 0 do clip = drawn_clip
@@ -294,7 +302,16 @@ sheath_tune :: proc() {
 			sys.chara_debug_drawn_on = true
 
 			sys.chara_avatar_draw_body(av, {0, 0, 0}, 0, rl.WHITE)
-			if entry != nil {
+			if e.shield {
+				// the shield draws from the avatar's shield_model through its
+				// own seat — feed it the tuned seat and the category's glb
+				sys.chara_debug_shield_t = {e.sheath_t.x, e.sheath_t.y, e.sheath_t.z}
+				sys.chara_debug_shield_q = e.sheath_q
+				sys.chara_debug_shield_on = true
+				av.shield_model = entry
+				sys.chara_avatar_draw_shield(av, {0, 0, 0}, 0)
+				sys.chara_debug_shield_on = false
+			} else if entry != nil {
 				sys.chara_avatar_draw_held(av, entry, {0, 0, 0}, 0, rl.WHITE, tune_drawn, 1.0)
 			}
 			sys.chara_debug_sheath_on = false

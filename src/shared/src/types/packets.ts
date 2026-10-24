@@ -172,6 +172,11 @@ export enum PacketType {
   // the client reports every animation clip it plays and the server prints
   // it to its console.
   ANIM_DEBUG = 218,
+
+  // Zone broadcast when a player's mount state changes (Summon Horse skill,
+  // stable keeper, death dismount). Carries the full new state so clients can
+  // render the horse under (or remove it from) the rider's entity.
+  MOUNT_UPDATE = 219,
 }
 
 export interface Packet {

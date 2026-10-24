@@ -81,12 +81,41 @@ export class ItemSystem {
   /**
    * Bulk-registers shipped-content items (item.csv/soul.csv, see
    * core/data/contentLoader.ts). Cache entries and DB rows that already exist
-   * are left untouched (insert-if-absent), so hand-authored items and admin
-   * edits always win over the generated definitions. Returns the number of
-   * newly registered items.
+   * are left untouched (insert-if-absent) — EXCEPT equipment_slot, which is
+   * refreshed to match the CSV: the slot is purely derived from item.csv's
+   * one-hot columns, and older seeds must heal when the mapping changes
+   * (cloaks once seeded as "armor"; they now belong in "back"). Hand-authored
+   * items and admin edits to everything else always win over the generated
+   * definitions. Returns the number of newly registered items.
    */
   async registerShippedItems(defs: ItemDefinition[]): Promise<number> {
     const fresh = defs.filter(d => !this.itemCache.has(d.id));
+
+    // Slot refresh for already-known items whose CSV-derived slot changed.
+    const slotFixes = defs.filter(d => {
+      const existing = this.itemCache.get(d.id);
+      return existing !== undefined && d.equipmentSlot !== undefined &&
+        existing.equipmentSlot !== d.equipmentSlot;
+    });
+    if (slotFixes.length > 0) {
+      if (this.db && this.dbAvailable) {
+        try {
+          for (const def of slotFixes) {
+            await this.db.postgres!.query(
+              'UPDATE item_definitions SET equipment_slot = $1 WHERE id = $2',
+              [def.equipmentSlot, def.id],
+            );
+          }
+          console.log(`[ItemSystem] Refreshed equipment_slot on ${slotFixes.length} shipped item(s) from item.csv`);
+        } catch (error) {
+          console.error('[ItemSystem] equipment_slot refresh failed:', error);
+        }
+      }
+      for (const def of slotFixes) {
+        this.itemCache.get(def.id)!.equipmentSlot = def.equipmentSlot;
+      }
+    }
+
     if (fresh.length === 0) return 0;
 
     if (this.db && this.dbAvailable) {

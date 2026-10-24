@@ -32,7 +32,8 @@ import {
   isZonePvpEnabled,
   QuestStatus, QuestType,
   worldToCell, cellLabel,
-  skillAnimKind, skillAnimCategory, equipmentSummary, GAME_CONFIG,
+  skillAnimKind, skillAnimCategory, equipmentSummary, GAME_CONFIG, MOUNT_CONFIG,
+  npcAppearancePayload,
 } from '@dust-saga/shared';
 import { AuthManager } from '../auth/AuthManager';
 import { CombatSystem } from '../ecs/systems/CombatSystem';
@@ -499,6 +500,22 @@ export class NetworkServer implements NetworkContext {
     }, session.characterId);
   }
 
+  // Mount state changed (Summon Horse, stable keeper, death): tell the whole
+  // zone INCLUDING the rider — the acting client isn't a scene entity, so it
+  // learns its own state from this packet like everyone else.
+  broadcastMountState(session: PlayerSession): void {
+    this.broadcastInZone(session.zoneId, {
+      type: PacketType.MOUNT_UPDATE,
+      timestamp: Date.now(),
+      data: {
+        entityId: session.characterId,
+        mounted: !!session.mounted,
+        mountType: session.mounted ? session.mountType : undefined,
+        mountVariant: session.mounted ? (session.mountVariant ?? MOUNT_CONFIG.DEFAULT_VARIANT) : undefined,
+      }
+    });
+  }
+
   updatePlayerSpatialPosition(characterId: string, position: { x: number; z: number }): void {
     this.spatialMgr.updatePlayerSpatialPosition(characterId, position);
   }
@@ -567,6 +584,14 @@ export class NetworkServer implements NetworkContext {
     session.isResting = false;
     session.deathTime = Date.now();
     session.activeCast = null;
+
+    // The horse flees the fight: riders always die afoot (and log back in
+    // afoot — mount state is session-only).
+    if (session.mounted) {
+      session.mounted = false;
+      session.mountType = undefined;
+      this.broadcastMountState(session);
+    }
 
     this.spawnMgr.iterateAllEnemies(enemy => {
       if (enemy.targetId === session.characterId) {
@@ -2063,7 +2088,7 @@ export class NetworkServer implements NetworkContext {
       data: {
         name: npc.name,
         npcType: npc.type,
-        modelFile: npc.modelFile
+        ...npcAppearancePayload(npc)
       }
     }));
 
@@ -2076,7 +2101,7 @@ export class NetworkServer implements NetworkContext {
         type: 'player',
         position: player.position,
         rotation: player.rotation,
-        data: { name: player.characterName, class: player.jobId, race: player.race, jobId: player.jobId, level: player.stats.level, health: player.stats.health, maxHealth: player.stats.maxHealth, modelFile: JOB_DEFINITIONS[player.jobId]?.modelFile, modelId: player.modelId || '011', faceIndex: player.faceIndex ?? 0, hairIndex: player.hairIndex ?? 0, hairColor: player.hairColor ?? 0, invisible: player.statusEffects?.some(e => e.type === StatusEffectType.INVISIBLE) || false, isResting: player.isResting, weaponDrawn: player.weaponDrawn || false, role: player.role, guildTag: player.guildTag || '', equipment: equipmentSummary(player.equipment) }
+        data: { name: player.characterName, class: player.jobId, race: player.race, jobId: player.jobId, level: player.stats.level, health: player.stats.health, maxHealth: player.stats.maxHealth, modelFile: JOB_DEFINITIONS[player.jobId]?.modelFile, modelId: player.modelId || '011', faceIndex: player.faceIndex ?? 0, hairIndex: player.hairIndex ?? 0, hairColor: player.hairColor ?? 0, invisible: player.statusEffects?.some(e => e.type === StatusEffectType.INVISIBLE) || false, isResting: player.isResting, weaponDrawn: player.weaponDrawn || false, mounted: player.mounted || false, mountType: player.mounted ? player.mountType : undefined, mountVariant: player.mounted ? (player.mountVariant ?? MOUNT_CONFIG.DEFAULT_VARIANT) : undefined, role: player.role, guildTag: player.guildTag || '', equipment: equipmentSummary(player.equipment) }
       });
     });
 
@@ -3180,6 +3205,12 @@ export class NetworkServer implements NetworkContext {
         const result = this.skillSys.executeSkill(session, castResult.skillName, castResult.targetId, (id) => this.getTargetStatsForEntity(id));
         this.sendDamageDebug(session, result);
         this.playerSys.recalcStats(session);
+
+        // A completed Summon Horse cast (dis)mounts the caster — tell the zone
+        // (the rider included) before the generic 'used'/animation sends.
+        if (result.mounted || result.mountedToggledOff) {
+          this.broadcastMountState(session);
+        }
 
         // Clear the client cast bar + start the cooldown for EVERY completion
         // path. Previously this send sat at the very end of the damage path, so

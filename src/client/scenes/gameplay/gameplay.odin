@@ -155,6 +155,10 @@ state: struct {
 	// Guild window: selected member row (-1 none).
 	guild_member_selected:  int,
 
+	// The local player's horse (created on first ride, dropped on dismount;
+	// mirrored from ctx.player.mounted like the scene entities' mounts).
+	local_mount:            sys.Horse_Instance,
+
 	logout_start_ms:        u64,
 	exit_start_ms:          u64,
 }
@@ -464,6 +468,7 @@ follow_click_path :: proc(dt: f32) {
 		}
 	} else {
 		speed := sys.GAME.PLAYER_SPEED * dt
+		if state.player.mounted do speed *= sys.MOUNT_SPEED_MULTIPLIER
 		if speed > dist do speed = dist
 		state.player.position.x += (dx / dist) * speed
 		state.player.position.z += (dz / dist) * speed
@@ -847,7 +852,7 @@ tick_cast :: proc(dt: f32) {
 			name := string(c.skill_name[:c.name_len])
 			draw_started := false
 			if sys.battle_anim_is_shot(anim) {
-				s, h, r := sys.battle_shot_draw_codes(equipped_weapon_kind())
+				s, h, r := sys.battle_shot_draw_codes(state.local_avatar, equipped_weapon_kind())
 				draw_started = sys.battle_start_phased(state.scene.player_id,
 					state.local_avatar, s, h, r, c.cast_time, 0, false, true)
 				state.cast_draw_phased = draw_started
@@ -855,7 +860,7 @@ tick_cast :: proc(dt: f32) {
 					name, anim, s, h, r, draw_started, c.cast_time / 1000.0))
 			}
 			if !draw_started {
-				fam := sys.chara_weapon_family(equipped_weapon_kind())
+				fam := sys.chara_weapon_family_for(state.local_avatar, equipped_weapon_kind())
 				sys.chara_avatar_play_action_any(state.local_avatar, true,
 					fam.cast_start, sys.CLIP_CODE_CAST_LOOP)
 				anim_log(fmt.tprintf("%s channel: cat=%s neutral cast loop", name, anim))
@@ -888,7 +893,7 @@ tick_cast :: proc(dt: f32) {
 			state.cast_draw_phased = false
 			return
 		}
-		fam := sys.chara_weapon_family(equipped_weapon_kind())
+		fam := sys.chara_weapon_family_for(state.local_avatar, equipped_weapon_kind())
 		sys.chara_avatar_play_action_any(state.local_avatar, false,
 			fam.cast_finish, sys.CLIP_CODE_CAST_END)
 	}
@@ -932,7 +937,7 @@ play_skill_execution :: proc(skill: string) {
 			return
 		}
 		if !sys.battle_phased_active(state.scene.player_id) {
-			s, h, r := sys.battle_shot_draw_codes(equipped_weapon_kind())
+			s, h, r := sys.battle_shot_draw_codes(state.local_avatar, equipped_weapon_kind())
 			sys.battle_start_phased(state.scene.player_id, av, s, h, r, 1000, 0, false, true)
 		}
 		return
@@ -963,6 +968,9 @@ play_skill_execution :: proc(skill: string) {
 			fallback = .CAST_ATTACK
 		}
 	}
+	// The block stances are status-driven: the gait swaps to
+	// blockStationary/blockMarch the moment the effect lands — no flourish.
+	if skill == "Blocking" || skill == "Defensive March" do fallback = .NONE
 	anim_log(fmt.tprintf("%s exec: cat=%s %s fallback=%v table=%v", skill, anim,
 		script_report, fallback, known))
 	sys.battle_play_skill_execution(state.scene.player_id, av, skill, fallback,
@@ -1170,6 +1178,21 @@ handle_skill_bar_input :: proc(inp: sys.Input_State) {
 
 	if len(name) == 0 do return
 
+	// Upgrade chains: a replaced skill transparently fires its replacement
+	// once the replacement's requirements are met (same effect as the shipped
+	// game's bar-slot swap, without rewriting the bar).
+	if repl, ok := sys.skill_replacement_for(p, name); ok {
+		name = repl
+	}
+
+	// Summon Horse pressed while mounted is the dismount toggle: send it bare
+	// — no drawn-stance swap, no cast bar — the server flips the mount state
+	// instantly and the MOUNT_UPDATE drives the visuals on everyone.
+	if name == "Summon Horse" && p.mounted {
+		sys.send_skill_use(state.net, name, target_string_id())
+		return
+	}
+
 	// --- Activate ---
 	// Using a skill implies the drawn stance.
 	set_weapon_drawn(true)
@@ -1205,6 +1228,8 @@ v3lerp :: proc "contextless" (a, b: rl.Vector3, t: f32) -> rl.Vector3 {
 // Animates the local player's avatar from its actual movement speed (same
 // thresholds as the entity avatars in ecs.update). While auto-attack is
 // engaged the character holds the equipped weapon's drawn idle (xx01).
+// Mounted riders additionally drive their horse instance (created on first
+// ride) and swap the avatar onto the mounted stances.
 update_local_avatar :: proc(dt: f32) {
 	av := state.local_avatar
 	if av == nil do return
@@ -1217,6 +1242,28 @@ update_local_avatar :: proc(dt: f32) {
 	av.prev_x = p.x
 	av.prev_z = p.z
 	av.has_prev = true
+
+	// Mount state first: the flag flip plays the vault one-shot and the
+	// weapon-kind resolution below then picks the mounted family stances.
+	sys.chara_avatar_set_mounted(av, state.player.mounted)
+	if state.player.mounted {
+		if !state.local_mount.valid {
+			variant := state.player.mount_variant
+			if variant <= 0 do variant = 20
+			state.local_mount = sys.horse_instance_init(sys.horse_model_acquire(sys.horse_model_path(variant, 0)), variant)
+		}
+		gait := sys.CLIP_CODE_HORSE_IDLE
+		if av.speed >= sys.AVATAR_RUN_SPEED {
+			gait = sys.CLIP_CODE_HORSE_RUN
+		} else if av.speed >= sys.AVATAR_WALK_SPEED {
+			gait = sys.CLIP_CODE_HORSE_WALK
+		}
+		sys.horse_instance_set_gait(&state.local_mount, gait)
+		sys.horse_instance_update(&state.local_mount, dt)
+	} else {
+		state.local_mount.valid = false
+	}
+
 	// Weapon stance follows the equipped kind (one map lookup per frame, so
 	// equipment swaps apply instantly).
 	sys.chara_avatar_set_weapon_kind(av, equipped_weapon_kind())
@@ -1226,9 +1273,13 @@ update_local_avatar :: proc(dt: f32) {
 	} else if av.speed >= sys.AVATAR_WALK_SPEED {
 		clip = .WALK
 	}
+	// Block stance (STATUS_EFFECT_UPDATE mirrors the flag on ctx): picked up
+	// by the update below — selects the blockStationary/blockMarch clips over
+	// idle/walk/run.
+	av.blocking = state.ctx.player_blocking
 	sys.chara_avatar_update(av, clip, dt, state.weapon_drawn)
-	// Armor: re-resolve against equipment, then pose the pieces with the
-	// clip the body just applied (order matters on the change frame).
+	// Armor/shield re-resolve against equipment each frame (cheap lookups);
+	// the skinned pieces are posed at draw time, per avatar.
 	sys.chara_avatar_sync_armor(av, &state.player.inventory)
-	sys.chara_avatar_update_armor(av)
+	sys.chara_avatar_sync_shield(av, &state.player.inventory)
 }

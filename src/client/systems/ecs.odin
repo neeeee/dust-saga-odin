@@ -37,6 +37,10 @@ Renderable :: struct {
 	// By value — the species model stays in the monster cache for the session
 	// and the pose is applied to it at draw time, so nothing to free.
 	monster:        Monster_Instance,
+	// Mounted players: the horse drawn under the avatar (see horses.odin).
+	// By value like `monster` — the model stays in the horse cache for the
+	// session and the gait pose is applied to it at draw time.
+	mount:          Horse_Instance,
 	model_scale:    f32,
 }
 
@@ -86,6 +90,21 @@ Status_Effect :: struct {
 Entity_Effects :: struct {
 	count:   int,
 	effects: [MAX_STATUS_EFFECTS]Status_Effect,
+}
+
+// True while the entity's status set carries the block stance flag — plain
+// block and Defensive March both surface as buff_blocking_stance (the
+// blockStationary vs blockMarch clips split by the entity's speed).
+scene_entity_blocking :: proc(s: ^Scene, idx: int) -> bool {
+	if idx < 0 || idx >= len(s.effects) do return false
+	ef := &s.effects[idx]
+	for i in 0..<ef.count {
+		if ef.effects[i].type_len == len("buff_blocking_stance") &&
+			string(ef.effects[i].type_str[:ef.effects[i].type_len]) == "buff_blocking_stance" {
+			return true
+		}
+	}
+	return false
 }
 
 MAX_ENTITIES :: 1024
@@ -314,8 +333,11 @@ render_entity_ui_2d :: proc(s: ^Scene, camera: rl.Camera3D) {
 		to_entity := t.position - camera.position
 		if rl.Vector3DotProduct(forward, to_entity) <= 0.0 do continue
 
-		// Label position ~2.5 units above the entity origin.
-		world_pos := rl.Vector3{t.position.x, t.position.y + 2.5, t.position.z}
+		// Label position ~2.5 units above the entity origin (mounted riders
+		// ride higher — anchor over the rider's head, not the horse's back).
+		label_h := f32(2.5)
+		if s.renderables[i].mount.valid do label_h = 3.7
+		world_pos := rl.Vector3{t.position.x, t.position.y + label_h, t.position.z}
 		screen_pos := rl.GetWorldToScreen(world_pos, camera)
 
 		if screen_pos.x < -50 || screen_pos.x > screen_w + 50 do continue
@@ -488,19 +510,40 @@ update :: proc(s: ^Scene, dt: f32, current_time: f64, player_pos: [3]f32, curren
 				clip = .WALK
 			}
 			// Remotes run their drawn-stance clips while fighting (recent
-			// attack/skill), sheathed stances otherwise.
+			// attack/skill), sheathed stances otherwise; block stance wins
+			// over both (blockStationary / blockMarch by speed).
 			id := s.entity_ids[i]
+			av.blocking = scene_entity_blocking(s, i)
 			chara_avatar_update(av, clip, dt, entity_is_drawn(id))
 			if inv, ok := entity_equipment[id]; ok {
 				chara_avatar_set_weapon_kind(av, entity_weapon_kind(id))
 				chara_avatar_sync_armor(av, &inv)
-				chara_avatar_update_armor(av)
+				chara_avatar_sync_shield(av, &inv)
+				// Skinned armor layers are posed at draw time per avatar —
+				// pieces share vertex buffers across wearers of the same gear.
 			}
 		}
 
 		// Monster clones pose independently (idle + skill clips).
 		if s.renderables[i].monster.valid {
 			monster_instance_update(&s.renderables[i].monster, dt)
+		}
+
+		// Mounted riders: the horse mirrors the rider's gait (same speed
+		// thresholds as the avatar clips above; the mounted stances
+		// themselves are picked by chara_avatar_update from av.mounted).
+		if s.renderables[i].mount.valid {
+			hi := &s.renderables[i].mount
+			gait := CLIP_CODE_HORSE_IDLE
+			if av != nil {
+				if av.speed >= AVATAR_RUN_SPEED {
+					gait = CLIP_CODE_HORSE_RUN
+				} else if av.speed >= AVATAR_WALK_SPEED {
+					gait = CLIP_CODE_HORSE_WALK
+				}
+			}
+			horse_instance_set_gait(hi, gait)
+			horse_instance_update(hi, dt)
 		}
 	}
 }
@@ -529,12 +572,21 @@ render :: proc(s: ^Scene, camera: rl.Camera3D) {
 			if r.avatar != nil {
 				av := r.avatar
 				id := s.entity_ids[i]
+				// The horse under a mounted rider shares the entity transform.
+				// The rider seat anchors to the horse's animated spine bone —
+				// pose first, read the bob/sway delta, place the rider, then
+				// draw — so the rider moves WITH the horse instead of
+				// hovering statically over it.
+				mount_delta := rl.Vector3{}
+				if r.mount.valid {
+					horse_instance_pose(&r.mount)
+					mount_delta = horse_delta_world(t.rotation.y, horse_instance_anchor_delta(&r.mount))
+				}
+				rider_pos := t.position + horse_rider_offset(t.rotation.y) + mount_delta
 				// body drawn mesh-by-mesh (armor-replaced regions hidden),
 				// then the held weapon and worn armor — same as the local
 				// player's draw path.
-				chara_avatar_draw_body(av,
-					{t.position.x, t.position.y, t.position.z},
-					t.rotation.y, r.color)
+				chara_avatar_draw_body(av, rider_pos, t.rotation.y, r.color)
 				if inv, ok := entity_equipment[id]; ok {
 					w := &inv.equipment[int(EQUIP_SLOT.WAPON)]
 					if w.item_id_len > 0 {
@@ -544,16 +596,17 @@ render :: proc(s: ^Scene, camera: rl.Camera3D) {
 							if def, ok2 := item_def(wid); ok2 {
 								scale_mul = item_race_scale(def, av.cm.id)
 							}
-							chara_avatar_draw_held(av, held,
-								{t.position.x, t.position.y, t.position.z},
+							chara_avatar_draw_held(av, held, rider_pos,
 								t.rotation.y, r.color,
 								entity_is_drawn(id), scale_mul)
 						}
 					}
 				}
-				chara_avatar_draw_armor(av,
-					{t.position.x, t.position.y, t.position.z},
-					t.rotation.y, r.color)
+				chara_avatar_draw_armor(av, rider_pos, t.rotation.y, r.color)
+				chara_avatar_draw_shield(av, rider_pos, t.rotation.y)
+				if r.mount.valid {
+					horse_model_draw(&r.mount, t.position, t.rotation.y, r.color, r.mount.base.lift, 1.0)
+				}
 			} else if r.monster.valid {
 				monster_model_draw(&r.monster,
 					{t.position.x, t.position.y, t.position.z},

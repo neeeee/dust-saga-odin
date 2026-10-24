@@ -183,6 +183,10 @@ Game_Context :: struct {
 	aoe_zones:           [dynamic]AOE_Zone,
 	local_song:          Local_Song,
 
+	// The local player is in a block stance (buff_blocking_stance — plain
+	// block or Defensive March); drives the blockStationary/blockMarch clips.
+	player_blocking:     bool,
+
 	// Party mirror (see Party_State).
 	party:               Party_State,
 
@@ -353,6 +357,8 @@ handle_packet :: proc(ctx: ^Game_Context, p: ^Packet, free_after: bool) {
 		handle_entity_equipment(ctx, p.data)
 	case .ENTITY_STANCE:
 		handle_entity_stance(ctx, p.data)
+	case .MOUNT_UPDATE:
+		handle_mount_update(ctx, p.data)
 	case .QUEST_ACCEPT:
 		handle_quest_accept(ctx, p.data)
 	case .QUEST_PROGRESS:
@@ -540,6 +546,37 @@ spawn_one_entity :: proc(ctx: ^Game_Context, o: JSON_Object, kind: Entity_Kind) 
 		r.height = 1.7
 		r.radius = 0.5
 		set_entity_name(ctx.scene, idx, get_string(d, "name"))
+
+		// Race-variation NPC: the same creator models players render through
+		// (equipment rides the shared per-entity map and syncs per frame).
+		// Untinted when a real model renders — the blue wash marks the
+		// appearance-less capsule fallback, not the character.
+		model_id := get_string(d, "modelId")
+		if len(model_id) > 0 {
+			cm := chara_model_acquire(model_id)
+			if cm != nil {
+				r.color = rl.WHITE
+				r.avatar = chara_avatar_create(cm, get_int(d, "faceIndex"), get_int(d, "hairIndex"), get_int(d, "hairColor"))
+				if r.avatar == nil {
+					r.color = {80, 180, 220, 255}
+					chara_model_release(cm)
+				}
+			}
+		}
+		// Enemy-model NPC: a beast/monster-folk body (falls back to the
+		// capsule when the glb doesn't ship).
+		if r.avatar == nil {
+			model_file := get_string(d, "modelFile")
+			if len(model_file) > 0 {
+				m := monster_model_acquire(model_file)
+				if m.valid {
+					r.color = rl.WHITE
+					r.monster = monster_instance_init(m)
+					r.model_scale = get_f32(d, "modelScale", 1.0)
+				}
+			}
+		}
+		entity_equipment_from_spawn(string_to_entity_id(id_str), d)
 	case .PLAYER:
 		// Untinted like the local player — the old green wash poisoned the
 		// whole avatar (skin/armor) instead of just marking friendliness.
@@ -565,6 +602,10 @@ spawn_one_entity :: proc(ctx: ^Game_Context, o: JSON_Object, kind: Entity_Kind) 
 		// client saw them). Only drawn is recorded — sheathed stays absent so
 		// the combat auto-draw window keeps working.
 		if get_bool(d, "weaponDrawn") do entity_stance_set(string_to_entity_id(id_str), true)
+		// Mount state at spawn time (riders seen mid-ride on zone entry).
+		if get_bool(d, "mounted") {
+			entity_mount_apply(ctx, idx, true, i32(get_int(d, "mountVariant", 20)), false)
+		}
 	case .SUMMON:
 		r.color = {180, 120, 220, 255}
 		r.height = 1.5
@@ -626,12 +667,18 @@ handle_entity_animation :: proc(ctx: ^Game_Context, data: ^JSON_Value) {
 		} else if kind == "magical" {
 			fallback = .CAST_ATTACK
 		}
+		// Block stances are status-driven on remotes too — the effect
+		// broadcast swaps their gait; no flourish.
+		skill_name := get_string(root, "skillName")
+		if skill_name == "Blocking" || skill_name == "Defensive March" {
+			fallback = .NONE
+		}
 
 		if r.avatar != nil {
 			battle_play_skill_execution(
 				entity,
 				r.avatar,
-				get_string(root, "skillName"),
+				skill_name,
 				fallback,
 				entity_weapon_kind(entity),
 				get_string(root, "anim"),
@@ -662,8 +709,9 @@ handle_entity_equipment :: proc(ctx: ^Game_Context, data: ^JSON_Value) {
 	if av == nil do return
 	inv, ok := entity_equipment[entity]
 	if !ok do return
+	// Re-resolve the layer models now; skinned pieces are posed at draw time
+	// per avatar (they share vertex buffers across wearers of the same gear).
 	chara_avatar_sync_armor(av, &inv)
-	chara_avatar_update_armor(av)
 }
 
 // A player's sheath/drawn stance changed: other clients render it
@@ -675,6 +723,53 @@ handle_entity_stance :: proc(ctx: ^Game_Context, data: ^JSON_Value) {
 	id_str := get_string(root, "entityId")
 	if len(id_str) == 0 do return
 	entity_stance_set(string_to_entity_id(id_str), get_bool(root, "drawn"))
+}
+
+// Attach or detach the horse under a scene entity's avatar (remotes).
+// `play_transition` runs the vault-on/off one-shot on the rider; the spawn
+// path passes false so riders seen mid-ride don't remount on arrival.
+entity_mount_apply :: proc(ctx: ^Game_Context, idx: int, mounted: bool, variant: i32, play_transition: bool) {
+	r := &ctx.scene.renderables[idx]
+	if mounted {
+		coat := variant
+		if coat <= 0 do coat = 20
+		r.mount = horse_instance_init(horse_model_acquire(horse_model_path(coat, 0)), coat)
+	} else {
+		r.mount.valid = false
+	}
+	if r.avatar != nil {
+		if play_transition {
+			chara_avatar_set_mounted(r.avatar, mounted)
+		} else {
+			r.avatar.mounted = mounted
+		}
+	}
+}
+
+// A player's mount state changed (MOUNT_UPDATE — the zone broadcast includes
+// the rider): spawn/drop the horse under the entity and flip its mounted
+// stances. The local player owns no scene entity, so its mounted flag lands
+// on Local_Player — gameplay picks it up per frame (speed boost + the local
+// avatar's mounted clip state + vault transition).
+handle_mount_update :: proc(ctx: ^Game_Context, data: ^JSON_Value) {
+	if data == nil do return
+	root := obj_of(data^)
+	if is_null(data^) do return
+	id_str := get_string(root, "entityId")
+	if len(id_str) == 0 do return
+	entity := string_to_entity_id(id_str)
+	mounted := get_bool(root, "mounted")
+	variant := i32(get_int(root, "mountVariant", 20))
+
+	if entity == ctx.scene.player_id {
+		ctx.player.mounted = mounted
+		if mounted do ctx.player.mount_variant = variant
+		return
+	}
+
+	idx := find_index(ctx.scene, entity)
+	if idx < 0 do return
+	entity_mount_apply(ctx, idx, mounted, variant, true)
 }
 
 // Resolve the entityId field of an animation packet to a scene index.
@@ -1814,6 +1909,7 @@ skill_error_message :: proc "contextless" (err: string) -> string {
 	case "no_shield":                  return "requires a shield"
 	case "not_blocking":               return "must be blocking"
 	case "blocking":                   return "can't use while blocking"
+	case "replaced":                   return "replaced by a higher skill"
 	case "field_blocked":              return "blocked by a field"
 	case "pvp_disabled":               return "PvP is disabled here"
 	case "out_of_range":               return "out of range"
@@ -2000,9 +2096,14 @@ handle_status_effect_update :: proc(ctx: ^Game_Context, data: ^JSON_Value) {
 	// re-broadcast (present or absent) whenever their effects change.
 	song := &ctx.local_song
 	song.active = false
+	// Block stance flag: both plain block and Defensive March surface as
+	// buff_blocking_stance; the gameplay update picks stationary vs march by
+	// the player's speed.
+	ctx.player_blocking = false
 	for i in 0..<len(dyn) {
 		eff_obj := obj_of(dyn[i])
 		t := get_string(eff_obj, "type")
+		if t == "buff_blocking_stance" do ctx.player_blocking = true
 		if !strings.has_prefix(t, "song_") do continue
 		song.active = true
 		n := min(len(t), len(song.type_str))

@@ -63,6 +63,19 @@ function handleSkillUse(ctx: NetworkContext, socket: Socket, data: any): void {
   const { skillName, targetId, aoePosition } = data;
   if (!skillName) return;
 
+  // Summon Horse doubles as the dismount toggle: pressed while mounted it
+  // hops the rider off instantly — no channel, no MP, no cooldown. Mounting
+  // (the skill's first press) falls through to the normal flow: canUseSkill
+  // enforces the 20-Horsemanship gate, the 3s cast channels, then
+  // executeSkill sets the mount state.
+  if (skillName === 'Summon Horse' && session.mounted) {
+    session.mounted = false;
+    session.mountType = undefined;
+    session.activeCast = null;
+    ctx.broadcastMountState(session);
+    return;
+  }
+
   ctx.cancelRest(session);
 
   if (aoePosition && GROUND_TARGETED_AOE_SKILLS.has(skillName)) {
@@ -301,6 +314,12 @@ function handleSkillUse(ctx: NetworkContext, socket: Socket, data: any): void {
   ctx.sendDamageDebug(session, result);
   ctx.playerSys.recalcStats(session);
 
+  // Summon Horse toggled mount state (instant-cast edge): broadcast to the
+  // zone before the generic used/animation sends below.
+  if (result.mounted || result.mountedToggledOff) {
+    ctx.broadcastMountState(session);
+  }
+
   if (skill?.isSong && !result.songToggledOff) {
     ctx.applySongPulseImmediate(session);
   }
@@ -321,6 +340,30 @@ function handleSkillUse(ctx: NetworkContext, socket: Socket, data: any): void {
       type: PacketType.COOLDOWN_UPDATE,
       timestamp: Date.now(),
       data: { skillName, type: 'used', mpCost: skill?.mpCost || 0, cooldownRemaining: 0 }
+    });
+    ctx.broadcastEntityEffects(session);
+    return;
+  }
+
+  // Block/Defensive-March toggle-off: sync the stance change, report zero
+  // cooldown (the cooldown is the activation price), and skip the skill
+  // motion broadcast — dropping a stance plays no animation of its own.
+  if (result.blockingToggledOff) {
+    ctx.removeBlockingProtectedBuffs(characterId);
+    ctx.sendToPlayer(characterId, {
+      type: PacketType.STATUS_EFFECT_UPDATE,
+      timestamp: Date.now(),
+      data: { effects: session.statusEffects }
+    });
+    ctx.sendToPlayer(characterId, {
+      type: PacketType.STATS_UPDATE,
+      timestamp: Date.now(),
+      data: { characterId, stats: session.stats, statBreakdown: session.statBreakdown, skillProficiencies: session.skillProficiencies, skillAdeptness: session.skillAdeptness }
+    });
+    ctx.sendToPlayer(characterId, {
+      type: PacketType.COOLDOWN_UPDATE,
+      timestamp: Date.now(),
+      data: { skillName, type: 'used', mpCost: 0, cooldownRemaining: 0 }
     });
     ctx.broadcastEntityEffects(session);
     return;

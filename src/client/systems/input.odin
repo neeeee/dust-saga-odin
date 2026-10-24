@@ -96,7 +96,9 @@ poll_input :: proc(chat_focused: bool, p: ^Local_Player, dt: f32) -> Input_State
 			move_dir.z * cos_y - move_dir.x * sin_y,
 		}
 
-		p.position += rotated_move * GAME.PLAYER_SPEED * dt
+		move_speed := GAME.PLAYER_SPEED
+		if p.mounted do move_speed *= MOUNT_SPEED_MULTIPLIER
+		p.position += rotated_move * move_speed * dt
 
 		// Face the movement direction. The avatar carries a 180° render
 		// offset (models face +Z, the game forward is -Z), so the stored yaw
@@ -163,10 +165,14 @@ init_camera :: proc(p: ^Local_Player) {
 }
 
 update_camera :: proc(dt: f32, p: ^Local_Player, block_zoom: bool) {
-	// Aim at the player's chest; the camera orbits at cam_control.distance,
-	// positioned from the current yaw/pitch. NOTE: this drives p.camera — the
-	// same Camera3D the render loop passes to BeginMode3D — not a local copy.
-	p.camera.target = p.position + rl.Vector3{0, 1.5, 0}
+	// Aim at the player's chest (the rider's chest when mounted — the camera
+	// keeps its distance instead of staring at the horse's back); the camera
+	// orbits at cam_control.distance, positioned from the current yaw/pitch.
+	// NOTE: this drives p.camera — the same Camera3D the render loop passes
+	// to BeginMode3D — not a local copy.
+	aim_height := f32(1.5)
+	if p.mounted do aim_height = 2.6
+	p.camera.target = p.position + rl.Vector3{0, aim_height, 0}
 
 	offset := rl.Vector3 {
 		math.sin(cam_control.yaw) * math.cos(cam_control.pitch),
