@@ -179,6 +179,22 @@ menu_add_slider :: proc(m: ^Menu, label: string, value, min_v, max_v, step: f32)
 	return id
 }
 
+// For menus rebuilt every frame (refresh_*): a stable id lets click handlers
+// find the slider across rebuilds.
+menu_add_slider_id :: proc(m: ^Menu, label: string, value, min_v, max_v, step: f32, id: int) {
+	append(&m.items, Menu_Item {
+		kind = .SLIDER,
+		id = id,
+		label = label,
+		value = value,
+		min_value = min_v,
+		max_value = max_v,
+		step = step,
+		label_color = MENU_COL_BTN_TXT,
+	})
+	if id >= m.next_id do m.next_id = id + 1
+}
+
 menu_add_label :: proc(m: ^Menu, label: string) -> int {
 	id := m.next_id
 	m.next_id += 1

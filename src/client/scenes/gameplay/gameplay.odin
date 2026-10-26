@@ -6,6 +6,7 @@ import "core:fmt"
 import "core:math"
 import "core:strings"
 import rl "vendor:raylib"
+import rlgl "vendor:raylib/rlgl"
 
 // The gameplay scene owns the game context (network + scene + local player +
 // chat + zone), runs the 3rd-person camera + movement loop, sends PLAYER_MOVE
@@ -217,6 +218,10 @@ init :: proc(
 
 	// Camera: third-person, looking down at the player from behind.
 	sys.init_camera(state.player)
+	// The Pandora terrain maps span 1-3km; raylib's BeginMode3D ignores the
+	// Camera3D struct and uses these rlgl clip planes (default far = 1000),
+	// so raise the far plane or the far half of big fields gets clipped.
+	rlgl.SetClipPlanes(0.01, 8000.0)
 
 	state.status = .PLAYING
 	state.initialized = true
@@ -469,6 +474,7 @@ follow_click_path :: proc(dt: f32) {
 	} else {
 		speed := sys.GAME.PLAYER_SPEED * dt
 		if state.player.mounted do speed *= sys.MOUNT_SPEED_MULTIPLIER
+		speed *= sys.debug_move_mult
 		if speed > dist do speed = dist
 		state.player.position.x += (dx / dist) * speed
 		state.player.position.z += (dz / dist) * speed

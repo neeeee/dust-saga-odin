@@ -98,6 +98,7 @@ poll_input :: proc(chat_focused: bool, p: ^Local_Player, dt: f32) -> Input_State
 
 		move_speed := GAME.PLAYER_SPEED
 		if p.mounted do move_speed *= MOUNT_SPEED_MULTIPLIER
+		move_speed *= debug_move_mult
 		p.position += rotated_move * move_speed * dt
 
 		// Face the movement direction. The avatar carries a 180° render
@@ -142,6 +143,12 @@ MmoCamera :: struct {
 	max_distance: f32, // scroll-wheel zoom clamp (far)
 	zoom_step:    f32, // world units moved per scroll notch
 }
+
+// Debug movement-speed multiplier, set by the slider in the F1 debug menu.
+// Scales the local player's client-predicted movement (WASD here,
+// click-to-move in the gameplay scene); the server accepts client-reported
+// positions without displacement checks, so no server support is needed.
+debug_move_mult: f32 = 1.0
 
 cam_control := MmoCamera {
 	distance     = 8.0,

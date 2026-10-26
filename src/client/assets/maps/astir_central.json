@@ -113,6 +113,14 @@
       "targetSpawn": "tp_from_astir_west",
       "radius": 2,
       "label": "Western Imperial Way"
+    },
+    {
+      "id": "tp_to_99999999",
+      "position": { "x": 60, "y": 0, "z": 60 },
+      "targetZone": "99999999",
+      "targetSpawn": "tp_from_astir_central",
+      "radius": 2,
+      "label": "Frontier - F01"
     }
   ],
   "lights": [

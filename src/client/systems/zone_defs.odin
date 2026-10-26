@@ -74,6 +74,15 @@ Zone_Definition :: struct {
 	lights:       [dynamic]Map_Light,
 	loaded:       bool, // parsed successfully from disk
 
+	// Whole-area terrain GLB (Pandora maps: source.terrain_glb in the JSON).
+	// Owned by the assets cache — release via assets_model_release, never
+	// UnloadModel directly. nil for the older procedural zones (no GLB).
+	terrain: ^Model_Entry,
+	// Per-mesh bounding spheres (cx, cy, cz, r) for the terrain model —
+	// raylib's glTF loader flattens these maps into thousands of meshes
+	// (up to ~38k), so render_zone frustum-culls them one sphere each.
+	terrain_spheres: [][4]f32,
+
 	collision_grid:      [dynamic]bool,
 	collision_cols:      int,
 	collision_rows:      int,
@@ -126,6 +135,11 @@ zone_destroy :: proc(z: ^Zone_Definition) {
 		zone_str_free(l.otype)
 	}
 	if z.lights != nil do delete(z.lights)
+	if z.terrain != nil {
+		assets_model_release(z.terrain)
+		z.terrain = nil
+	}
+	if z.terrain_spheres != nil do delete(z.terrain_spheres)
 	if z.collision_grid != nil do delete(z.collision_grid)
 	free(z)
 }

@@ -307,6 +307,7 @@ export const CLASS_SKILL_DATA: Record<
               "Attack with a buff that gives a chance to dismount target",
             damageType: DamageType.PHYSICAL,
             damageSubType: PhysicalDamageSubType.THRUST,
+            requiredWeaponType: [WeaponType.SPEAR, WeaponType.TWO_HANDED_SPEAR],
             basePower: 2,
           },
           "Spear Volley": {
@@ -319,6 +320,7 @@ export const CLASS_SKILL_DATA: Record<
             description: "Ranged attack with spear",
             damageType: DamageType.PHYSICAL,
             damageSubType: PhysicalDamageSubType.THRUST,
+            requiredWeaponType: [WeaponType.SPEAR, WeaponType.TWO_HANDED_SPEAR],
             basePower: 1,
           },
           "Quadruple Stab": {
@@ -332,6 +334,7 @@ export const CLASS_SKILL_DATA: Record<
               "Quadruple attack (spear), bonus damage if comboed with Triple Stab",
             damageType: DamageType.PHYSICAL,
             damageSubType: PhysicalDamageSubType.THRUST,
+            requiredWeaponType: [WeaponType.SPEAR, WeaponType.TWO_HANDED_SPEAR],
             basePower: 2,
             baseHits: 4,
           },
@@ -348,6 +351,7 @@ export const CLASS_SKILL_DATA: Record<
             description: "Ranged spear attack",
             damageType: DamageType.PHYSICAL,
             damageSubType: PhysicalDamageSubType.THRUST,
+            requiredWeaponType: [WeaponType.SPEAR, WeaponType.TWO_HANDED_SPEAR],
             basePower: 2,
           },
           "Neck Press": {
@@ -363,6 +367,7 @@ export const CLASS_SKILL_DATA: Record<
             description: "Interrupts enemy casting",
             damageType: DamageType.PHYSICAL,
             damageSubType: PhysicalDamageSubType.THRUST,
+            requiredWeaponType: [WeaponType.SPEAR, WeaponType.TWO_HANDED_SPEAR],
             basePower: 1,
           },
           "Lance Mastery (Passive)": {
@@ -373,6 +378,7 @@ export const CLASS_SKILL_DATA: Record<
             cooldown: 0,
             duration: 0,
             description: "Increased attack range with spears",
+            requiredWeaponType: [WeaponType.SPEAR, WeaponType.TWO_HANDED_SPEAR],
             isPassive: true,
           },
           "Horse Assault": {
@@ -383,9 +389,10 @@ export const CLASS_SKILL_DATA: Record<
             cooldown: 7,
             duration: 0,
             description:
-              "Bonus damage vs mounted enemies and chance to dismount enemies (speaer)",
+              "Bonus damage vs mounted enemies and chance to dismount enemies (spear)",
             damageType: DamageType.PHYSICAL,
             damageSubType: PhysicalDamageSubType.THRUST,
+            requiredWeaponType: [WeaponType.SPEAR, WeaponType.TWO_HANDED_SPEAR],
             basePower: 1,
           },
           Assault: {
@@ -399,6 +406,7 @@ export const CLASS_SKILL_DATA: Record<
               "Rush forward and deal multiple hits of damage in a frontal cone AOE",
             damageType: DamageType.PHYSICAL,
             damageSubType: PhysicalDamageSubType.THRUST,
+            requiredWeaponType: [WeaponType.SPEAR, WeaponType.TWO_HANDED_SPEAR],
             basePower: 1,
             isAOE: true,
           },
@@ -412,6 +420,7 @@ export const CLASS_SKILL_DATA: Record<
             description: "Strong single target attack with knockback",
             damageType: DamageType.PHYSICAL,
             damageSubType: PhysicalDamageSubType.THRUST,
+            requiredWeaponType: [WeaponType.SPEAR, WeaponType.TWO_HANDED_SPEAR],
             basePower: 3,
             knockback: 4,
           },
@@ -432,6 +441,7 @@ export const CLASS_SKILL_DATA: Record<
               "Attack + increased chance of a critical hit (axe, unusable by ascetics)",
             damageType: DamageType.PHYSICAL,
             damageSubType: PhysicalDamageSubType.CLEAVE,
+            requiredWeaponType: [WeaponType.AXE, WeaponType.TWO_HANDED_AXE],
             basePower: 1,
           },
           Riposte: {
@@ -445,6 +455,7 @@ export const CLASS_SKILL_DATA: Record<
               "Immobile defensive stance that counter attacks if hit during the duration (2H weapons)",
             damageType: DamageType.PHYSICAL,
             damageSubType: PhysicalDamageSubType.SLASH,
+            requiredWeaponType: [WeaponType.TWO_HANDED_SWORD, WeaponType.TWO_HANDED_SPEAR, WeaponType.TWO_HANDED_AXE, WeaponType.TWO_HANDED_BLUNT, WeaponType.KNUCKLES],
             basePower: 1,
           },
           Roar: {
@@ -467,6 +478,7 @@ export const CLASS_SKILL_DATA: Record<
             description: "Short range frontal AOE attack (axe)",
             damageType: DamageType.PHYSICAL,
             damageSubType: PhysicalDamageSubType.CLEAVE,
+            requiredWeaponType: [WeaponType.AXE, WeaponType.TWO_HANDED_AXE],
             basePower: 1,
             isAOE: true,
           },
@@ -484,6 +496,7 @@ export const CLASS_SKILL_DATA: Record<
               "360 AOE melee attack (no knockback) that grants +100 dodge for a short duration (axe)",
             damageType: DamageType.PHYSICAL,
             damageSubType: PhysicalDamageSubType.CLEAVE,
+            requiredWeaponType: [WeaponType.TWO_HANDED_AXE],
             basePower: 1,
             isAOE: true,
           },
@@ -508,6 +521,7 @@ export const CLASS_SKILL_DATA: Record<
               "Attack with a chance to stun target, stuns you on failure",
             damageType: DamageType.PHYSICAL,
             damageSubType: PhysicalDamageSubType.CLEAVE,
+            requiredWeaponType: [WeaponType.TWO_HANDED_SWORD, WeaponType.AXE, WeaponType.TWO_HANDED_AXE, WeaponType.BLUNT, WeaponType.TWO_HANDED_BLUNT, WeaponType.WAND, WeaponType.STAFF],
             basePower: 2,
           },
           "Grand Quake": {
@@ -524,6 +538,7 @@ export const CLASS_SKILL_DATA: Record<
               "Short ranged AOE attack with 100% chance to interrupt casting",
             damageType: DamageType.PHYSICAL,
             damageSubType: PhysicalDamageSubType.CLEAVE,
+            // NEEDS WEAPON TYPE
             basePower: 8,
             isAOE: true,
           },
@@ -538,6 +553,7 @@ export const CLASS_SKILL_DATA: Record<
               "Frontal AOE cleave that deals a small amount of damage as recoil",
             damageType: DamageType.PHYSICAL,
             damageSubType: PhysicalDamageSubType.CLEAVE,
+            // NEEDS WEAPON TYPE
             basePower: 5,
             isAOE: true,
           },
@@ -552,6 +568,7 @@ export const CLASS_SKILL_DATA: Record<
               "A strong 360 AOE attack that deals damage as recoil if missed",
             damageType: DamageType.PHYSICAL,
             damageSubType: PhysicalDamageSubType.CLEAVE,
+            // NEEDS WEAPON TYPE
             basePower: 7,
             isAOE: true,
           },
@@ -571,14 +588,15 @@ export const CLASS_SKILL_DATA: Record<
             description: "Attack + 30% chance to stun (blunt, 2H blunt, wand)",
             damageType: DamageType.PHYSICAL,
             damageSubType: PhysicalDamageSubType.BASH,
+            requiredWeaponType: [WeaponType.BLUNT, WeaponType.TWO_HANDED_BLUNT, WeaponType.WAND, WeaponType.STAFF],
             basePower: 1,
             hasDebuff: true,
             debuffEffectTable: {
               debuffCategory: 'stun',
             }
           },
-          "Ground Shock": {
-            name: "Ground Shock",
+          "Grand Shock": {
+            name: "Grand Shock",
             reqPoints: 26,
             mpCost: 38,
             castTime: 0,
@@ -588,6 +606,7 @@ export const CLASS_SKILL_DATA: Record<
               "Attack + chance to interrupt casting (blunt, axe, wand)",
             damageType: DamageType.PHYSICAL,
             damageSubType: PhysicalDamageSubType.BASH,
+            requiredWeaponType: [WeaponType.AXE, WeaponType.TWO_HANDED_AXE, WeaponType.BLUNT, WeaponType.TWO_HANDED_BLUNT, WeaponType.WAND, WeaponType.STAFF],
             basePower: 2,
           },
           "Stun Hammer": {
@@ -603,6 +622,7 @@ export const CLASS_SKILL_DATA: Record<
             description: "Attack and AOE stun (blunt, 2H blunt)",
             damageType: DamageType.PHYSICAL,
             damageSubType: PhysicalDamageSubType.BASH,
+            requiredWeaponType: [WeaponType.BLUNT, WeaponType.TWO_HANDED_BLUNT],
             basePower: 2,
             isAOE: true,
           },
@@ -617,6 +637,7 @@ export const CLASS_SKILL_DATA: Record<
               "Attack with a chance to break enemy armor and interrupt casting (blunt, 2H blunt, wand)",
             damageType: DamageType.PHYSICAL,
             damageSubType: PhysicalDamageSubType.BASH,
+            requiredWeaponType: [WeaponType.BLUNT, WeaponType.TWO_HANDED_BLUNT, WeaponType.WAND, WeaponType.STAFF],
             basePower: 2,
           },
           "Shield Break": {
@@ -629,6 +650,7 @@ export const CLASS_SKILL_DATA: Record<
             description: "Knock target out of blocking or defensive march",
             damageType: DamageType.PHYSICAL,
             damageSubType: PhysicalDamageSubType.BASH,
+            requiredWeaponType: [WeaponType.AXE, WeaponType.TWO_HANDED_AXE, WeaponType.BLUNT, WeaponType.TWO_HANDED_BLUNT, WeaponType.WAND, WeaponType.STAFF],
           },
           Subvert: {
             name: "Subvert",
@@ -640,6 +662,7 @@ export const CLASS_SKILL_DATA: Record<
             description: "Attack that scales with enemy defense",
             damageType: DamageType.PHYSICAL,
             damageSubType: PhysicalDamageSubType.BASH,
+            requiredWeaponType: [WeaponType.BLUNT, WeaponType.TWO_HANDED_BLUNT],
             basePower: 3,
             damageVsLowDefense: true,
           },
@@ -653,6 +676,7 @@ export const CLASS_SKILL_DATA: Record<
             description: "Strong single target attack",
             damageType: DamageType.PHYSICAL,
             damageSubType: PhysicalDamageSubType.BASH,
+            requiredWeaponType: [WeaponType.BLUNT, WeaponType.TWO_HANDED_BLUNT],
             basePower: 5,
           },
         },
@@ -1074,7 +1098,7 @@ export const CLASS_SKILL_DATA: Record<
             duration: 0,
             description:
               "Drinking a potion will heal the party for a large amount",
-            sacrificeHeal: true,
+            // NEEDS ADJUSTMENT
           },
         },
       },
@@ -1092,6 +1116,7 @@ export const CLASS_SKILL_DATA: Record<
             description: "Attack enemy from behind",
             damageType: DamageType.PHYSICAL,
             damageSubType: PhysicalDamageSubType.SLASH,
+            requiredWeaponType: [WeaponType.DAGGER, WeaponType.KNUCKLES],
             basePower: 1,
           },
           "Dagger Throw": {
@@ -1119,6 +1144,7 @@ export const CLASS_SKILL_DATA: Record<
               "Each attack hits twice, caster takes more damage (dagger, knuckles)",
             isBuff: true,
             selfBuffOnly: true,
+            requiredWeaponType: [WeaponType.DAGGER, WeaponType.KNUCKLES],
             buffEffectTable: {
               extraHit: true,
             },
@@ -1133,6 +1159,7 @@ export const CLASS_SKILL_DATA: Record<
             description: "While cloaked, trips target, does not remove cloak",
             damageType: DamageType.PHYSICAL,
             damageSubType: PhysicalDamageSubType.SLASH,
+            requiredWeaponType: [WeaponType.DAGGER, WeaponType.KNUCKLES],
             basePower: 1,
             hasDebuff: true,
             debuffDuration: 2,
@@ -1151,6 +1178,7 @@ export const CLASS_SKILL_DATA: Record<
               "Attack that ignores armor, bonus damage against knocked down targets",
             damageType: DamageType.PHYSICAL,
             damageSubType: PhysicalDamageSubType.SLASH,
+            requiredWeaponType: [WeaponType.DAGGER, WeaponType.KNUCKLES],
             basePower: 1,
           },
           "Double-Cross": {
@@ -1164,6 +1192,7 @@ export const CLASS_SKILL_DATA: Record<
               "Attack back of target to reset all skill cooldowns (dagger, knuckles), only against other players",
             damageType: DamageType.PHYSICAL,
             damageSubType: PhysicalDamageSubType.SLASH,
+            requiredWeaponType: [WeaponType.DAGGER, WeaponType.KNUCKLES],
             basePower: 3,
           },
           "Killing Time": {
@@ -1177,6 +1206,7 @@ export const CLASS_SKILL_DATA: Record<
               "Can be used while hiding, deals a heavy blow from behind",
             damageType: DamageType.PHYSICAL,
             damageSubType: PhysicalDamageSubType.SLASH,
+            requiredWeaponType: [WeaponType.DAGGER, WeaponType.KNUCKLES],
             basePower: 3,
           },
           Overkill: {
@@ -1189,6 +1219,7 @@ export const CLASS_SKILL_DATA: Record<
             description: "Killed target cannot be revived",
             damageType: DamageType.PHYSICAL,
             damageSubType: PhysicalDamageSubType.SLASH,
+            requiredWeaponType: [WeaponType.DAGGER, WeaponType.KNUCKLES],
             basePower: 3,
           },
         },
@@ -1802,10 +1833,8 @@ export const CLASS_SKILL_DATA: Record<
             cooldown: 10,
             duration: 60,
             description: "Reduce elemental damage taken",
-            elementalAbsorption: { elements: ['fire', 'ice', 'lightning'], convertTo: 'hp' },
             buffEffectTable: {
               resistMods: { fire: 7, ice: 7, lightning: 7 },
-              elementalAbsorption: { elements: ['fire', 'ice', 'lightning'], convertTo: 'hp' },
             },
           },
           "Bless Weapon": {
@@ -2636,6 +2665,7 @@ export const CLASS_SKILL_DATA: Record<
             duration: 0,
             damageType: DamageType.PHYSICAL,
             damageSubType: MagicalDamageSubType.DARK,
+            requiredWeaponType: [WeaponType.DAGGER, WeaponType.SWORD],
             description: "Slice enemy with weapon",
             basePower: 1,
             baseHits: 3,
@@ -2907,6 +2937,7 @@ export const CATEGORY_LEVEL_SKILLS: Record<SkillCategoryId, Record<string, Skill
       description: "Quick combo strike that gives the enemy no chance to evade.",
       damageType: DamageType.PHYSICAL,
       damageSubType: PhysicalDamageSubType.SLASH,
+      requiredWeaponType: [WeaponType.SWORD, WeaponType.TWO_HANDED_SWORD, WeaponType.SPEAR, WeaponType.TWO_HANDED_SPEAR, WeaponType.AXE, WeaponType.TWO_HANDED_AXE, WeaponType.BLUNT, WeaponType.TWO_HANDED_BLUNT, WeaponType.DAGGER, WeaponType.KNUCKLES, WeaponType.WAND, WeaponType.STAFF],
       basePower: 1,
     },
     Bash: {
@@ -2919,6 +2950,7 @@ export const CATEGORY_LEVEL_SKILLS: Record<SkillCategoryId, Record<string, Skill
       description: "A heavy blow that knocks the target back and may stun.",
       damageType: DamageType.PHYSICAL,
       damageSubType: PhysicalDamageSubType.BASH,
+      requiredWeaponType: [WeaponType.TWO_HANDED_SWORD, WeaponType.TWO_HANDED_AXE, WeaponType.TWO_HANDED_BLUNT, WeaponType.TWO_HANDED_SPEAR, WeaponType.STAFF],
       basePower: 2,
       hasDebuff: true,
       debuffEffectTable: { debuffCategory: 'stun' },

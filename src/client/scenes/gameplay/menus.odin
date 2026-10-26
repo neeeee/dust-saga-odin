@@ -2144,6 +2144,9 @@ DEBUG_COMMANDS: []Debug_Cmd = {
 }
 
 DEBUG_CMD_BASE :: 3000
+// Slider item in the debug window; below DEBUG_CMD_BASE so the button-id
+// ranges never overlap.
+DEBUG_SPEED_SLIDER_ID :: 2900
 
 refresh_debug_menu :: proc() {
 	m := &state.debug_menu
@@ -2172,6 +2175,13 @@ refresh_debug_menu :: proc() {
 	case .FAILED:       conn = "FAILED"
 	}
 	ui.menu_add_label(m, fmt.tprintf("Conn %s   reconnects %d", conn, state.net.reconnect_attempts))
+	ui.menu_add_slider_id(
+		m,
+		"Move speed",
+		sys.debug_move_mult,
+		1.0, 50.0, 1.0,
+		DEBUG_SPEED_SLIDER_ID,
+	)
 	ui.menu_add_separator(m)
 
 	// GM command buttons
@@ -2185,6 +2195,12 @@ refresh_debug_menu :: proc() {
 handle_debug_menu_clicks :: proc() {
 	m := &state.debug_menu
 	if !m.open do return
+	// Slider sync: menu_update already ran this frame, so a drag's new value
+	// sits on the item; write it back to state (refresh_debug_menu reads it
+	// back into the rebuilt slider next frame).
+	if item := ui.menu_find(m, DEBUG_SPEED_SLIDER_ID); item != nil {
+		sys.debug_move_mult = item.value
+	}
 	for i in 0 ..< len(m.items) {
 		item := &m.items[i]
 		if item.kind != .BUTTON || !item.clicked do continue

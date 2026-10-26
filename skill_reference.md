@@ -15,7 +15,7 @@ Generated from the shipped UTF-16 table; regenerate with
 | 38–65 | Auto-attack class flags (CN-support) | same 28-class order; only the first 14 (melee+scout families) ever set |
 | 66–69 | Potential-skill acquisition reference + required potential values | |
 | 70–75 | Skill-line / proficiency requirement | col 75 holds the line name (e.g. `MELEE_DEFENSE`) |
-| 76–90 | Weapon usability flags | BareHAND, 1H_SWORD, 2H_SWORD, LANCE, POLE_ARM, 1H_AXE, 2H_AXE, 1H_BLUNT, 2H_BLUNT, 1H_TRUMP (daggers), 2H_TRUMP, BOW, CROSSBOW, WAND, STAFF — none set = any weapon |
+| 76–90 | Weapon usability flags | BareHAND, SWORD, TWO_HANDED_SWORD, SPEAR, TWO_HANDED_SPEAR, AXE, TWO_HANDED_AXE, BLUNT, TWO_HANDED_BLUNT, DAGGER (daggers), KNUCKLES, BOW, CROSSBOW, WAND, STAFF — none set = any weapon |
 | 91 | Shield required flag | set by Blocking and the shield skills |
 | 92 | Cast marker (#キャスト) | values 1/2, client anim hint |
 | 93–96 | Interruptible · usable-while-sheathed · alignment · chant type | raw codes (e.g. `MELEE_NONE`) |
@@ -31,7 +31,7 @@ Generated from the shipped UTF-16 table; regenerate with
 | 100001001 | Obscene Gesture | ENEMY | ENEMY | 12 | 0 | 10 | 2500 | 20 | Knight, General, Paladin | ALL |  | Providence | Taunts the enemy in order to enrage them, and draws their attention for a short while. |
 | 100002001 | Guardian | PARTY_SINGLE | ALLY | 16 | 4 | 10 | 2000 |  | ALL | any |  | Eternal Dirge | Allows you to take damage in place of another party member. |
 | 100002002 | Bore Brunt | PARTY_SINGLE | ALL | 16 | 4 | 0.5 | 2500 | 50 | General | ALL |  | Eternal Dirge | Allows you to take damage in place of the targeted party member. This can be used on up to three people at once. |
-| 100051001 | Lunge | MYSELF | ALL | 25 | 0 | 30 | 0 | 18 | Warrior, Gladiator, Knight, Juggernaut, Dragoon, General, Paladin | BareHAND, 1H_SWORD, 2H_SWORD, LANCE, POLE_ARM, 1H_AXE, 2H_AXE, 1H_BLUNT, 2H_BLUNT, 1H_TRUMP, 2H_TRUMP, WAND, STAFF |  |  | Increases your Attack Speed. |
+| 100051001 | Lunge | MYSELF | ALL | 25 | 0 | 30 | 0 | 18 | Warrior, Gladiator, Knight, Juggernaut, Dragoon, General, Paladin | BareHAND, SWORD, TWO_HANDED_SWORD, SPEAR, TWO_HANDED_SPEAR, AXE, TWO_HANDED_AXE, BLUNT, TWO_HANDED_BLUNT, DAGGER, KNUCKLES, WAND, STAFF |  |  | Increases your Attack Speed. |
 | 100052001 | Raging Soul | MYSELF | ALL | 35 | 0 | 60 | 0 | 35 | Gladiator, Juggernaut, Dragoon | ALL |  |  | Sacrifices your Defense to focus on Attack Power. |
 | 100053001 | Shieldbearer | MYSELF | ALL | 35 | 0 | 60 | 0 | 35 | Knight, General, Paladin | ALL | ✓ |  | Can only be used when a shield is equipped. Sacrifices your Attack Power to focus on Defense. |
 | 100054001 | Concentration | MYSELF | ALL | 18 | 0 | 20 | 0 |  | ALL | ALL |  | Brutal Strike | Accuracy increases for your next attack as the result of boosted concentration. |
@@ -40,49 +40,49 @@ Generated from the shipped UTF-16 table; regenerate with
 | 100056001 | Misdirection | MYSELF | ALL | 10 | 0 | 60 | 0 |  | ALL | ALL |  | Ossify | Distracts the enemy, causing them to lose you as their target. Effect only works in PvP. |
 | 100057001 | Ossify | TOGGLE | ALL | 24 | 0 | 30 | 0 |  | ALL | ALL |  |  | Immune to Trip, Movement Speed reduction and movement restriction, but Attack Power reduced. |
 | 100058001 | Desperado | MYSELF | ALL | 39 | 0 | 35 | 0 | 45 | Juggernaut | ALL |  | Skill Focus | Increases Attack Power, but also increases the damage you take. The effect ends once you make an attack. |
-| 100059001 | Equine Charge | MYSELF | ALL | 19 | 0 | 9 | 0 | 45 | Dragoon | LANCE, POLE_ARM |  | Charge | Uses Momentum to perform a powerful charge. Can only be used while on horseback. |
-| 100059002 | Equine Charge | ENEMY | ENEMY | 0 | 0 | 0 | 0 |  | any | LANCE, POLE_ARM |  |  |  |
-| 100059003 | Equine Charge | ENEMY | ENEMY | 0 | 0 | 0 | 0 |  | any | LANCE, POLE_ARM |  |  |  |
-| 100059004 | Equine Charge | BREATH | ENEMY | 0 | 0 | 0 | 0 |  | any | LANCE, POLE_ARM |  |  |  |
+| 100059001 | Equine Charge | MYSELF | ALL | 19 | 0 | 9 | 0 | 45 | Dragoon | SPEAR, TWO_HANDED_SPEAR |  | Charge | Uses Momentum to perform a powerful charge. Can only be used while on horseback. |
+| 100059002 | Equine Charge | ENEMY | ENEMY | 0 | 0 | 0 | 0 |  | any | SPEAR, TWO_HANDED_SPEAR |  |  |  |
+| 100059003 | Equine Charge | ENEMY | ENEMY | 0 | 0 | 0 | 0 |  | any | SPEAR, TWO_HANDED_SPEAR |  |  |  |
+| 100059004 | Equine Charge | BREATH | ENEMY | 0 | 0 | 0 | 0 |  | any | SPEAR, TWO_HANDED_SPEAR |  |  |  |
 | 100060001 | Strong Stance | PASSIVE | ALL | 0 | 0 | 0 | 0 | 45 | Paladin | any | ✓ | Defensive Attack | Allows you to block magical damage when Blocking, and prevents Knockback. |
 | 100061001 | Skill Focus | MYSELF | ALL | 3 | 0 | 0 | 0 | 50 | Juggernaut | ALL |  |  | Your Skill Cooldown Rate is reduced by half at the cost of losing 30% of your LP. |
 | 100091001 | Brewer | PASSIVE | ALL | 0 | 0 | 0 | 0 | 12 | Warrior, Gladiator, Knight, Juggernaut, Dragoon, General, Paladin | ALL |  | Lunge | Increases the effectiveness of potions. |
-| 100101001 | Slash | ENEMY | ENEMY | 10 | 0 | 10 | 0 |  | ALL | 1H_SWORD, 2H_SWORD, LANCE, POLE_ARM, 1H_AXE, 2H_AXE, 1H_BLUNT, 2H_BLUNT, 1H_TRUMP, 2H_TRUMP, WAND, STAFF |  | Bash | A combo skill that strikes with a flurry of attacks, preventing the enemy from evading. |
-| 100102001 | Brutal Strike | ENEMY | ENEMY | 14 | 0 | 10 | 0 |  | ALL | 1H_SWORD, 2H_SWORD, LANCE, POLE_ARM, 1H_AXE, 2H_AXE, 1H_BLUNT, 2H_BLUNT, 1H_TRUMP, 2H_TRUMP, WAND, STAFF |  | Sword Mastery | Launches a powerful attack that hits regardless of the enemy's armor. This is a combo skill. |
-| 100103001 | Leg Sweep | ENEMY | ENEMY | 21 | 0 | 10 | 0 | 20 | Gladiator, Juggernaut, Dragoon | 1H_SWORD, 2H_SWORD, LANCE, POLE_ARM, 1H_AXE, 2H_AXE, 1H_BLUNT, 2H_BLUNT, 1H_TRUMP, 2H_TRUMP, WAND, STAFF |  | War Cry | Attacks the enemy's legs, slowing their movements. |
-| 100103050 | Leg Sweep | ENEMY | ENEMY | 0 | 0 | 0 | 0 |  | any | 1H_SWORD, 2H_SWORD, LANCE, POLE_ARM, 1H_AXE, 2H_AXE, 1H_BLUNT, 2H_BLUNT, 1H_TRUMP, 2H_TRUMP, BOW, CROSSBOW, WAND, STAFF |  |  | Leg Sweep Dummy |
-| 110101001 | Slice | ENEMY | ENEMY | 15 | 0 | 10 | 0 |  | ALL | 1H_SWORD, LANCE, 1H_AXE, 1H_BLUNT, 1H_TRUMP, WAND |  | Whirling Strike | A combo skill that strikes the enemy with two rapid cuts. |
-| 110101002 | Dice | ENEMY | ENEMY | 15 | 0 | 10 | 0 |  | ALL | 1H_SWORD, 2H_SWORD, LANCE, 1H_AXE, 1H_BLUNT, 1H_TRUMP, WAND |  |  | Strikes with three rapid cuts, which can cause your opponent to Bleed. |
-| 110102001 | Sword Mastery | PASSIVE | ALL | 0 | 0 | 0 | 0 |  | ALL | 1H_SWORD, 2H_SWORD, 1H_TRUMP |  | Dice | Increases the damage done when you use a skill with a sword. |
-| 111201001 | Bash | ENEMY | ENEMY | 18 | 0 | 10 | 0 |  | ALL | 2H_SWORD, POLE_ARM, 1H_AXE, 2H_AXE, 2H_BLUNT |  | Misdirection | Hits your opponent hard, inflicting both the Knockback and Stun effects. |
-| 121701001 | Spear Volley | BOLT | ENEMY | 24 | 1 | 30 | 2500 |  | ALL | LANCE, POLE_ARM |  | Quadruple Stab | Hurls your spear to attack a distant enemy. |
-| 121702001 | Heave | BREATH | ENEMY | 16 | 1 | 15 | 900 |  | ALL | LANCE, POLE_ARM |  | Triple Stab | Thrusts your spear mightily, attacking the enemy in front of you. |
-| 121703001 | Triple Stab | ENEMY | ENEMY | 22 | 0 | 30 | 300 |  | ALL | LANCE, POLE_ARM |  | Dismounting Stab | Stabs your opponent rapidly three times. |
-| 121703501 | Quadruple Stab | ENEMY | ENEMY | 43 | 0 | 16 | 300 |  | ALL | LANCE, POLE_ARM |  | Horse Assault | You stab at your opponent rapidly four times. If you use it while you're activating Triple Stab, your damage will increase. |
-| 121703511 | Quadruple Stab | ENEMY | ENEMY | 0 | 0 | 0 | 300 |  | any | LANCE, POLE_ARM |  |  |  |
-| 121703512 | Quadruple Stab | ENEMY | ENEMY | 0 | 0 | 0 | 300 |  | any | LANCE, POLE_ARM |  |  |  |
-| 121704001 | Charge | MYSELF | ALL | 41 | 0 | 20 | 0 | 50 | Dragoon | LANCE, POLE_ARM |  |  | Uses Momentum to charge forward. Can only be used while on horseback. |
-| 121704002 | Charge | BREATH | ENEMY | 41 | 0 | 20 | 1500 | 50 | any | LANCE, POLE_ARM |  |  |  |
+| 100101001 | Slash | ENEMY | ENEMY | 10 | 0 | 10 | 0 |  | ALL | SWORD, TWO_HANDED_SWORD, SPEAR, TWO_HANDED_SPEAR, AXE, TWO_HANDED_AXE, BLUNT, TWO_HANDED_BLUNT, DAGGER, KNUCKLES, WAND, STAFF |  | Bash | A combo skill that strikes with a flurry of attacks, preventing the enemy from evading. |
+| 100102001 | Brutal Strike | ENEMY | ENEMY | 14 | 0 | 10 | 0 |  | ALL | SWORD, TWO_HANDED_SWORD, SPEAR, TWO_HANDED_SPEAR, AXE, TWO_HANDED_AXE, BLUNT, TWO_HANDED_BLUNT, DAGGER, KNUCKLES, WAND, STAFF |  | Sword Mastery | Launches a powerful attack that hits regardless of the enemy's armor. This is a combo skill. |
+| 100103001 | Leg Sweep | ENEMY | ENEMY | 21 | 0 | 10 | 0 | 20 | Gladiator, Juggernaut, Dragoon | SWORD, TWO_HANDED_SWORD, SPEAR, TWO_HANDED_SPEAR, AXE, TWO_HANDED_AXE, BLUNT, TWO_HANDED_BLUNT, DAGGER, KNUCKLES, WAND, STAFF |  | War Cry | Attacks the enemy's legs, slowing their movements. |
+| 100103050 | Leg Sweep | ENEMY | ENEMY | 0 | 0 | 0 | 0 |  | any | SWORD, TWO_HANDED_SWORD, SPEAR, TWO_HANDED_SPEAR, AXE, TWO_HANDED_AXE, BLUNT, TWO_HANDED_BLUNT, DAGGER, KNUCKLES, BOW, CROSSBOW, WAND, STAFF |  |  | Leg Sweep Dummy |
+| 110101001 | Slice | ENEMY | ENEMY | 15 | 0 | 10 | 0 |  | ALL | SWORD, SPEAR, AXE, BLUNT, DAGGER, WAND |  | Whirling Strike | A combo skill that strikes the enemy with two rapid cuts. |
+| 110101002 | Dice | ENEMY | ENEMY | 15 | 0 | 10 | 0 |  | ALL | SWORD, TWO_HANDED_SWORD, SPEAR, AXE, BLUNT, DAGGER, WAND |  |  | Strikes with three rapid cuts, which can cause your opponent to Bleed. |
+| 110102001 | Sword Mastery | PASSIVE | ALL | 0 | 0 | 0 | 0 |  | ALL | SWORD, TWO_HANDED_SWORD, DAGGER |  | Dice | Increases the damage done when you use a skill with a sword. |
+| 111201001 | Bash | ENEMY | ENEMY | 18 | 0 | 10 | 0 |  | ALL | TWO_HANDED_SWORD, TWO_HANDED_SPEAR, AXE, TWO_HANDED_AXE, TWO_HANDED_BLUNT |  | Misdirection | Hits your opponent hard, inflicting both the Knockback and Stun effects. |
+| 121701001 | Spear Volley | BOLT | ENEMY | 24 | 1 | 30 | 2500 |  | ALL | SPEAR, TWO_HANDED_SPEAR |  | Quadruple Stab | Hurls your spear to attack a distant enemy. |
+| 121702001 | Heave | BREATH | ENEMY | 16 | 1 | 15 | 900 |  | ALL | SPEAR, TWO_HANDED_SPEAR |  | Triple Stab | Thrusts your spear mightily, attacking the enemy in front of you. |
+| 121703001 | Triple Stab | ENEMY | ENEMY | 22 | 0 | 30 | 300 |  | ALL | SPEAR, TWO_HANDED_SPEAR |  | Dismounting Stab | Stabs your opponent rapidly three times. |
+| 121703501 | Quadruple Stab | ENEMY | ENEMY | 43 | 0 | 16 | 300 |  | ALL | SPEAR, TWO_HANDED_SPEAR |  | Horse Assault | You stab at your opponent rapidly four times. If you use it while you're activating Triple Stab, your damage will increase. |
+| 121703511 | Quadruple Stab | ENEMY | ENEMY | 0 | 0 | 0 | 300 |  | any | SPEAR, TWO_HANDED_SPEAR |  |  |  |
+| 121703512 | Quadruple Stab | ENEMY | ENEMY | 0 | 0 | 0 | 300 |  | any | SPEAR, TWO_HANDED_SPEAR |  |  |  |
+| 121704001 | Charge | MYSELF | ALL | 41 | 0 | 20 | 0 | 50 | Dragoon | SPEAR, TWO_HANDED_SPEAR |  |  | Uses Momentum to charge forward. Can only be used while on horseback. |
+| 121704002 | Charge | BREATH | ENEMY | 41 | 0 | 20 | 1500 | 50 | any | SPEAR, TWO_HANDED_SPEAR |  |  |  |
 | 121705001 | Dismounting Stab | MYSELF | ALL | 28 | 0 | 90 | 0 |  | ALL | ALL |  | Spear Volley | While under this effect, there is a chance to inflict the Unseat effect when you strike with a physical attack. |
-| 121707001 | Horse Assault | ENEMY | ENEMY | 13 | 0 | 7 | 0 |  | ALL | LANCE, POLE_ARM |  |  | When your opponent is mounted, your damage will increase and you are granted a chance to Unseat them. |
-| 121707002 | Horse Assault | ENEMY | ENEMY | 0 | 0 | 0 | 0 |  | any | LANCE, POLE_ARM |  |  |  |
-| 121707003 | Horse Assault | ENEMY | ENEMY | 0 | 0 | 0 | 0 |  | any | LANCE, POLE_ARM |  |  |  |
-| 131201001 | Whirling Strike | RADIATION | ENEMY | 28 | 0 | 15 | 0 |  | ALL | 2H_SWORD |  | Parry | Attacks nearby enemies all at once with a spinning blow. |
-| 142001001 | Split | BREATH | ENEMY | 22 | 0 | 20 | 200 |  | ALL | 1H_AXE, 2H_AXE |  | Desperate Strike | A ground-splitting axe attack that strikes the area in front of you. |
-| 142002001 | Clobber | ENEMY | ENEMY | 19 | 0 | 25 | 0 |  | ALL | 1H_AXE, 2H_AXE |  | Riposte | Performs a furious attack in an attempt to land a Critical Hit. |
-| 142003001 | Grand Shock | BREATH | ENEMY | 38 | 0 | 18 | 200 |  | ALL | 1H_AXE, 2H_AXE, 1H_BLUNT, 2H_BLUNT, WAND, STAFF |  | Stun Hammer | Strikes the ground hard, damaging your opponent with a shockwave that interrupts their spellcasting. |
-| 142005001 | Desperate Strike | ENEMY | ENEMY | 36 | 0 | 15 | 0 |  | ALL | 2H_SWORD, 1H_AXE, 2H_AXE, 1H_BLUNT, 2H_BLUNT, WAND, STAFF |  |  | Strikes your opponent with a mighty attack that Stuns them. If your attack fails or is blocked, the effect is reversed. |
-| 142051001 | Roar | MYSELF | ALL | 30 | 0 | 120 | 0 |  | ALL | 1H_AXE, 2H_AXE |  | Split | Sharpens your nerves and increases your chance to land a Critical Hit. |
-| 142501001 | Stun | ENEMY | ENEMY | 15 | 0 | 8 | 0 |  | ALL | 1H_BLUNT, 2H_BLUNT, WAND, STAFF |  | Grand Shock | Stuns your opponent with a powerful strike. |
-| 142501101 | Stun Hammer | RADIATION | ENEMY | 30 | 0 | 15 | 0 |  | ALL | 1H_BLUNT, 2H_BLUNT |  | Shatter Armor | Strikes the ground hard and Stuns your surrounding enemies with the resulting shockwaves. |
-| 142502001 | Shatter Armor | ENEMY | ENEMY | 30 | 0 | 15 | 0 |  | ALL | 1H_BLUNT, 2H_BLUNT, WAND, STAFF |  | Shield Break | Knocks your opponent's armor off with a powerful attack, and interrupts their spellcasting. |
+| 121707001 | Horse Assault | ENEMY | ENEMY | 13 | 0 | 7 | 0 |  | ALL | SPEAR, TWO_HANDED_SPEAR |  |  | When your opponent is mounted, your damage will increase and you are granted a chance to Unseat them. |
+| 121707002 | Horse Assault | ENEMY | ENEMY | 0 | 0 | 0 | 0 |  | any | SPEAR, TWO_HANDED_SPEAR |  |  |  |
+| 121707003 | Horse Assault | ENEMY | ENEMY | 0 | 0 | 0 | 0 |  | any | SPEAR, TWO_HANDED_SPEAR |  |  |  |
+| 131201001 | Whirling Strike | RADIATION | ENEMY | 28 | 0 | 15 | 0 |  | ALL | TWO_HANDED_SWORD |  | Parry | Attacks nearby enemies all at once with a spinning blow. |
+| 142001001 | Split | BREATH | ENEMY | 22 | 0 | 20 | 200 |  | ALL | AXE, TWO_HANDED_AXE |  | Desperate Strike | A ground-splitting axe attack that strikes the area in front of you. |
+| 142002001 | Clobber | ENEMY | ENEMY | 19 | 0 | 25 | 0 |  | ALL | AXE, TWO_HANDED_AXE |  | Riposte | Performs a furious attack in an attempt to land a Critical Hit. |
+| 142003001 | Grand Shock | BREATH | ENEMY | 38 | 0 | 18 | 200 |  | ALL | AXE, TWO_HANDED_AXE, BLUNT, TWO_HANDED_BLUNT, WAND, STAFF |  | Stun Hammer | Strikes the ground hard, damaging your opponent with a shockwave that interrupts their spellcasting. |
+| 142005001 | Desperate Strike | ENEMY | ENEMY | 36 | 0 | 15 | 0 |  | ALL | TWO_HANDED_SWORD, AXE, TWO_HANDED_AXE, BLUNT, TWO_HANDED_BLUNT, WAND, STAFF |  |  | Strikes your opponent with a mighty attack that Stuns them. If your attack fails or is blocked, the effect is reversed. |
+| 142051001 | Roar | MYSELF | ALL | 30 | 0 | 120 | 0 |  | ALL | AXE, TWO_HANDED_AXE |  | Split | Sharpens your nerves and increases your chance to land a Critical Hit. |
+| 142501001 | Stun | ENEMY | ENEMY | 15 | 0 | 8 | 0 |  | ALL | BLUNT, TWO_HANDED_BLUNT, WAND, STAFF |  | Grand Shock | Stuns your opponent with a powerful strike. |
+| 142501101 | Stun Hammer | RADIATION | ENEMY | 30 | 0 | 15 | 0 |  | ALL | BLUNT, TWO_HANDED_BLUNT |  | Shatter Armor | Strikes the ground hard and Stuns your surrounding enemies with the resulting shockwaves. |
+| 142502001 | Shatter Armor | ENEMY | ENEMY | 30 | 0 | 15 | 0 |  | ALL | BLUNT, TWO_HANDED_BLUNT, WAND, STAFF |  | Shield Break | Knocks your opponent's armor off with a powerful attack, and interrupts their spellcasting. |
 | 142502050 | Shatter Armor | ENEMY | ENEMY | 0 | 0 | 0 | 0 |  | any | any |  |  |  |
-| 142503001 | Shield Break | ENEMY | ENEMY | 22 | 0 | 10 | 0 |  | ALL | 1H_AXE, 2H_AXE, 1H_BLUNT, 2H_BLUNT, WAND, STAFF |  | Subvert | When your opponent is Blocking, you will inflict a Critical Hit and prevent them from using a shield. |
-| 142503002 | Shield Break | ENEMY | ENEMY | 0 | 0 | 0 | 0 |  | any | 1H_AXE, 2H_AXE, 1H_BLUNT, 2H_BLUNT, WAND, STAFF |  |  |  |
-| 142504001 | Subvert | ENEMY | ENEMY | 69 | 0.5 | 25 | 0 |  | ALL | BareHAND, 1H_BLUNT, 2H_BLUNT |  |  | Destroys your opponent from within. The higher their Defense, the more damage they take. |
-| 161201001 | Parry | MYSELF | ALL | 9 | 0.5 | 10 | 0 |  | ALL | 2H_SWORD, POLE_ARM, 2H_AXE, 2H_BLUNT, 2H_TRUMP |  | Concentration | Knocks aside your opponent's attack, leaving them wide open. |
-| 161202001 | Riposte | MYSELF | ALL | 12 | 0.5 | 10 | 0 |  | ALL | 2H_SWORD, POLE_ARM, 2H_AXE, 2H_BLUNT, 2H_TRUMP |  | Roar | Knocks aside your opponent's attack, allowing you to follow up with a counter-attack. |
-| 161202050 | Counter | ENEMY | ALL | 0 | 0 | 0 | 0 |  | any | 1H_SWORD, 2H_SWORD, LANCE, POLE_ARM, 1H_AXE, 2H_AXE, 1H_BLUNT, 2H_BLUNT, 1H_TRUMP, 2H_TRUMP, BOW, CROSSBOW, WAND, STAFF | ✓ |  | Counter Dummy |
+| 142503001 | Shield Break | ENEMY | ENEMY | 22 | 0 | 10 | 0 |  | ALL | AXE, TWO_HANDED_AXE, BLUNT, TWO_HANDED_BLUNT, WAND, STAFF |  | Subvert | When your opponent is Blocking, you will inflict a Critical Hit and prevent them from using a shield. |
+| 142503002 | Shield Break | ENEMY | ENEMY | 0 | 0 | 0 | 0 |  | any | AXE, TWO_HANDED_AXE, BLUNT, TWO_HANDED_BLUNT, WAND, STAFF |  |  |  |
+| 142504001 | Subvert | ENEMY | ENEMY | 69 | 0.5 | 25 | 0 |  | ALL | BareHAND, BLUNT, TWO_HANDED_BLUNT |  |  | Destroys your opponent from within. The higher their Defense, the more damage they take. |
+| 161201001 | Parry | MYSELF | ALL | 9 | 0.5 | 10 | 0 |  | ALL | TWO_HANDED_SWORD, TWO_HANDED_SPEAR, TWO_HANDED_AXE, TWO_HANDED_BLUNT, KNUCKLES |  | Concentration | Knocks aside your opponent's attack, leaving them wide open. |
+| 161202001 | Riposte | MYSELF | ALL | 12 | 0.5 | 10 | 0 |  | ALL | TWO_HANDED_SWORD, TWO_HANDED_SPEAR, TWO_HANDED_AXE, TWO_HANDED_BLUNT, KNUCKLES |  | Roar | Knocks aside your opponent's attack, allowing you to follow up with a counter-attack. |
+| 161202050 | Counter | ENEMY | ALL | 0 | 0 | 0 | 0 |  | any | SWORD, TWO_HANDED_SWORD, SPEAR, TWO_HANDED_SPEAR, AXE, TWO_HANDED_AXE, BLUNT, TWO_HANDED_BLUNT, DAGGER, KNUCKLES, BOW, CROSSBOW, WAND, STAFF | ✓ |  | Counter Dummy |
 | 168001001 | Blocking | TOGGLE_RADIATION | ALLY | 5 | 0 | 2 | 0 |  | ALL | any | ✓ | Shield Bash | Quickly raises your shield, greatly reducing the amount of physical damage you take. |
 | 168001002 | Deflect | PASSIVE | ALL | 0 | 0 | 0 | 0 | 45 | General | ALL |  | Bore Brunt | If you are hit with a charge attack while you are Blocking, you will deflect the damage. |
 | 168001003 | Blocking | TOGGLE_RADIATION | ALLY | 5 | 0 | 2 | 0 | 45 | General | any | ✓ | Shield Bash | Quickly raises your shield, greatly reducing the amount of physical damage you take. |
@@ -138,16 +138,16 @@ Generated from the shipped UTF-16 table; regenerate with
 | 230002003 | Treachery | PASSIVE | ALL | 0 | 0 | 0 | 0 | 45 | Disturbance | ALL |  |  | Prevents you from dropping out of the Hiding state after striking an enemy. |
 | 230002004 | Cloaking | TOGGLE | ALL | 45 | 2 | 30 | 0 | 45 | Assassin | ALL |  |  | Enables you to enter a Hiding state that allows movement. |
 | 230002005 | Cloaking | TOGGLE | ALL | 45 | 2 | 30 | 0 | 45 | Disturbance | ALL |  |  | Enables you to enter a Hiding state that allows movement. |
-| 233001001 | Blindside | ENEMY | ENEMY | 15 | 0 | 5 | 200 |  | ALL | 1H_TRUMP, 2H_TRUMP |  | Pierce Armor | Prevents you from dropping out of the Hiding state after striking the enemy. |
-| 233200101 | Counterpunch | MYSELF | ALL | 37 | 0 | 90 | 0 | 50 | Assassin | 2H_TRUMP |  |  | When using martial arts, you will strike with a weaker follow-up attack |
-| 233002001 | Pierce Armor | ENEMY | ENEMY | 15 | 0 | 10 | 200 |  | ALL | 1H_TRUMP, 2H_TRUMP |  | Double-Cross | An attack that aims for openings in your opponent's armor. Especially effective against enemies affected by Trip. |
-| 233003001 | Backstab | ENEMY | ENEMY | 15 | 0 | 30 | 200 |  | ALL | 1H_TRUMP, 2H_TRUMP |  | Dagger Throw | A powerful attack that targets your opponent's back. |
+| 233001001 | Blindside | ENEMY | ENEMY | 15 | 0 | 5 | 200 |  | ALL | DAGGER, KNUCKLES |  | Pierce Armor | Prevents you from dropping out of the Hiding state after striking the enemy. |
+| 233200101 | Counterpunch | MYSELF | ALL | 37 | 0 | 90 | 0 | 50 | Assassin | KNUCKLES |  |  | When using martial arts, you will strike with a weaker follow-up attack |
+| 233002001 | Pierce Armor | ENEMY | ENEMY | 15 | 0 | 10 | 200 |  | ALL | DAGGER, KNUCKLES |  | Double-Cross | An attack that aims for openings in your opponent's armor. Especially effective against enemies affected by Trip. |
+| 233003001 | Backstab | ENEMY | ENEMY | 15 | 0 | 30 | 200 |  | ALL | DAGGER, KNUCKLES |  | Dagger Throw | A powerful attack that targets your opponent's back. |
 | 233005001 | Double-Cross | ENEMY | ENEMY | 58 | 0.2 | 55 | 0 |  | ALL | ALL |  |  | After striking your opponent in the back, all Skill Cooldowns finish, excluding this one. |
-| 233005002 | Double-Cross | MYSELF | ALL | 0 | 0 | 0 | 0 |  | any | 2H_TRUMP |  |  | When using martial arts, you will strike with a weaker follow-up attack |
+| 233005002 | Double-Cross | MYSELF | ALL | 0 | 0 | 0 | 0 |  | any | KNUCKLES |  |  | When using martial arts, you will strike with a weaker follow-up attack |
 | 233006001 | Vendetta | TOGGLE | ALL | 10 | 0 | 10 | 0 |  | ALL | ALL |  |  | When your attacks are dodged, you lose 5% of your health and receive the Raging Soul skill effect. |
 | 233006002 | Vendetta | MYSELF | ALL | 0 | 0 | 10 | 0 |  | any | ALL |  |  |  |
-| 233101001 | Dagger Throw | BOLT | ENEMY | 10 | 0 | 5 | 1500 |  | ALL | 1H_TRUMP |  | Rush | Quickly throws daggers at your opponent. |
-| 233151001 | Rush | MYSELF | ALL | 30 | 0 | 60 | 0 |  | ALL | 1H_TRUMP, 2H_TRUMP |  | Blindside | Each attack will hit twice, but damage taken will be increased. |
+| 233101001 | Dagger Throw | BOLT | ENEMY | 10 | 0 | 5 | 1500 |  | ALL | DAGGER |  | Rush | Quickly throws daggers at your opponent. |
+| 233151001 | Rush | MYSELF | ALL | 30 | 0 | 60 | 0 |  | ALL | DAGGER, KNUCKLES |  | Blindside | Each attack will hit twice, but damage taken will be increased. |
 | 240001001 | Tangled Legs | POINT | ENEMY | 20 | 1.5 | 3 | 200 |  | ALL | ALL |  | Plant Mine | Sets a trap that grabs your opponent's legs and renders them immobile. This consumes one Trap. |
 | 240001050 | Tangled Legs | CIRCLE | ENEMY | 0 | 0 | 0 | 0 |  | any | ALL |  |  | Tangled Legs Dummy |
 | 240002001 | Plant Mine | POINT | ENEMY | 30 | 1.5 | 3 | 200 |  | ALL | ALL |  | Worm Bomb | Sets a trap that explodes when stepped on, inflicting damage to the surrounding area. This consumes one Trap. |
@@ -413,7 +413,7 @@ Generated from the shipped UTF-16 table; regenerate with
 | 500000045 | Cloak for 5th Place | PASSIVE | ALL | 0 | 0 | 0 | 0 |  | any | ALL |  |  |  |
 | 500000046 | Cloak for 1st Place | PASSIVE | ALL | 0 | 0 | 0 | 0 |  | any | ALL |  |  |  |
 | 500000047 | MP Regen | MYSELF | ALL | 0 | 0 | 0 | 0 |  | any | ALL |  |  | Restores the target's MP by invigorating their magical power. |
-| 500000048 | Bleeding | ENEMY | ENEMY | 0 | 0 | 10 | 0 |  | any | 1H_SWORD, 2H_SWORD, LANCE, 1H_AXE, 1H_BLUNT, 1H_TRUMP, WAND |  |  | Inflict Bleed effect on opponent |
+| 500000048 | Bleeding | ENEMY | ENEMY | 0 | 0 | 10 | 0 |  | any | SWORD, TWO_HANDED_SWORD, SPEAR, AXE, BLUNT, DAGGER, WAND |  |  | Inflict Bleed effect on opponent |
 | 500000049 | DEF -5% | ENEMY | ENEMY | 0 | 0 | 0 | 0 |  | any | ALL |  |  | Reduces your target's Defense. |
 | 500000050 | DEF -10% | ENEMY | ENEMY | 0 | 0 | 0 | 0 |  | any | ALL |  |  | Reduces your target's Defense. |
 | 500000051 | DEF -15% | ENEMY | ENEMY | 0 | 0 | 0 | 0 |  | any | ALL |  |  | Reduces your target's Defense. |
@@ -428,13 +428,13 @@ Generated from the shipped UTF-16 table; regenerate with
 | 500050002 | Silence | ENEMY | ENEMY | 0 | 0 | 0 | 4000 |  | any | BOW, CROSSBOW |  |  |  |
 | 500050003 | Recipe Revolution | MYSELF | ALL | 0 | 0 | 0 | 2000 |  | any | ALL |  |  | Crafting Expertise will increase at a faster rate |
 | 520000001 | Summon Mount | MYSELF | ALL | 22 | 3 | 180 | 0 |  | ALL | ALL |  | Horse Guardian | Allows you to summon your horse if you are in an area suitable for riding. |
-| 520001001 | Jousting | PASSIVE | ALL | 0 | 0 | 0 | 0 | 45 | Dragoon, Paladin | BareHAND, 1H_SWORD, 2H_SWORD, LANCE, POLE_ARM, 1H_AXE, 2H_AXE, 1H_BLUNT, 2H_BLUNT, 1H_TRUMP, 2H_TRUMP, WAND, STAFF |  | Summon Mount | Allows you to use certain skills and charge attacks while on horseback. |
-| 520002001 | Horse Archer | PASSIVE | ALL | 0 | 0 | 0 | 0 | 45 | Predator | 1H_SWORD, BOW, CROSSBOW |  | Summon Mount | Allows you to use certain skills and charge attacks while on horseback. |
-| 520003001 | Median Riding | PASSIVE | ALL | 0 | 0 | 0 | 0 | 45 | Calamity | 1H_SWORD, WAND, STAFF |  | Summon Mount | Allows you to use certain skills and charge attacks while on horseback. |
+| 520001001 | Jousting | PASSIVE | ALL | 0 | 0 | 0 | 0 | 45 | Dragoon, Paladin | BareHAND, SWORD, TWO_HANDED_SWORD, SPEAR, TWO_HANDED_SPEAR, AXE, TWO_HANDED_AXE, BLUNT, TWO_HANDED_BLUNT, DAGGER, KNUCKLES, WAND, STAFF |  | Summon Mount | Allows you to use certain skills and charge attacks while on horseback. |
+| 520002001 | Horse Archer | PASSIVE | ALL | 0 | 0 | 0 | 0 | 45 | Predator | SWORD, BOW, CROSSBOW |  | Summon Mount | Allows you to use certain skills and charge attacks while on horseback. |
+| 520003001 | Median Riding | PASSIVE | ALL | 0 | 0 | 0 | 0 | 45 | Calamity | SWORD, WAND, STAFF |  | Summon Mount | Allows you to use certain skills and charge attacks while on horseback. |
 | 520004001 | Horse Guardian | TOGGLE | ALL | 5 | 0 | 0 | 0 |  | ALL | ALL | ✓ | Equine Advantage | While under this effect, you absorb all damage meant to be taken by your horse. Toggle on/off for effect. |
 | 520005001 | Equine Advantage | PASSIVE | ALL | 0 | 0 | 0 | 0 |  | ALL | ALL |  |  | Increases ranged attack distance while on horseback. Also, range is increased when using a one-handed sword on horseback. |
 | 520005002 | Equine Advantage | PASSIVE | ALL | 0 | 0 | 0 | 0 |  | any | ALL |  |  |  |
-| 520005003 | Equine Advantage | PASSIVE | ALL | 0 | 0 | 0 | 0 |  | any | 1H_SWORD |  |  |  |
+| 520005003 | Equine Advantage | PASSIVE | ALL | 0 | 0 | 0 | 0 |  | any | SWORD |  |  |  |
 | 530000000 | Unjo | MYSELF | ALL | 0 | 0 | 0 | 0 |  | any | ALL |  |  | Increases the effectiveness of potions. |
 | 530000001 | Belcana | MYSELF | ALL | 0 | 0 | 0 | 0 |  | any | ALL |  |  | Unifies your spirit and increases your MP Recovery Rate. |
 | 530000002 | Nausyz | MYSELF | ALL | 0 | 0 | 3 | 0 |  | any | ALL |  |  | Enables you to camouflage your appearance where you stand. |
@@ -564,20 +564,20 @@ Generated from the shipped UTF-16 table; regenerate with
 | 700000002 | Woodlands | TOGGLE | ALL | 0 | 0 | 0 | 0 |  | ALL | ALL |  |  | Reduces Movement Speed when mounted on a horse by 50% |
 | 700000011 | Siege-Weapon Construction Zone | RADIATION | ALL | 0 | 0 | 0 | 0 |  | ALL | ALL |  |  | You are able to use your siege-weapon construction skills here. |
 | 700000012 | Siege-Weapon Construction Zone | TOGGLE | ALL | 0 | 0 | 0 | 0 |  | ALL | ALL |  |  | You are able to use your siege-weapon construction skills here. |
-| 900010001 | Fighting Spirit | PASSIVE | ALL | 0 | 0 | 0 | 0 |  | any | 1H_SWORD, LANCE, 1H_AXE, 1H_BLUNT, 1H_TRUMP, WAND |  |  | Your matchless dexterity and unparalleled fighting spirit give you a mastery of one-handed weapons. |
+| 900010001 | Fighting Spirit | PASSIVE | ALL | 0 | 0 | 0 | 0 |  | any | SWORD, SPEAR, AXE, BLUNT, DAGGER, WAND |  |  | Your matchless dexterity and unparalleled fighting spirit give you a mastery of one-handed weapons. |
 | 900010002 | Adaptability | PASSIVE | ALL | 0 | 0 | 0 | 0 |  | any | ALL |  |  | Your superb adaptability lessens the time you suffer Ailments. |
 | 900010003 | Pharmaceutics | PASSIVE | ALL | 0 | 0 | 0 | 0 |  | any | ALL |  |  | Your vast knowledge of herbs and alchemical formulae allows you to increase the effectiveness of your elixirs. |
 | 900020001 | Nature's Harmony | PASSIVE | ALL | 0 | 0 | 0 | 0 |  | any | ALL |  |  | Your MP costs are reduced thanks to your abundant knowledge and skilled use of magic. |
 | 900020002 | Eagle Eye | PASSIVE | ALL | 0 | 0 | 0 | 0 |  | any | BOW, CROSSBOW |  |  | Your incomparable eyesight and skill with the bow allows you to attack from further away. |
 | 900020003 | Steadfastness | PASSIVE | ALL | 0 | 0 | 0 | 0 |  | any | ALL |  |  | Your calm elven heart gives you a strong resistance against Charm spells. |
 | 900030001 | Stronghearted | PASSIVE | ALL | 0 | 0 | 0 | 0 |  | any | ALL |  |  | Your inborn dwarven determination allows you to stand strong in the face of adversity, letting you survive a killing blow. |
-| 900030002 | Dwarf Spirit | PASSIVE | ALL | 0 | 0 | 0 | 0 |  | any | 1H_AXE, 2H_AXE, 1H_BLUNT, 2H_BLUNT |  |  | Your dwarven strength makes you an expert at using axes and blunt weapons. |
+| 900030002 | Dwarf Spirit | PASSIVE | ALL | 0 | 0 | 0 | 0 |  | any | AXE, TWO_HANDED_AXE, BLUNT, TWO_HANDED_BLUNT |  |  | Your dwarven strength makes you an expert at using axes and blunt weapons. |
 | 900030003 | Filial Piety | PASSIVE | ALL | 0 | 0 | 0 | 0 |  | any | ALL |  |  | Your strong sense of loyalty allows you to sacrifice yourself for an ally. |
 | 900040001 | Acute Senses | PASSIVE | ALL | 0 | 0 | 0 | 0 |  | any | ALL |  |  | Your acute senses give you the ability to critically hit like a skilled myrine hunter. |
 | 900040002 | Calmness | PASSIVE | ALL | 0 | 0 | 0 | 0 |  | any | ALL |  |  | Your calmness gives you the ability to recover MP by converting damage into spiritual power. |
 | 900040003 | Sharpness | PASSIVE | ALL | 0 | 0 | 0 | 0 |  | any | ALL |  |  | Your sharp senses give you the ability to evade more easily. |
 | 900050001 | Stone Skin | PASSIVE | ALL | 0 | 0 | 0 | 0 |  | any | ALL |  |  | Your thick enkidu skin offers a rock-hard layer of protection. |
-| 900050002 | Strong Arm | PASSIVE | ALL | 0 | 0 | 0 | 0 |  | any | BareHAND, 2H_SWORD, POLE_ARM, 2H_AXE, 2H_BLUNT, 2H_TRUMP, BOW, CROSSBOW, STAFF |  |  | Your strong arms give you the ability to utilize strength when fighting bare-handed or with heavy weapons. |
+| 900050002 | Strong Arm | PASSIVE | ALL | 0 | 0 | 0 | 0 |  | any | BareHAND, TWO_HANDED_SWORD, TWO_HANDED_SPEAR, TWO_HANDED_AXE, TWO_HANDED_BLUNT, KNUCKLES, BOW, CROSSBOW, STAFF |  |  | Your strong arms give you the ability to utilize strength when fighting bare-handed or with heavy weapons. |
 | 900050003 | Lapin Support | PASSIVE | ALL | 0 | 0 | 0 | 0 |  | any | ALL |  |  | Lapins receive less damage from physical attacks when they're in your party. |
 | 900060001 | Magic Resistance | PASSIVE | ALL | 0 | 0 | 0 | 0 |  | any | ALL |  |  | Your proficiency in magic gives you the special ability to resist magical attacks. |
 | 900060002 | Inner Light | PASSIVE | ALL | 0 | 0 | 0 | 0 |  | any | ALL |  |  | Your adeptness with magic gives you the ability to recover your MP at a faster rate. |

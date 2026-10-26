@@ -1,0 +1,65 @@
+{
+ "format": "pandora-map-json/1",
+ "map_id": 2005000,
+ "note": "Hand-written zone for the whole-field terrain bake map_F05.glb. F05.vra has no settings/map.csv row (only F05_01..F05_05 are registered), so id 2005000 is provisional - replace it if an official id or a vra2json conversion for F05 shows up.",
+ "source": {
+  "chip": "F05/F05.vra",
+  "obj": "",
+  "fx": "",
+  "occluder": "",
+  "sky": "",
+  "collision": "",
+  "far_view": "",
+  "firework": "",
+  "terrain_glb": "map_F05.glb"
+ },
+ "name": "F05",
+ "ground": {
+  "color": {
+   "r": 0.525,
+   "g": 0.6,
+   "b": 0.675
+  },
+  "size": 2120,
+  "heightVariation": 0
+ },
+ "fog": {
+  "color": {
+   "r": 0.7,
+   "g": 0.8,
+   "b": 0.9
+  },
+  "density": 0.0008
+ },
+ "playerSpawn": {
+  "x": 0,
+  "y": 0,
+  "z": 6
+ },
+ "teleporters": [
+  {
+   "id": "tp_to_2004003",
+   "position": {
+    "x": 0,
+    "y": 0,
+    "z": -739
+   },
+   "targetZone": "2004003",
+   "targetSpawn": "tp_from_2005000",
+   "radius": 3,
+   "label": "To F04_03"
+  },
+  {
+   "id": "tp_to_2006001",
+   "position": {
+    "x": 846,
+    "y": 0,
+    "z": 6
+   },
+   "targetZone": "2006001",
+   "targetSpawn": "tp_from_2005000",
+   "radius": 3,
+   "label": "To F06_01"
+  }
+ ]
+}

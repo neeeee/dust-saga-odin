@@ -2,8 +2,10 @@ package systems
 
 import "core:encoding/json"
 import "core:fmt"
+import "core:math"
 import "core:os"
 import "core:strings"
+import rlgl "vendor:raylib/rlgl"
 import rl "vendor:raylib"
 
 // Loads a zone's map JSON (src/client/assets/maps/<zoneId>.json) into a
@@ -71,6 +73,21 @@ load_zone_map :: proc(zone_id: string) -> ^Zone_Definition {
 
 	z.player_spawn = vec3_from(root, "playerSpawn")
 
+	z.terrain = load_terrain_model(get_object(root, "source"))
+	if z.terrain != nil {
+		m := &z.terrain.model
+		z.terrain_spheres = make([][4]f32, m.meshCount)
+		for i in 0..<int(m.meshCount) {
+			box := rl.GetMeshBoundingBox(m.meshes[i])
+			center := (box.min + box.max) * 0.5
+			radius := 0.5 * math.sqrt(
+				(box.max.x - box.min.x) * (box.max.x - box.min.x) +
+				(box.max.y - box.min.y) * (box.max.y - box.min.y) +
+				(box.max.z - box.min.z) * (box.max.z - box.min.z))
+			z.terrain_spheres[i] = {center.x, center.y, center.z, radius}
+		}
+	}
+
 	parse_objects(z, get_array(root, "objects"))
 	parse_structures(z, get_array(root, "structures"))
 	parse_teleporters(z, get_array(root, "teleporters"))
@@ -85,6 +102,35 @@ load_zone_map :: proc(zone_id: string) -> ^Zone_Definition {
 rgb_from :: proc(o: JSON_Object) -> RGB_F {
 	if is_null(json.Value(o)) do return {0.5, 0.5, 0.5}
 	return {get_f32(o, "r", 0.5), get_f32(o, "g", 0.5), get_f32(o, "b", 0.5)}
+}
+
+// Pandora map JSONs point at their whole-area terrain bake via
+// source.terrain_glb ("pandora_export_out/map/map_D01_01.glb"); the exported
+// file itself is copied next to the JSONs as assets/maps/<basename>. Returns a
+// cache-acquired model (caller releases via zone_destroy) or nil. Zones
+// without the key — the older procedural maps — just get the fallback plane.
+load_terrain_model :: proc(source: JSON_Object) -> ^Model_Entry {
+	if is_null(json.Value(source)) do return nil
+	glb := get_string(source, "terrain_glb", "")
+	if len(glb) == 0 do return nil
+
+	basename := glb
+	if i := strings.last_index_byte(basename, '/'); i >= 0 do basename = basename[i + 1:]
+	if i := strings.last_index_byte(basename, '\\'); i >= 0 do basename = basename[i + 1:]
+	if !strings.has_suffix(basename, ".glb") do return nil
+
+	path := fmt.tprintf("%s/%s", MAPS_DIR, basename)
+	entry := assets_model_acquire(path)
+	if entry != nil {
+		// glTF MASK materials (foliage/grass/road decals) need a fragment
+		// discard the default shader lacks; swapping the shader on all
+		// materials is safe — opaque textures never fall under the cutoff.
+		sh := terrain_shader_get()
+		for i in 0..<int(entry.model.materialCount) {
+			entry.model.materials[i].shader = sh
+		}
+	}
+	return entry
 }
 
 parse_objects :: proc(z: ^Zone_Definition, arr: json.Array) {
@@ -170,9 +216,21 @@ parse_lights :: proc(z: ^Zone_Definition, arr: JSON_Array) {
 render_zone :: proc(z: ^Zone_Definition) {
 	if z == nil do return
 
-	// Ground plane.
+	// Ground plane, for the procedural zones and the Unknown-Zone fallback.
+	// Not drawn under a terrain bake: the bakes reach tens of meters below
+	// y=0 (beaches, trenches), so a plane there slices straight through the
+	// model. Field maps' inter-tile gaps show the clear color instead.
 	gnd_color := to_color(z.ground.color)
-	rl.DrawPlane({0, 0, 0}, {z.ground.size, z.ground.size}, gnd_color)
+	if z.terrain == nil {
+		rl.DrawPlane({0, 0, 0}, {z.ground.size, z.ground.size}, gnd_color)
+	}
+
+	// Whole-area terrain bake, if this zone has one. Drawn mesh-by-mesh with
+	// frustum culling — these models flatten to thousands of meshes and the
+	// plain DrawModel would issue every one of them every frame.
+	if z.terrain != nil {
+		draw_terrain_culled(z.terrain.model, z.terrain_spheres)
+	}
 
 	// Structures (platforms / fences / houses) as boxes.
 	for s in z.structures {
@@ -203,6 +261,62 @@ render_zone :: proc(z: ^Zone_Definition) {
 		top := rl.Vector3{t.position.x, 0.08, t.position.z}
 		rl.DrawCylinderEx(base, top, t.radius, t.radius, 16, rl.Color{120, 200, 255, 120})
 		rl.DrawCylinderWiresEx(base, top, t.radius, t.radius, 16, rl.Color{180, 220, 255, 220})
+	}
+}
+
+// Frustum planes as (nx, ny, nz, d), normalized. Extracted from the active
+// proj*view matrix (Gribb–Hartmann) — must be called inside BeginMode3D,
+// where rlgl's internal matrices are the camera's. Raylib stores m<col*4+row>,
+// so mathematical row k is m[k], m[4+k], m[8+k], m[12+k].
+frustum_planes :: proc() -> [6][4]f32 {
+	vp := rlgl.GetMatrixProjection() * rlgl.GetMatrixModelview()
+	r0 := [4]f32{vp[0, 0], vp[0, 1], vp[0, 2], vp[0, 3]}
+	r1 := [4]f32{vp[1, 0], vp[1, 1], vp[1, 2], vp[1, 3]}
+	r2 := [4]f32{vp[2, 0], vp[2, 1], vp[2, 2], vp[2, 3]}
+	r3 := [4]f32{vp[3, 0], vp[3, 1], vp[3, 2], vp[3, 3]}
+	return {
+		normalize4(add4(r3, r0)), // left
+		normalize4(sub4(r3, r0)), // right
+		normalize4(add4(r3, r1)), // bottom
+		normalize4(sub4(r3, r1)), // top
+		normalize4(add4(r3, r2)), // near
+		normalize4(sub4(r3, r2)), // far
+	}
+}
+
+add4 :: proc "contextless" (a, b: [4]f32) -> [4]f32 {
+	return {a[0] + b[0], a[1] + b[1], a[2] + b[2], a[3] + b[3]}
+}
+
+sub4 :: proc "contextless" (a, b: [4]f32) -> [4]f32 {
+	return {a[0] - b[0], a[1] - b[1], a[2] - b[2], a[3] - b[3]}
+}
+
+normalize4 :: proc "contextless" (p: [4]f32) -> [4]f32 {
+	l := math.sqrt(p[0] * p[0] + p[1] * p[1] + p[2] * p[2])
+	if l <= 0 do return p
+	return {p[0] / l, p[1] / l, p[2] / l, p[3] / l}
+}
+
+// Draw each terrain mesh whose bounding sphere crosses the camera frustum.
+// Meshes already sit in world space (the glTF loader bakes node transforms).
+draw_terrain_culled :: proc(model: rl.Model, spheres: [][4]f32) {
+	if model.meshCount == 0 do return
+	if len(spheres) < int(model.meshCount) do return
+
+	planes := frustum_planes()
+	ident := rl.Matrix(1)
+	for i in 0..<int(model.meshCount) {
+		s := spheres[i]
+		visible := true
+		for p in planes {
+			if p[0] * s[0] + p[1] * s[1] + p[2] * s[2] + p[3] < -s[3] {
+				visible = false
+				break
+			}
+		}
+		if !visible do continue
+		rl.DrawMesh(model.meshes[i], model.materials[model.meshMaterial[i]], ident)
 	}
 }
 
