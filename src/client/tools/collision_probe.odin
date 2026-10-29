@@ -57,12 +57,13 @@ main :: proc() {
 	hf := zone.heightfield
 
 	for p in points {
-		h_here, _ := sys.terrain_height_at(hf, p.x, p.z)
-		// movement-rule ground: mesh surface agreeing with the field
-		prop_ok := sys.terrain_band_kept_at(hf, p.x, p.z)
-		h_mesh, mok := sys.terrain_mesh_ground_at(hf, p.x, p.z, 1e30, -1e30, prop_ok, h_here)
+		h_here, h_here_ok := sys.terrain_height_at(hf, p.x, p.z)
+		// movement-rule ground: anything at/below the field + a step
+		h_mesh, mok := sys.terrain_mesh_ground_at(hf, p.x, p.z, 1e30, -1e30, h_here_ok, h_here)
 		// terrain-class-only surface: what the GROUND geometry says here
-		h_terr, tok := sys.terrain_mesh_ground_at(hf, p.x, p.z, 1e30, -1e30, false, -1e30)
+		// (field gate "on" with an impossible reference rejects every
+		// object-class triangle)
+		h_terr, tok := sys.terrain_mesh_ground_at(hf, p.x, p.z, 1e30, -1e30, true, -1e30)
 		h_eff := h_here
 		if mok do h_eff = h_mesh
 		h_ref, _ := sys.terrain_height_at(hf, p.x + p.ref_dx, p.z + p.ref_dz)
@@ -326,11 +327,11 @@ main :: proc() {
 				if !hf.walk[i] do continue
 				x := hf.origin_x + (f32(c) + 0.5) * hf.cell
 				z := hf.origin_z + (f32(r) + 0.5) * hf.cell
-				_, m_any := sys.terrain_mesh_ground_at(hf, x, z, 1e30, -1e30, true, -1e30)
+				_, m_any := sys.terrain_mesh_ground_at(hf, x, z, 1e30, -1e30, false, -1e30)
 				if !m_any do continue // no geometry here at all
-				_, m_f := sys.terrain_mesh_ground_at(hf, x, z, 1e30, 1e30, true, 1e30)
+				_, m_f := sys.terrain_mesh_ground_at(hf, x, z, 1e30, 1e30, true, hf.stand[i])
 				if m_f do continue // grounds exactly on the mesh: fine
-				mh, m_b := sys.terrain_mesh_ground_at(hf, x, z, hf.stand[i] + 0.5, -1e30, true, -1e30)
+				mh, m_b := sys.terrain_mesh_ground_at(hf, x, z, hf.stand[i] + 0.5, -1e30, true, hf.stand[i])
 				d := f32(9)
 				if m_b do d = hf.stand[i] - mh
 				phantoms += 1

@@ -32,14 +32,13 @@ autoplay_log_tick :: proc(dt: f32) {
 	if hf != nil {
 		field_y, field_ok = sys.terrain_height_at(hf, p.position.x, p.position.z)
 	}
-	prop_ok := hf != nil && sys.terrain_band_kept_at(hf, p.position.x, p.position.z)
 	mesh_y, mesh_ok := f32(0), false
 	if hf != nil {
 		mesh_y, mesh_ok = sys.terrain_mesh_ground_at(
 			hf,
 			p.position.x, p.position.z,
 			p.position.y + sys.MAX_STEP_UP, p.position.y,
-			prop_ok, field_y,
+			field_ok, field_y,
 		)
 	}
 	delta := f32(0)

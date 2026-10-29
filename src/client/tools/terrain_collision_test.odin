@@ -28,6 +28,7 @@ cases := [?]Zone_Case{
 	{"1003001", 0, 12},   // T03 town — server playerSpawn (0, 12)
 	{"3001101", 0, 0},    // D01_01_a variant — its own _hit proxies
 	{"2002003", 0, 0},    // F02_03 field with hit proxies
+	{"3001006", 191, -205}, // D01_06 — reported stuck point (191.1, -204.9)
 }
 
 main :: proc() {

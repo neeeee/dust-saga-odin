@@ -1563,12 +1563,14 @@ _hf_bilinear_at :: proc(hf: ^Terrain_Heightfield, field: []f32, x, z: f32) -> (f
 // higher than `y_max`. Terrain-class triangles (slopes, stairs chips,
 // plazas — the first mesh_ground_count ids) always ground the actor, so
 // walking down slopes or across pavement is exact. Object-class triangles
-// (courses, branches, counters, rails) ground only when `prop_ok` is set —
-// the caller passes whether the heightfield kept a band surface at this
-// spot — and within MAX_STEP_UP of `stand_ref`: real stairs and pavements
-// stay exact, tree branches and wall courses can never ladder upward.
-// Surfaces steeper than ~60° only count as drops, never upward snaps.
-terrain_mesh_ground_at :: proc(hf: ^Terrain_Heightfield, x, z, y_max, y_cur: f32, prop_ok: bool, stand_ref: f32) -> (f32, bool) {
+// (the visual bake: courses, branches, counters, and — where the ground
+// GLB has seams — the rendered floor itself) ground on any surface at or
+// below the walk field + a step, and `field_ok=false` (probe-style
+// callers) skips that field comparison entirely. Surfaces ABOVE the field
+// are what this gate refuses: canopies, wall trim and counter tops must
+// never ladder the actor upward. Surfaces steeper than ~60° only count as
+// drops, never upward snaps.
+terrain_mesh_ground_at :: proc(hf: ^Terrain_Heightfield, x, z, y_max, y_cur: f32, field_ok: bool, stand_ref: f32) -> (f32, bool) {
 	if hf == nil || hf.mesh_coords == nil do return 0, false
 	c := int(math.floor_f32((x - hf.origin_x) / hf.cell))
 	r := int(math.floor_f32((z - hf.origin_z) / hf.cell))
@@ -1580,13 +1582,19 @@ terrain_mesh_ground_at :: proc(hf: ^Terrain_Heightfield, x, z, y_max, y_cur: f32
 			if cc < 0 || cc >= hf.cols || rr < 0 || rr >= hf.rows do continue
 			k := rr * hf.cols + cc
 			for p in hf.mesh_ptr[k] ..< hf.mesh_ptr[k + 1] {
-				gid := int(hf.mesh_tris[p]) * 9
+				tid := int(hf.mesh_tris[p])
+				gid := tid * 9
 				co := hf.mesh_coords
 				ax, ay, az := co[gid], co[gid + 1], co[gid + 2]
 				bx, by, bz := co[gid + 3], co[gid + 4], co[gid + 5]
 				cx2, cy2, cz2 := co[gid + 6], co[gid + 7], co[gid + 8]
 				// XZ barycentric containment (exact for vertical rays).
-				denom := (az - cz2) * (bx - cx2) + (cx2 - bx) * (bz - cz2)
+				// The denominator pairs the SAME edges as the numerators
+				// below (and as _hf_raster_coords) — pairing different
+				// edges zeroes out on any triangle with two vertices at
+				// equal height (every flat floor quad) and returns
+				// garbage coverage/heights on near-flat ones.
+				denom := (bz - cz2) * (ax - cx2) + (cx2 - bx) * (az - cz2)
 				if abs(denom) < 1e-9 do continue
 				l1 := ((bz - cz2) * (x - cx2) + (cx2 - bx) * (z - cz2)) / denom
 				l2 := ((cz2 - az) * (x - cx2) + (ax - cx2) * (z - cz2)) / denom
@@ -1594,11 +1602,15 @@ terrain_mesh_ground_at :: proc(hf: ^Terrain_Heightfield, x, z, y_max, y_cur: f32
 				if l1 < 0 || l2 < 0 || l3 < 0 do continue
 				h := l1 * ay + l2 * by + l3 * cy2
 				if h > y_max do continue
-				if gid >= hf.mesh_ground_count {
-					// object-class: only on band-kept ground, within a step
-					// of the field's surface there
-					if !prop_ok do continue
-					if abs(h - stand_ref) > MAX_STEP_UP do continue
+				if tid >= hf.mesh_ground_count {
+					// object-class (visual bake): surfaces at/below the
+					// walk field + a step are ground — the rendered floor
+					// must catch the actor even where the field's value is
+					// phantom-high or the cell is a field hole (ground-GLB
+					// seam). Only surfaces ABOVE the field are refused, so
+					// canopies and wall courses can never ladder upward.
+					// field_ok=false (probe callers) skips the comparison.
+					if field_ok && h > stand_ref + MAX_STEP_UP do continue
 				} else if h > y_cur {
 					// terrain-class upward snap: the surface must be
 					// walkable, not a cliff/wall face (normal within ~60°
@@ -1706,21 +1718,21 @@ terrain_walkable :: proc(hf: ^Terrain_Heightfield, x, z: f32) -> bool {
 }
 
 // Best-effort walk surface under (x, z): the exact mesh sample first
-// (terrain-class triangles always ground; object-class only on band-kept
-// surfaces within a step of the stand field), the stand field as fallback
-// clamped to the highest local visual surface. This is the one probe both
-// the movement resolver and the entity pin use.
+// (terrain-class triangles always ground; object-class ground on anything
+// at/below the field + a step — the rendered floor under a phantom field
+// value or a ground-GLB seam must catch the actor), the stand field as
+// fallback clamped to the highest local visual surface. This is the one
+// probe both the movement resolver and the entity pin use.
 _terrain_ground_at :: proc(hf: ^Terrain_Heightfield, x, z, y_top, y_cur: f32) -> (f32, bool) {
-	prop_ok := terrain_band_kept_at(hf, x, z)
-	stand_ref, _ := terrain_height_at(hf, x, z)
-	if hg, ok := terrain_mesh_ground_at(hf, x, z, y_top, y_cur, prop_ok, stand_ref); ok {
+	stand_ref, field_ok := terrain_height_at(hf, x, z)
+	if hg, ok := terrain_mesh_ground_at(hf, x, z, y_top, y_cur, field_ok, stand_ref); ok {
 		return hg, true
 	}
 	if h, ok := terrain_height_at(hf, x, z); ok {
 		// Conservative rasterization can paint phantom heights at cells no
 		// triangle truly covers (border slopes): clamp the field value to
 		// the highest local visual surface.
-		if mt, mok := terrain_mesh_ground_at(hf, x, z, 1e30, -1e30, true, -1e30); mok {
+		if mt, mok := terrain_mesh_ground_at(hf, x, z, 1e30, -1e30, false, -1e30); mok {
 			if h > mt do h = mt
 		}
 		// The field carries 60-70° slope faces the mesh's upward-snap gate
@@ -1733,20 +1745,23 @@ _terrain_ground_at :: proc(hf: ^Terrain_Heightfield, x, z, y_top, y_cur: f32) ->
 	return 0, false
 }
 
-// Can an actor at height y move to (x, z)? Standability (holes, map edge)
-// plus the slope rule: while grounded the walk surface there must not rise
-// more than MAX_STEP_UP above the feet; while airborne it must not rise
-// above the actor at all — drifting forward into a hillside mid-fall is
-// what buried actors inside steep slopes, where no landing surface ever
-// exists below them.
-_terrain_step_ok :: proc(hf: ^Terrain_Heightfield, x, z, y: f32, grounded: bool) -> bool {
+// Can an actor move to (x, z)? Standability (holes, map edge) plus the
+// slope rule: the walk surface there must not rise more than MAX_STEP_UP
+// above `base` — the actor's feet while airborne (drifting forward into a
+// hillside mid-fall is what buried actors inside steep slopes), or the
+// walk surface under them while grounded. Measuring from the CURRENT
+// surface rather than the feet keeps the gate honest where the exact mesh
+// and the conservatively-rasterized field diverge: an actor grounded in a
+// mesh pocket below the field must still be able to walk out, and a
+// field-carried steep face still blocks because the base rises with it.
+_terrain_step_ok :: proc(hf: ^Terrain_Heightfield, x, z, base: f32, grounded: bool) -> bool {
 	if !terrain_standable(hf, x, z) do return false
-	cap := y + MAX_STEP_UP
-	if !grounded do cap = y + 0.05
+	cap := base + MAX_STEP_UP
+	if !grounded do cap = base + 0.05
 	// Uncapped surface estimate: exact mesh up to the cap, merged with the
 	// stand field (which carries 60-70° slope faces the mesh's upward-snap
 	// steepness gate rejects on purpose).
-	g_mesh, ok_mesh := _terrain_ground_at(hf, x, z, cap, y)
+	g_mesh, ok_mesh := _terrain_ground_at(hf, x, z, cap, base)
 	g := g_mesh
 	ok := ok_mesh
 	if g_field, ok_field := terrain_height_at(hf, x, z); ok_field {
@@ -1787,16 +1802,22 @@ terrain_move :: proc(
 
 	// ---- horizontal ----
 	// Holes and (while grounded) too-steep surfaces gate movement; walls
-	// come from the geometric pass below.
+	// come from the geometric pass below. The gate measures rises against
+	// `base`: the feet, lifted to the local walk surface when the actor
+	// stands below it (exact-mesh pockets under the rasterized field).
+	base := y
+	if vert.grounded {
+		if f, ok := terrain_height_at(hf, px, pz); ok && f > base do base = f
+	}
 	if !terrain_standable(hf, px, pz) {
 		// Spawned / pushed into a hole: accept movement so the actor can
 		// walk back onto solid ground.
 		px, pz = nx, nz
-	} else if _terrain_step_ok(hf, nx, nz, y, vert.grounded) {
+	} else if _terrain_step_ok(hf, nx, nz, base, vert.grounded) {
 		px, pz = nx, nz
-	} else if dx != 0 && _terrain_step_ok(hf, nx, pz, y, vert.grounded) {
+	} else if dx != 0 && _terrain_step_ok(hf, nx, pz, base, vert.grounded) {
 		px = nx // slide along Z-facing faces
-	} else if dz != 0 && _terrain_step_ok(hf, px, nz, y, vert.grounded) {
+	} else if dz != 0 && _terrain_step_ok(hf, px, nz, base, vert.grounded) {
 		pz = nz // slide along X-facing faces
 	}
 

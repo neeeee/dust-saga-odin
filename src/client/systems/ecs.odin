@@ -505,14 +505,13 @@ update :: proc(s: ^Scene, dt: f32, current_time: f64, player_pos: [3]f32, curren
 		// snap down freely, rise at most MAX_STEP_UP per frame.
 		if zone != nil && zone.heightfield != nil {
 			tp := &s.transforms[i].position
-			prop_ok := terrain_band_kept_at(zone.heightfield, tp.x, tp.z)
-			stand_ref, _ := terrain_height_at(zone.heightfield, tp.x, tp.z)
-			if h, ok := terrain_mesh_ground_at(zone.heightfield, tp.x, tp.z, tp.y + MAX_STEP_UP, tp.y, prop_ok, stand_ref); ok {
+			stand_ref, field_ok := terrain_height_at(zone.heightfield, tp.x, tp.z)
+			if h, ok := terrain_mesh_ground_at(zone.heightfield, tp.x, tp.z, tp.y + MAX_STEP_UP, tp.y, field_ok, stand_ref); ok {
 				tp.y = h
 			} else if h, ok := terrain_height_at(zone.heightfield, tp.x, tp.z); ok {
 				if h <= tp.y + MAX_STEP_UP {
 					tp.y = h
-					if mt, mok2 := terrain_mesh_ground_at(zone.heightfield, tp.x, tp.z, 1e30, -1e30, true, -1e30); mok2 {
+					if mt, mok2 := terrain_mesh_ground_at(zone.heightfield, tp.x, tp.z, 1e30, -1e30, false, -1e30); mok2 {
 						if tp.y > mt do tp.y = mt
 					}
 				}
