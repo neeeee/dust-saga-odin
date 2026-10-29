@@ -317,7 +317,7 @@ update :: proc(dt: f32) -> (requested: sys.App_State, has_request: bool) {
 	}
 
 	// 3. Input.
-	inp := sys.poll_input(state.chat_focused, state.player, dt)
+	inp := sys.poll_input(state.chat_focused, state.player, state.ctx.zone, dt)
 	handle_chat_input(inp)
 
 	// 2b. ESC chain: close menus → unfocus chat → untarget → toggle system menu.
@@ -337,6 +337,7 @@ update :: proc(dt: f32) -> (requested: sys.App_State, has_request: bool) {
 	//    ~50ms regardless of input (GameClient.ts sendMovement block).
 	apply_movement(inp, dt)
 	send_movement_tick()
+	if sys.autoplay.enabled do autoplay_log_tick(dt)
 
 	// 4. Combat.
 	apply_combat(inp)
@@ -363,7 +364,7 @@ update :: proc(dt: f32) -> (requested: sys.App_State, has_request: bool) {
 	// 9. Update entity scene (culling + interpolation + per-entity monster
 	// poses) and cooldowns.
 	ppos := [3]f32{state.player.position.x, state.player.position.y, state.player.position.z}
-	sys.update(state.scene, dt, f64(rl.GetTime()), ppos, int(rl.GetFPS()))
+	sys.update(state.scene, dt, f64(rl.GetTime()), ppos, int(rl.GetFPS()), state.ctx.zone)
 	update_local_avatar(dt)
 	tick_cooldowns(dt)
 	tick_notifications(dt)
@@ -441,7 +442,7 @@ update_timers :: proc(dt: f32) {
 	tick_floating(dt)
 	tick_aoe_zones()
 	ppos := [3]f32{state.player.position.x, state.player.position.y, state.player.position.z}
-	sys.update(state.scene, dt, f64(rl.GetTime()), ppos, int(rl.GetFPS()))
+	sys.update(state.scene, dt, f64(rl.GetTime()), ppos, int(rl.GetFPS()), state.ctx.zone)
 	update_local_avatar(dt)
 	sys.update_camera(dt, state.player, cursor_over_ui())
 }
@@ -476,8 +477,16 @@ follow_click_path :: proc(dt: f32) {
 		if state.player.mounted do speed *= sys.MOUNT_SPEED_MULTIPLIER
 		speed *= sys.debug_move_mult
 		if speed > dist do speed = dist
-		state.player.position.x += (dx / dist) * speed
-		state.player.position.z += (dz / dist) * speed
+		// Terrain-aware: blocked cells slide, y tracks the surface with
+		// gravity falls off ledges.
+		state.player.position, state.player.vert = sys.terrain_move(
+			state.ctx.zone,
+			state.player.position,
+			(dx / dist) * speed,
+			(dz / dist) * speed,
+			state.player.vert,
+			dt,
+		)
 		// 180° avatar render offset — stored yaw is reverse-of-movement.
 		state.player.yaw = math.atan2(-dx, -dz)
 	}
@@ -586,10 +595,17 @@ update_ground_target :: proc(inp: sys.Input_State) {
 
 	if inp.mouse_left_pressed && !cursor_over_ui() {
 		ray := rl.GetScreenToWorldRay(rl.GetMousePosition(), state.player.camera)
-		hit, point := sys.ray_ground_hit(ray, 0.0)
-		if hit && state.ctx.zone != nil {
-			half := state.ctx.zone.ground.size / 2.0
-			if point.x >= -half && point.x <= half && point.z >= -half && point.z <= half {
+		// Terrain surface on GLB zones, y=0 plane on the legacy flat maps.
+		hit, point := sys.terrain_ray_hit(state.ctx.zone, ray)
+		if hit {
+			// Procedural zones bound clicks to the ground plane's extent;
+			// terrain zones are bounded by the heightfield itself.
+			in_bounds := true
+			if state.ctx.zone.terrain == nil {
+				half := state.ctx.zone.ground.size / 2.0
+				in_bounds = point.x >= -half && point.x <= half && point.z >= -half && point.z <= half
+			}
+			if in_bounds {
 				set_weapon_drawn(true)
 				name := string(gt.skill_name[:gt.name_len])
 				sys.send_skill_use_ground(state.net, name, point.x, point.y, point.z)

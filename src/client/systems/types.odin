@@ -361,6 +361,9 @@ Local_Player :: struct {
 	// transform (client-predicted; reconciled by server position updates)
 	position:              rl.Vector3,
 	yaw:                   f32, // facing angle (radians), atan2(dir.x, dir.z)
+	// vertical collision state (gravity fall vs surface tracking) carried
+	// across terrain_move calls — see Vertical_State in terrain_collision.
+	vert:                  Vertical_State,
 	camera:                rl.Camera3D,
 	// progression
 	stats:                 Player_Stats,

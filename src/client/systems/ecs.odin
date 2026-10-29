@@ -477,7 +477,9 @@ draw_chat_bubble_at :: proc(bubble: ^Chat_Bubble, ix, iy: i32, scale: f32) {
 
 // Update: cull, then drive interpolation for non-player entities from their
 // snapshot buffers. The local player's position is set directly by gameplay.
-update :: proc(s: ^Scene, dt: f32, current_time: f64, player_pos: [3]f32, current_fps: int) {
+// `zone` (may be nil) pins every entity's y to the terrain heightfield so
+// server snapshots (flat y=0) stand on the actual surface.
+update :: proc(s: ^Scene, dt: f32, current_time: f64, player_pos: [3]f32, current_fps: int, zone: ^Zone_Definition) {
 	cull_and_sort(s, player_pos, current_fps)
 
 	for i in 0..<s.count {
@@ -486,9 +488,35 @@ update :: proc(s: ^Scene, dt: f32, current_time: f64, player_pos: [3]f32, curren
 
 		interp_pos := get_interpolated_position(&s.interp_bufs[i], current_time, 0.15)
 		// Only adopt the interpolated position once we have real samples (the
-		// buffer returns {0,0,0} when it has < 2 points).
+		// buffer returns {0,0,0} when it has < 2 points). XZ only: server y
+		// is flat-world 0 and the terrain pin below owns y, persisting it
+		// frame to frame for the step rule.
 		if interp_pos[0] != 0 || interp_pos[1] != 0 || interp_pos[2] != 0 {
-			s.transforms[i].position = {interp_pos[0], interp_pos[1], interp_pos[2]}
+			s.transforms[i].position.x = interp_pos[0]
+			s.transforms[i].position.z = interp_pos[2]
+		}
+
+		// Stand on the terrain: server snapshots are authored for a flat
+		// world, so derive the ground y from the zone's heightfield — the
+		// exact visual mesh first (no floating on slopes or structure
+		// edges), the stand field as fallback. Runs after the interp
+		// adoption so it also covers entities with a single snapshot (loot
+		// bags) that the interp guard skips. Same step rule as the player:
+		// snap down freely, rise at most MAX_STEP_UP per frame.
+		if zone != nil && zone.heightfield != nil {
+			tp := &s.transforms[i].position
+			prop_ok := terrain_band_kept_at(zone.heightfield, tp.x, tp.z)
+			stand_ref, _ := terrain_height_at(zone.heightfield, tp.x, tp.z)
+			if h, ok := terrain_mesh_ground_at(zone.heightfield, tp.x, tp.z, tp.y + MAX_STEP_UP, tp.y, prop_ok, stand_ref); ok {
+				tp.y = h
+			} else if h, ok := terrain_height_at(zone.heightfield, tp.x, tp.z); ok {
+				if h <= tp.y + MAX_STEP_UP {
+					tp.y = h
+					if mt, mok2 := terrain_mesh_ground_at(zone.heightfield, tp.x, tp.z, 1e30, -1e30, true, -1e30); mok2 {
+						if tp.y > mt do tp.y = mt
+					}
+				}
+			}
 		}
 
 		// Animate character avatars from their actual movement speed.

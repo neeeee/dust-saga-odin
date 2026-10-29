@@ -27,6 +27,10 @@ render :: proc() {
 	draw_ground_reticle_3d()
 	draw_aoe_zones()
 	draw_song_auras()
+	if sys.debug_collision_vis {
+		sys.terrain_debug_draw(state.ctx.zone, state.player.position, 14.0)
+	}
+	draw_debug_ground_ray()
 	rl.EndMode3D()
 
 	// 2D entity nameplates / health bars / target indicators.
@@ -58,14 +62,52 @@ draw_arrow_tracers :: proc() {
 	}
 }
 
-// Ground-target reticle: a ring + center marker on the ground under the cursor.
+// Feet-to-ground debug ray (F1 toggle): a thick bright vertical ray through
+// the character's XZ from waist height down past the terrain ground sample,
+// with a flat marker ring at the exact ground height and a small sphere at
+// the feet level. The gap between the character's feet and the ring is the
+// elevation mismatch — built to be legible in screenshots.
+DEBUG_RAY_COLOR  :: rl.Color{255, 0, 255, 235}  // magenta ray
+DEBUG_RING_COLOR :: rl.Color{120, 255, 80, 230} // green ground ring
+DEBUG_FEET_COLOR :: rl.Color{255, 240, 0, 235}  // yellow feet marker
+
+draw_debug_ground_ray :: proc() {
+	if !sys.debug_ground_ray do return
+	p := state.player.position
+	ground_y := p.y
+	if state.ctx.zone != nil && state.ctx.zone.heightfield != nil {
+		if h, ok := sys.terrain_height_at(state.ctx.zone.heightfield, p.x, p.z); ok do ground_y = h
+	}
+	feet := rl.Vector3{p.x, p.y, p.z}
+	ground := rl.Vector3{p.x, ground_y, p.z}
+	// The ray always spans a fixed visible length through the feet level so
+	// it reads clearly in screenshots even at zero mismatch.
+	top := rl.Vector3{p.x, p.y + 1.2, p.z}
+	bottom := rl.Vector3{p.x, ground_y - 0.25, p.z}
+	rl.DrawCylinderEx(top, bottom, 0.035, 0.035, 8, DEBUG_RAY_COLOR)
+	// Ground marker: bright ring + cross ticks at the sampled height.
+	draw_ground_ring({ground.x, ground.y + 0.03, ground.z}, 0.35, DEBUG_RING_COLOR, 24)
+	for i := 0; i < 4; i += 1 {
+		a := f32(i) * math.PI / 2.0
+		rl.DrawLine3D(
+			{ground.x, ground.y + 0.04, ground.z},
+			{ground.x + math.cos(a) * 0.5, ground.y + 0.04, ground.z + math.sin(a) * 0.5},
+			DEBUG_RING_COLOR,
+		)
+	}
+	// Feet marker: small sphere exactly at the logical feet height.
+	rl.DrawSphere(feet, 0.07, DEBUG_FEET_COLOR)
+}
+
+// Ground-target reticle: a ring + center marker pinned to the ground under
+// the cursor (terrain surface on GLB zones, y=0 plane on flat maps).
 draw_ground_reticle_3d :: proc() {
 	gt := &state.ground_target
 	if !gt.active do return
 	ray := rl.GetScreenToWorldRay(rl.GetMousePosition(), state.player.camera)
-	hit, point := sys.ray_ground_hit(ray, 0.0)
+	hit, point := sys.terrain_ray_hit(state.ctx.zone, ray)
 	if !hit do return
-	draw_ground_ring({point.x, GROUND_Y, point.z}, gt.radius, rl.Color{230, 120, 40, 210}, RIM_SEGMENTS)
+	draw_ground_ring({point.x, point.y + GROUND_Y, point.z}, gt.radius, rl.Color{230, 120, 40, 210}, RIM_SEGMENTS)
 	rl.DrawCube(point, 0.5, 0.5, 0.5, rl.Color{230, 120, 40, 230})
 }
 
@@ -174,9 +216,9 @@ draw_aoe_zones :: proc() {
 	for &z in ctx.aoe_zones {
 		if t >= z.expire_at_s do continue
 		fade := f32(min(z.expire_at_s - t, 0.4) / 0.4)
-		// Server y for TARGET_CENTERED zones can arrive at body-center
-		// height; the ground plane is flat at y=0, so pin the disc to it.
-		center := rl.Vector3{z.position.x, GROUND_Y, z.position.z}
+		// Server y can arrive at body-center height or 0; pin the disc to the
+		// actual ground under it (terrain height on GLB zones, y=0 flat).
+		center := rl.Vector3{z.position.x, sys.terrain_y_at(ctx.zone, z.position.x, z.position.z) + GROUND_Y, z.position.z}
 		draw_pulsing_disc(
 			center,
 			z.radius,
@@ -204,8 +246,9 @@ draw_song_auras :: proc() {
 			type_str := string(e.type_str[:e.type_len])
 			if !strings.has_prefix(type_str, "song_") do continue
 			p := s.transforms[i].position
+			// p.y already rides the terrain (ecs update snaps it).
 			draw_pulsing_disc(
-				{p.x, GROUND_Y, p.z},
+				{p.x, p.y + GROUND_Y, p.z},
 				SONG_AURA_RADIUS,
 				song_color(type_str),
 				SONG_PULSE_HZ,
@@ -219,7 +262,7 @@ draw_song_auras :: proc() {
 	if song.active && now < song.expires_at {
 		p := state.player.position
 		draw_pulsing_disc(
-			{p.x, GROUND_Y, p.z},
+			{p.x, p.y + GROUND_Y, p.z},
 			SONG_AURA_RADIUS,
 			song_color(string(song.type_str[:song.type_len])),
 			SONG_PULSE_HZ,

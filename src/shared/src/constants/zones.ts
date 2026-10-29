@@ -767,7 +767,7 @@ export const ZONE_DATABASE: Record<string, ZoneDefinition> = {
     fogColor: { r: 0.8196, g: 0.8353, b: 0.9176 },
     fogDensity: 0.0008,
     size: 540,
-    playerSpawn: { x: 0, y: 0, z: 12 },
+    playerSpawn: { x: 37, y: 0, z: -142 },
     connections: ['2003002'],
     spawns: [],
     environmentObjects: [],

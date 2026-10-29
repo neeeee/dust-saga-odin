@@ -59,6 +59,35 @@ Map_Light :: struct {
 	color:     RGB_F,
 }
 
+// Manually-authored collision box (XZ footprint, heightless): the per-zone
+// "objects that should have collision" list, authored from the map viewer
+// while the geometric classifier stays walls-only. Purely blocking — never
+// rendered. `label` names the object it covers ("bench_03") for debugging.
+Collider :: struct {
+	x:     f32,
+	z:     f32,
+	w:     f32,
+	d:     f32,
+	label: string,
+}
+
+// One placed world object from the Pandora manifest's `instances` list —
+// the authored object placement the bake was exported from. Positions are
+// engine centimeters (world = position / 100); yaw comes from the instance
+// quaternion. `kind` is the manifest asset's class ("terrain_chip" |
+// "object") — authored provenance for the collision policy resolved at
+// parse time (see instance_collision in terrain_collision.odin): blocking
+// objects carry an oriented footprint (hl/hw), never-elevate objects a
+// no-stand disc radius, everything else zeros (no interaction at all).
+Map_Instance :: struct {
+	x, z:       f32,
+	yaw:        f32,
+	scale:      f32,
+	kind:       string, // owned lowercase manifest kind ("" when unknown)
+	hl, hw:     f32, // blocking oriented box half-extents (0 = doesn't block)
+	nostand_r:  f32, // no-stand disc radius (0 = may raise stand)
+}
+
 Map_Lights :: [dynamic]Map_Light
 Map_Structs :: [dynamic]Map_Structure
 
@@ -72,6 +101,8 @@ Zone_Definition :: struct {
 	structures:   [dynamic]Map_Structure,
 	teleporters:  [dynamic]Teleporter,
 	lights:       [dynamic]Map_Light,
+	colliders:    [dynamic]Collider,
+	instances:    [dynamic]Map_Instance,
 	loaded:       bool, // parsed successfully from disk
 
 	// Whole-area terrain GLB (Pandora maps: source.terrain_glb in the JSON).
@@ -82,6 +113,25 @@ Zone_Definition :: struct {
 	// raylib's glTF loader flattens these maps into thousands of meshes
 	// (up to ~38k), so render_zone frustum-culls them one sphere each.
 	terrain_spheres: [][4]f32,
+	// The area's original _hit.dxg collision proxies, exported to GLB by the
+	// Pandora pipeline and named from the JSON's own source.collision field
+	// (variant areas name their own proxy set; terrain-name derivation is
+	// the fallback). When present its triangles are the authoritative
+	// blocking walls (the original engine's own semantics: ground is
+	// walkable, these volumes block). nil → the JSON colliders + instance
+	// footprints carry the blocking.
+	collision_model: ^Model_Entry,
+	// The area's terrain-only GLB (chips + default fill, no props — exported
+	// by `pandora_export ground`). When present, its triangles are the sole
+	// terrain-class collision surface: actors ground on authored ground, and
+	// every visual-bake triangle is object-class (canopies, trim, furniture
+	// can only ground via band-kept surfaces). nil → the legacy shape
+	// classifier runs on the visual bake.
+	ground_model: ^Model_Entry,
+	// Rasterized collision/elevation data built from the terrain GLB (see
+	// terrain_collision.odin). nil for procedural zones — every terrain_move /
+	// terrain_height_at call site degrades to the legacy flat behavior.
+	heightfield: ^Terrain_Heightfield,
 
 	collision_grid:      [dynamic]bool,
 	collision_cols:      int,
@@ -97,6 +147,8 @@ zone_init :: proc() -> ^Zone_Definition {
 	z.structures = make([dynamic]Map_Structure)
 	z.teleporters = make([dynamic]Teleporter)
 	z.lights = make([dynamic]Map_Light)
+	z.colliders = make([dynamic]Collider)
+	z.instances = make([dynamic]Map_Instance)
 	z.loaded = false
 	return z
 }
@@ -139,7 +191,38 @@ zone_destroy :: proc(z: ^Zone_Definition) {
 		assets_model_release(z.terrain)
 		z.terrain = nil
 	}
+	for c in z.colliders {
+		zone_str_free(c.label)
+	}
+	if z.colliders != nil do delete(z.colliders)
+	for inst in z.instances {
+		zone_str_free(inst.kind)
+	}
+	if z.instances != nil do delete(z.instances)
+	if z.collision_model != nil {
+		assets_model_release(z.collision_model)
+		z.collision_model = nil
+	}
+	if z.ground_model != nil {
+		assets_model_release(z.ground_model)
+		z.ground_model = nil
+	}
 	if z.terrain_spheres != nil do delete(z.terrain_spheres)
+	if z.heightfield != nil {
+		if z.heightfield.heights != nil do delete(z.heightfield.heights)
+		if z.heightfield.stand != nil do delete(z.heightfield.stand)
+		if z.heightfield.valid != nil do delete(z.heightfield.valid)
+		if z.heightfield.walk != nil do delete(z.heightfield.walk)
+		if z.heightfield.segs != nil do delete(z.heightfield.segs)
+		if z.heightfield.seg_grid != nil do delete(z.heightfield.seg_grid)
+		if z.heightfield.seg_ptr != nil do delete(z.heightfield.seg_ptr)
+		if z.heightfield.reasons != nil do delete(z.heightfield.reasons)
+		if z.heightfield.mesh_coords != nil do delete(z.heightfield.mesh_coords)
+		if z.heightfield.mesh_ptr != nil do delete(z.heightfield.mesh_ptr)
+		if z.heightfield.mesh_tris != nil do delete(z.heightfield.mesh_tris)
+		free(z.heightfield)
+		z.heightfield = nil
+	}
 	if z.collision_grid != nil do delete(z.collision_grid)
 	free(z)
 }

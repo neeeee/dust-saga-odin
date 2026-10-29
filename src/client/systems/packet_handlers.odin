@@ -479,6 +479,23 @@ handle_world_state :: proc(ctx: ^Game_Context, data: ^JSON_Value) {
 		}
 	}
 
+	// Spawn coordinates are flat-world metadata; place the player on the
+	// actual surface, relocating out of walls/roofs when needed (no-op
+	// without a heightfield). Placement snaps to the surface, so the
+	// carried fall state resets to planted.
+	ctx.player.position = terrain_place(ctx.zone, ctx.player.position)
+	ctx.player.vert = Vertical_State{grounded = true}
+
+	// A persisted position can be anywhere — including off-map "ether"
+	// saved by an old bug. When placement found no standable ground at the
+	// restored position, fall back to the zone's own spawn point.
+	if ctx.zone.heightfield != nil && !terrain_standable(ctx.zone.heightfield, ctx.player.position.x, ctx.player.position.z) {
+		if ctx.zone.loaded {
+			ctx.player.position = terrain_place(ctx.zone, ctx.zone.player_spawn)
+			ctx.player.vert = Vertical_State{grounded = true}
+		}
+	}
+
 	// Replay any spawns that arrived during load.
 	for &ps in ctx.pending_spawns {
 		handle_entity_spawn(ctx, &ps)
@@ -1561,6 +1578,9 @@ handle_player_revived :: proc(ctx: ^Game_Context, data: ^JSON_Value) {
 		p.position.y = get_f32(pos, "y", p.position.y)
 		p.position.z = get_f32(pos, "z", p.position.z)
 	}
+	// Respawn coordinates are flat-world metadata; place on the surface.
+	p.position = terrain_place(ctx.zone, p.position)
+	p.vert = Vertical_State{grounded = true}
 	// Full HP/MP.
 	s := &p.stats
 	s.health = get_f32(o, "health", s.max_health)

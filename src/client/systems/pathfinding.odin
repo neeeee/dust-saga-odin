@@ -7,10 +7,17 @@ COLLISION_CELL_SIZE :: f32(1.0)
 
 // ── collision grid build ──────────────────────────────────────────────────
 
+// Terrain zones (GLB heightfield): the grid is the conservative coarse
+// downsample of the walk field — see collision_grid_from_heightfield.
+// Procedural zones: the legacy 1-unit grid around the ground plane.
 build_collision_grid :: proc(zone: ^Zone_Definition) {
 	if zone == nil do return
+	if zone.heightfield != nil {
+		collision_grid_from_heightfield(zone)
+		return
+	}
+	if zone.ground.size <= 0 do return
 	size := zone.ground.size
-	if size <= 0 do return
 
 	cols := int(math.ceil(size / COLLISION_CELL_SIZE))
 	rows := cols
@@ -365,6 +372,23 @@ compute_move_path :: proc(
 
 	sc, sr := world_to_grid(start.x, start.z, zone)
 	ec, er := world_to_grid(goal.x, goal.z, zone)
+
+	// A goal on a blocked cell (cliff face, lake, off the map) snaps to the
+	// nearest standable cell; when there is none nearby the move is refused
+	// outright instead of beelining into the wall like the old fallback did.
+	if is_blocked(ec, er, zone) {
+		nc, nr, ok := nearest_walkable_cell(zone, ec, er, 8)
+		if !ok do return path
+		ec, er = nc, nr
+	}
+	// Same for the start cell (spawned inside blocked terrain) so A* can
+	// still route out; astar refuses to run from a blocked cell.
+	if is_blocked(sc, sr, zone) {
+		nc, nr, ok := nearest_walkable_cell(zone, sc, sr, 8)
+		if ok {
+			sc, sr = nc, nr
+		}
+	}
 
 	raw := astar(zone, sc, sr, ec, er)
 	defer delete(raw)

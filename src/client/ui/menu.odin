@@ -163,6 +163,18 @@ menu_add_toggle :: proc(m: ^Menu, label: string, checked: bool) -> int {
 	return id
 }
 
+// Stable-id toggle for menus rebuilt every frame (see menu_add_button_id).
+menu_add_toggle_id :: proc(m: ^Menu, label: string, checked: bool, id: int) {
+	append(&m.items, Menu_Item {
+		kind = .TOGGLE,
+		id = id,
+		label = label,
+		checked = checked,
+		label_color = MENU_COL_BTN_TXT,
+	})
+	if id >= m.next_id do m.next_id = id + 1
+}
+
 menu_add_slider :: proc(m: ^Menu, label: string, value, min_v, max_v, step: f32) -> int {
 	id := m.next_id
 	m.next_id += 1

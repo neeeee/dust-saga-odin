@@ -73,13 +73,14 @@ apply_combat :: proc(inp: sys.Input_State) {
 }
 
 // Aim direction (normalized XZ) for a manual attack: from the player toward
-// the cursor's ground point. Falls back to screen-forward (opposite the
-// camera orbit offset) when the cursor ray misses the ground plane or lands
-// on the player. Also returns the aim distance (0 on fallback) so ranged
-// tracers know how far the arrow flew.
+// the cursor's ground point (terrain surface on GLB zones, y=0 plane on the
+// legacy flat maps). Falls back to screen-forward (opposite the camera orbit
+// offset) when the cursor ray misses the ground or lands on the player. Also
+// returns the aim distance (0 on fallback) so ranged tracers know how far
+// the arrow flew.
 aim_direction :: proc() -> (dx, dz, dist: f32) {
 	ray := rl.GetScreenToWorldRay(rl.GetMousePosition(), state.player.camera)
-	hit, point := sys.ray_ground_hit(ray, 0.0)
+	hit, point := sys.terrain_ray_hit(state.ctx.zone, ray)
 	if hit {
 		px := point.x - state.player.position.x
 		pz := point.z - state.player.position.z
@@ -229,12 +230,17 @@ apply_targeting :: proc(inp: sys.Input_State) {
 		state.last_click_time_ms = 0
 		state.last_click_target = sys.INVALID_ENTITY
 
-		// Click-to-move: ray-intersect ground plane.
+		// Click-to-move: cursor ray onto the terrain surface (GLB zones) or
+		// the y=0 ground plane (legacy flat maps).
 		ray := rl.GetScreenToWorldRay(rl.GetMousePosition(), state.player.camera)
-		hit, point := sys.ray_ground_hit(ray, 0.0)
+		hit, point := sys.terrain_ray_hit(state.ctx.zone, ray)
 		if hit && state.ctx.zone != nil {
-			half := state.ctx.zone.ground.size / 2.0
-			if point.x >= -half && point.x <= half && point.z >= -half && point.z <= half {
+			in_bounds := true
+			if state.ctx.zone.terrain == nil {
+				half := state.ctx.zone.ground.size / 2.0
+				in_bounds = point.x >= -half && point.x <= half && point.z >= -half && point.z <= half
+			}
+			if in_bounds {
 				delete(state.click_path)
 				state.click_path = sys.compute_move_path(state.ctx.zone, state.player.position, point)
 				state.click_path_index = 0

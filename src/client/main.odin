@@ -22,6 +22,8 @@ import title_screen "scenes/title_screen"
 // end instead of accumulating on the heap for the whole session.
 
 main :: proc() {
+	sys.autoplay_parse_args()
+
 	rl.InitWindow(1280, 720, "Dust Saga")
 	rl.SetTargetFPS(60)
 	rl.SetExitKey(.KEY_NULL) // we handle ESC ourselves
@@ -99,7 +101,7 @@ main :: proc() {
 
 		#partial switch state {
 		case .TITLE:
-			if title_screen.update() {
+			if sys.autoplay.enabled || title_screen.update() {
 				state = .LOGIN
 				login.init(net)
 			}

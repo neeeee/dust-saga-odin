@@ -30,6 +30,7 @@ state: struct {
 	error_len:      int,
 	busy:           bool,
 	connected_once: bool,
+	autoplay_sent:  bool,
 }
 
 init :: proc(net: ^sys.Network_Client) {
@@ -42,6 +43,13 @@ init :: proc(net: ^sys.Network_Client) {
 	state.error_len = 0
 	state.busy = false
 	state.connected_once = false
+	state.autoplay_sent = false
+
+	if sys.autoplay.enabled {
+		// Automated run: pre-fill the form; update() submits once connected.
+		sys.copy_string_to_buffer(state.username[:], &state.username_len, sys.AUTO_USER)
+		sys.copy_string_to_buffer(state.password[:], &state.password_len, sys.AUTO_PASS)
+	}
 
 	if !sys.is_connected(net) {
 		sys.connect(net)
@@ -67,6 +75,13 @@ update :: proc(dt: f32) -> bool {
 		case:
 		}
 		sys.free_packet(p)
+	}
+
+	// Automated run: submit the pre-filled credentials once the socket is up.
+	if sys.autoplay.enabled && !state.autoplay_sent && !state.busy &&
+		sys.is_connected(state.net) && state.username_len > 0 && state.password_len > 0 {
+		state.autoplay_sent = true
+		submit()
 	}
 
 	// Input into focused field.

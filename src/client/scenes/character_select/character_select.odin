@@ -3,6 +3,7 @@ package character_select
 import "core:fmt"
 import "core:math"
 import "core:os"
+import "core:strings"
 import rl "vendor:raylib"
 import "../../ui"
 import sys "../../systems"
@@ -103,6 +104,8 @@ state: struct {
 	new_class:    int,
 	new_race:     int,
 
+	autoplay_picked: bool,
+
 	// widgets
 	create_btn: ui.UI_Button,                 // list view
 	enter_btn:  ui.UI_Button,                 // list view
@@ -153,6 +156,7 @@ init :: proc(net: ^sys.Network_Client) {
 	state.new_name_len = 0
 	state.new_class = 0
 	state.new_race = 0
+	state.autoplay_picked = false
 	state.model_state = .NONE
 	state.anim_time = 0
 	state.bounds_measured = false
@@ -282,6 +286,19 @@ update :: proc(dt: f32) -> (chosen_id: string, has_choice: bool) {
 			}
 		}
 		sys.free_packet(p)
+	}
+
+	// Automated run: pick FemHPaladin (or the first character) and enter.
+	if sys.autoplay.enabled && !state.autoplay_picked && len(state.entries) > 0 {
+		state.autoplay_picked = true
+		for i in 0 ..< len(state.entries) {
+			e := &state.entries[i]
+			if strings.contains(string(e.name[:e.name_len]), sys.AUTO_CHARACTER) {
+				state.selected = i
+				break
+			}
+		}
+		enter_world()
 	}
 
 	// Deferred model load: the "Loading model…" frame draws before the

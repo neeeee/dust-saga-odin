@@ -46543,9 +46543,9 @@
   "density": 0.0008
  },
  "playerSpawn": {
-  "x": 0,
+  "x": 37,
   "y": 0,
-  "z": 12
+  "z": -142
  },
  "teleporters": [
   {

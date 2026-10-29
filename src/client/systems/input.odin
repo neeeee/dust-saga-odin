@@ -44,7 +44,11 @@ Input_State :: struct {
 // movement/combat/skills — the player can act with windows open. (Click-to-
 // move is still gated separately in apply_targeting via cursor_over_any_menu,
 // so clicking *on* a menu never walks the character.)
-poll_input :: proc(chat_focused: bool, p: ^Local_Player, dt: f32) -> Input_State {
+//
+// `zone` drives terrain collision + elevation: WASD moves resolve blocked
+// cells with axis slide and the y snaps to the terrain surface (flat legacy
+// zones pass through unchanged).
+poll_input :: proc(chat_focused: bool, p: ^Local_Player, zone: ^Zone_Definition, dt: f32) -> Input_State {
 	state: Input_State
 	state.skill_slot = -1
 
@@ -73,6 +77,10 @@ poll_input :: proc(chat_focused: bool, p: ^Local_Player, dt: f32) -> Input_State
 	if bind_down(.Move_Left) do state.move_x -= 1.0
 	if bind_down(.Move_Right) do state.move_x += 1.0
 
+	// Automated play (-autoplay): inject the wander pattern in place of
+	// the keyboard, before the camera-relative application below.
+	if autoplay.enabled do autoplay_drive_input(&state, p, zone)
+
 	len := math.sqrt(state.move_x * state.move_x + state.move_z * state.move_z)
 	if len > 0.0 {
 		state.move_x /= len
@@ -99,7 +107,17 @@ poll_input :: proc(chat_focused: bool, p: ^Local_Player, dt: f32) -> Input_State
 		move_speed := GAME.PLAYER_SPEED
 		if p.mounted do move_speed *= MOUNT_SPEED_MULTIPLIER
 		move_speed *= debug_move_mult
-		p.position += rotated_move * move_speed * dt
+		// Terrain-aware move: blocked cells slide along walls, grounded
+		// actors track the surface, ledges detach into a gravity fall. Flat
+		// zones pass straight through.
+		p.position, p.vert = terrain_move(
+			zone,
+			p.position,
+			rotated_move.x * move_speed * dt,
+			rotated_move.z * move_speed * dt,
+			p.vert,
+			dt,
+		)
 
 		// Face the movement direction. The avatar carries a 180° render
 		// offset (models face +Z, the game forward is -Z), so the stored yaw

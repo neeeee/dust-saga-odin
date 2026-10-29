@@ -2147,6 +2147,10 @@ DEBUG_CMD_BASE :: 3000
 // Slider item in the debug window; below DEBUG_CMD_BASE so the button-id
 // ranges never overlap.
 DEBUG_SPEED_SLIDER_ID :: 2900
+// Stable toggle ids (the menu is rebuilt every frame; the click handler
+// mirrors each toggle by id).
+DEBUG_TOGGLE_COLLISION_ID  :: 2890
+DEBUG_TOGGLE_GROUND_RAY_ID :: 2891
 
 refresh_debug_menu :: proc() {
 	m := &state.debug_menu
@@ -2182,6 +2186,19 @@ refresh_debug_menu :: proc() {
 		1.0, 50.0, 1.0,
 		DEBUG_SPEED_SLIDER_ID,
 	)
+	// Terrain collision / elevation diagnostics.
+	ui.menu_add_label(m, fmt.tprintf("Ground y %.2f", p.position.y))
+	if state.ctx.zone != nil && state.ctx.zone.heightfield != nil {
+		hf := state.ctx.zone.heightfield
+		ui.menu_add_label(
+			m,
+			fmt.tprintf("Terrain %dx%d @ %.1fu  y %.1f..%.1f", hf.cols, hf.rows, hf.cell, hf.min_y, hf.max_y),
+		)
+	} else {
+		ui.menu_add_label(m, "Terrain: none (flat zone)")
+	}
+	ui.menu_add_toggle_id(m, "Show collision", sys.debug_collision_vis, DEBUG_TOGGLE_COLLISION_ID)
+	ui.menu_add_toggle_id(m, "Feet-to-ground ray", sys.debug_ground_ray, DEBUG_TOGGLE_GROUND_RAY_ID)
 	ui.menu_add_separator(m)
 
 	// GM command buttons
@@ -2200,6 +2217,14 @@ handle_debug_menu_clicks :: proc() {
 	// back into the rebuilt slider next frame).
 	if item := ui.menu_find(m, DEBUG_SPEED_SLIDER_ID); item != nil {
 		sys.debug_move_mult = item.value
+	}
+	// Toggles: menu_update already flipped item.checked on click — mirror
+	// each toggle by its stable id.
+	if item := ui.menu_find(m, DEBUG_TOGGLE_COLLISION_ID); item != nil && item.clicked {
+		sys.debug_collision_vis = item.checked
+	}
+	if item := ui.menu_find(m, DEBUG_TOGGLE_GROUND_RAY_ID); item != nil && item.clicked {
+		sys.debug_ground_ray = item.checked
 	}
 	for i in 0 ..< len(m.items) {
 		item := &m.items[i]

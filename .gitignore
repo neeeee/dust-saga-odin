@@ -33,3 +33,4 @@ src/client/raylib.dll
 
 # armor verification tool output
 src/client/armor_shot_*.png
+src/client/autoplay_log.csv

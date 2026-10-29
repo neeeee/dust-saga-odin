@@ -73,7 +73,15 @@ load_zone_map :: proc(zone_id: string) -> ^Zone_Definition {
 
 	z.player_spawn = vec3_from(root, "playerSpawn")
 
-	z.terrain = load_terrain_model(get_object(root, "source"))
+	terrain_name: string
+	source := get_object(root, "source")
+	z.terrain = load_terrain_model(source, &terrain_name)
+	z.collision_model = load_collision_model(
+		get_string(source, "collision", ""),
+		terrain_name,
+	)
+	z.ground_model = load_ground_model(terrain_name)
+	if terrain_name != "" do delete(terrain_name)
 	if z.terrain != nil {
 		m := &z.terrain.model
 		z.terrain_spheres = make([][4]f32, m.meshCount)
@@ -92,7 +100,12 @@ load_zone_map :: proc(zone_id: string) -> ^Zone_Definition {
 	parse_structures(z, get_array(root, "structures"))
 	parse_teleporters(z, get_array(root, "teleporters"))
 	parse_lights(z, get_array(root, "lights"))
+	parse_colliders(z, get_array(root, "colliders"))
+	parse_instances(z, get_array(root, "instances"), get_array(root, "assets"))
 
+	// Rasterize the terrain GLB into the collision/elevation heightfield
+	// (no-op without a GLB), then derive the A* collision grid from it.
+	terrain_heightfield_build(z)
 	build_collision_grid(z)
 
 	z.loaded = true
@@ -107,19 +120,22 @@ rgb_from :: proc(o: JSON_Object) -> RGB_F {
 // Pandora map JSONs point at their whole-area terrain bake via
 // source.terrain_glb ("pandora_export_out/map/map_D01_01.glb"); the exported
 // file itself is copied next to the JSONs as assets/maps/<basename>. Returns a
-// cache-acquired model (caller releases via zone_destroy) or nil. Zones
+// cache-acquired model (caller releases via zone_destroy) or nil, plus the
+// basename so the collision GLB can be derived from the same name. Zones
 // without the key — the older procedural maps — just get the fallback plane.
-load_terrain_model :: proc(source: JSON_Object) -> ^Model_Entry {
+load_terrain_model :: proc(source: JSON_Object, basename: ^string) -> ^Model_Entry {
 	if is_null(json.Value(source)) do return nil
 	glb := get_string(source, "terrain_glb", "")
 	if len(glb) == 0 do return nil
 
-	basename := glb
-	if i := strings.last_index_byte(basename, '/'); i >= 0 do basename = basename[i + 1:]
-	if i := strings.last_index_byte(basename, '\\'); i >= 0 do basename = basename[i + 1:]
-	if !strings.has_suffix(basename, ".glb") do return nil
+	name := glb
+	if i := strings.last_index_byte(name, '/'); i >= 0 do name = name[i + 1:]
+	if i := strings.last_index_byte(name, '\\'); i >= 0 do name = name[i + 1:]
+	if !strings.has_suffix(name, ".glb") do return nil
 
-	path := fmt.tprintf("%s/%s", MAPS_DIR, basename)
+	basename^ = strings.clone(name)
+
+	path := fmt.tprintf("%s/%s", MAPS_DIR, name)
 	entry := assets_model_acquire(path)
 	if entry != nil {
 		// glTF MASK materials (foliage/grass/road decals) need a fragment
@@ -131,6 +147,39 @@ load_terrain_model :: proc(source: JSON_Object) -> ^Model_Entry {
 		}
 	}
 	return entry
+}
+
+// The area's original collision proxies as a GLB. Preferred name: the JSON's
+// own source.collision ("D01/D01_01_a_hit.dxg") — variant areas name their
+// own proxy set, which the terrain-name derivation can't reach. Fallback:
+// derive map_<terrain>_hit.glb from the terrain GLB basename for zones whose
+// JSON lacks the field. nil when neither file exists; the zone then relies
+// on the JSON colliders + instance footprints for blocking.
+load_collision_model :: proc(collision_src, terrain_basename: string) -> ^Model_Entry {
+	name := ""
+	if len(collision_src) > 0 {
+		s := collision_src
+		if i := strings.last_index_byte(s, '/'); i >= 0 do s = s[i + 1:]
+		if i := strings.last_index_byte(s, '\\'); i >= 0 do s = s[i + 1:]
+		if strings.has_suffix(s, ".dxg") do s = s[:len(s) - 4]
+		if len(s) > 0 do name = fmt.tprintf("map_%s.glb", s)
+	}
+	if len(name) == 0 && strings.has_suffix(terrain_basename, ".glb") {
+		name = fmt.tprintf("%s_hit.glb", terrain_basename[:len(terrain_basename) - 4])
+	}
+	if len(name) == 0 do return nil
+	path := fmt.tprintf("%s/%s", MAPS_DIR, name)
+	return assets_model_acquire(path)
+}
+
+// The area's terrain-only GLB (chips + fill, no props): map_<terrain>_ground
+// .glb next to the visual bake. Loaded purely for the heightfield build —
+// never rendered. nil when the file doesn't exist; the heightfield then
+// falls back to the legacy shape classifier on the visual bake.
+load_ground_model :: proc(basename: string) -> ^Model_Entry {
+	if len(basename) == 0 || !strings.has_suffix(basename, ".glb") do return nil
+	path := fmt.tprintf("%s/%s_ground.glb", MAPS_DIR, basename[:len(basename) - 4])
+	return assets_model_acquire(path)
 }
 
 parse_objects :: proc(z: ^Zone_Definition, arr: json.Array) {
@@ -191,6 +240,29 @@ parse_teleporters :: proc(z: ^Zone_Definition, arr: json.Array) {
 	}
 }
 
+// Manual collision boxes: [{position:{x,z}, size:{w,d}, label?}] — the
+// viewer-authored "this object blocks" list. Footprint-only (y ignored);
+// never rendered.
+parse_colliders :: proc(z: ^Zone_Definition, arr: JSON_Array) {
+	if arr == nil do return
+	dyn := as_dyn(arr)
+	for i in 0 ..< len(dyn) {
+		o := obj_of(dyn[i])
+		pos := vec3_from(o, "position")
+		sz := get_object(o, "size")
+		append(
+			&z.colliders,
+			Collider {
+				x     = pos.x,
+				z     = pos.z,
+				w     = get_f32(sz, "w", 1),
+				d     = get_f32(sz, "d", 1),
+				label = get_string_owned(o, "label", ""),
+			},
+		)
+	}
+}
+
 parse_lights :: proc(z: ^Zone_Definition, arr: JSON_Array) {
 	dyn := as_dyn(arr)
 	for i in 0 ..< len(dyn) {
@@ -205,6 +277,87 @@ parse_lights :: proc(z: ^Zone_Definition, arr: JSON_Array) {
 				color = rgb_from(get_object(o, "color")),
 			},
 		)
+	}
+}
+
+// The Pandora manifests' `instances` list: every world object placed on the
+// map, referencing `assets[id].vra` by index. Positions are engine
+// centimeters — the bake's world units are position / 100. Each instance is
+// resolved through instance_collision into a blocking footprint and/or a
+// no-stand radius; ground chips (kind "terrain_chip") are skipped — they are
+// the terrain itself, already in the heightfield.
+parse_instances :: proc(z: ^Zone_Definition, arr, assets_arr: JSON_Array) {
+	if arr == nil || assets_arr == nil do return
+
+	// asset id -> lowercased vra basename ("oz_26_mi_fence02a") + manifest kind
+	names := map[int]string{}
+	kinds := map[int]string{}
+	defer {
+		for _, v in names do delete(v)
+		for _, v in kinds do delete(v)
+		delete(names)
+		delete(kinds)
+	}
+	assets_dyn := as_dyn(assets_arr)
+	for i in 0 ..< len(assets_dyn) {
+		a := obj_of(assets_dyn[i])
+		kind := get_string(a, "kind", "")
+		if kind == "terrain_chip" do continue
+		name := get_string(a, "vra", "")
+		if len(name) == 0 do continue
+		if idx := strings.last_index_byte(name, '\\'); idx >= 0 do name = name[idx + 1:]
+		if idx := strings.last_index_byte(name, '/'); idx >= 0 do name = name[idx + 1:]
+		if strings.has_suffix(name, ".vra") do name = name[:len(name) - 4]
+		lower := make([]u8, len(name))
+		for c in 0 ..< len(name) {
+			ch := name[c]
+			if ch >= 'A' && ch <= 'Z' do ch = ch + ('a' - 'A')
+			lower[c] = ch
+		}
+		id := get_int(a, "id", -1)
+		names[id] = string(lower)
+		kl := make([]u8, len(kind))
+		for c in 0 ..< len(kind) {
+			ch := kind[c]
+			if ch >= 'A' && ch <= 'Z' do ch = ch + ('a' - 'A')
+			kl[c] = ch
+		}
+		kinds[id] = string(kl)
+	}
+
+	dyn := as_dyn(arr)
+	for i in 0 ..< len(dyn) {
+		o := obj_of(dyn[i])
+		pos := as_dyn(get_array(o, "position"))
+		if len(pos) < 3 do continue
+		scale_arr := as_dyn(get_array(o, "scale"))
+		scale := f32(1)
+		if len(scale_arr) >= 3 {
+			scale = f32(max(max(number_of(scale_arr[0]), number_of(scale_arr[1])), number_of(scale_arr[2])))
+		}
+		if scale <= 0 do scale = 1
+		quat := as_dyn(get_array(o, "rotation_quat_xyzw"))
+		yaw := f32(0)
+		if len(quat) >= 4 {
+			yaw = quat_to_yaw({
+				f32(number_of(quat[0])),
+				f32(number_of(quat[1])),
+				f32(number_of(quat[2])),
+				f32(number_of(quat[3])),
+			})
+		}
+		asset := get_int(o, "asset", -1)
+		inst := Map_Instance{
+			x     = f32(number_of(pos[0])) * 0.01,
+			z     = f32(number_of(pos[2])) * 0.01,
+			yaw   = yaw,
+			scale = scale,
+		}
+		if k, ok := kinds[asset]; ok {
+			inst.kind, _ = strings.clone(k)
+		}
+		instance_collision(names[asset], inst.kind, &inst)
+		append(&z.instances, inst)
 	}
 }
 
@@ -255,10 +408,12 @@ render_zone :: proc(z: ^Zone_Definition) {
 		draw_map_object(o)
 	}
 
-	// Teleport pads: translucent glowing discs on the ground.
+	// Teleport pads: translucent glowing discs on the ground. Lifted onto
+	// the terrain surface when the zone has a heightfield.
 	for t in z.teleporters {
-		base := rl.Vector3{t.position.x, 0.0, t.position.z}
-		top := rl.Vector3{t.position.x, 0.08, t.position.z}
+		pad_y := terrain_y_at(z, t.position.x, t.position.z)
+		base := rl.Vector3{t.position.x, pad_y, t.position.z}
+		top := rl.Vector3{t.position.x, pad_y + 0.08, t.position.z}
 		rl.DrawCylinderEx(base, top, t.radius, t.radius, 16, rl.Color{120, 200, 255, 120})
 		rl.DrawCylinderWiresEx(base, top, t.radius, t.radius, 16, rl.Color{180, 220, 255, 220})
 	}
