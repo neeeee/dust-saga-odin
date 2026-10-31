@@ -124,11 +124,14 @@ main :: proc() {
 			th, th_ok := sys._terrain_ground_at(hf, pos.x, pos.z, prev_y + sys.MAX_STEP_UP, prev_y)
 			if vert.grounded {
 				if th_ok {
-					// Planted actors sit ON the surface they probed. Falls
-					// relocated by the sheer-column/failsafe paths land on
-					// the field while the exact probe may sit a hair higher
-					// for one transient frame (it re-snaps next move).
-					if pos.y > th + 0.06 do bad_float += 1
+					// Planted actors sit ON the surface they probed — unless
+					// pressed against a steep face: the step sampler refuses
+					// to climb 60-70° flanks, so the actor stands at face
+					// contact above whatever the probe sees below.
+					if pos.y > th + 0.06 &&
+						!sys._terrain_pressed_contact(hf, pos.x, pos.z, pos.y) {
+						bad_float += 1
+					}
 					if pos.y < th - 0.25 do clamped += 1
 				}
 				// Rises are measured from the last GROUNDED height: a fall

@@ -6,6 +6,7 @@ import {
   getZoneDefinition, normalizeEquipment,
 } from '@dust-saga/shared';
 import { NetworkContext, PacketHandler } from '../NetworkContext';
+import { zonePositionInBounds } from '../../world/WallRegistry';
 
 export function registerHandlers(registry: Map<PacketType, PacketHandler>): void {
   registry.set(PacketType.CHARACTER_LIST, handleCharacterList);
@@ -237,6 +238,12 @@ async function handleCharacterSelect(ctx: NetworkContext, socket: Socket, data: 
       session.position = { ...(zoneDef?.playerSpawn || { x: 0, y: 0, z: 0 }) };
     } else {
       session.position = { x: char.position_x, y: char.position_y, z: char.position_z };
+      // A saved position can outlive the map it was valid for (spawn fixes,
+      // re-bakes): outside the zone's footprint is the void around the
+      // terrain, so snap back to spawn instead of restoring the fall.
+      if (zoneDef && !zonePositionInBounds(session.zoneId, session.position.x, session.position.z, zoneDef.size)) {
+        session.position = { ...zoneDef.playerSpawn };
+      }
     }
   }
 

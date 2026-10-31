@@ -144,7 +144,60 @@ Wall_Seg :: struct {
 	// ground-level walls, balconies above street furniture.
 	y_min: f32,
 	y_max: f32,
+	// Blocks horizontal movement/knockback (vs LOS-only). Authored segs
+	// always do; bake structure faces only when the face is tall enough
+	// that shoving is right (a stair riser must never push anyone).
+	move: bool,
 }
+
+// ── structure faces from the visual bake ─────────────────────────────────────
+//
+// The hit proxies are the authored truth but sparse (D01_01's whole dungeon
+// carries 48 segments). The bake renders EVERY large vertical face —
+// building walls, rock sides, cliff faces, monuments — and with true Y
+// extents per triangle, provenance problems that plague elevation guesses
+// don't apply to blocking: a face either spans the actor's vertical range
+// or it doesn't. Grass tufts and trunk slats stay under the size gate;
+// short faces (stair risers, kerbs) become LOS blockers at their own
+// height but never shove anyone.
+
+// Steeper than ~60° from horizontal (|ny| below this) counts as a wall
+// face for FLOOR-chip geometry (grd/road/mount/crvs — hillsides must stay
+// climbable to 60° like the step rule allows). Steeper slopes than that
+// are already unclimbable via the step rule, so making them walls changes
+// LOS/knockback, not walkability.
+STRUCT_WALL_NY_MAX :: f32(0.5)
+
+// Non-floor geometry (wall/clif/door chips, rubble, rocks — anything not
+// in the ground model, not foliage) walls from ~45°: dungeon walls have
+// battered, collapsed bases whose faces run 45-55°, and those must block —
+// a "wall" you can walk through at its sloped foot is a hole in the map.
+STRUCT_WALL_NY_MAX_SOLID :: f32(0.7)
+
+// Minimum longest-XZ-edge of a bake triangle to become a wall: closes
+// tessellation gaps (a wall whose pieces are all under the gate is a
+// walk-through hole — D01_03's outer wall). Grass/trunk slats under it are
+// decor-excluded anyway; brick-sized debris staying out is fine.
+STRUCT_WALL_MIN_EXTENT :: f32(0.45)
+
+// Minimum XZ length of an extracted edge (vertical edges project to
+// points and drop out on their own).
+STRUCT_WALL_EDGE_MIN :: f32(0.3)
+
+// Minimum face height (y extent) for a bake wall to block MOVEMENT /
+// knockback. Stair risers and kerbs sit below it (a climbable step never
+// shoves); they still block line-of-sight at their own band. Anything
+// taller than a step is a solid object you cannot walk through — its top
+// either lands as a band (step-onto) or it walls you off.
+STRUCT_WALL_MOVE_HEIGHT :: f32(0.6)
+
+// A bake triangle whose lowest vertex floats more than this above the
+// local walk surface is overhead geometry (tree canopies, awnings) — its
+// band can only ever block shots that were already blocked by the
+// structure below it, and forest maps carry hundreds of thousands of
+// canopy tessellation pieces. Faces that reach near the ground (walls,
+// rocks, trunks, ruins) are the ones that matter.
+STRUCT_WALL_MAX_CLEARANCE :: f32(2.0)
 
 // Triangle XZ edge-length bands (see the classification table above).
 // Ground classification needs real two-dimensional extent: a garden wall's
@@ -683,12 +736,15 @@ terrain_heightfield_build :: proc(zone: ^Zone_Definition) {
 			if interior do band_interior[b] = true
 		}
 		// TOP landing test: the climb must REACH something — a cell near the
-		// band's top bordering non-prop terrain within 0.45 of its own
-		// height — AND the band's top must sit within 2.5 of the highest
-		// terrain beneath the band (supported: filled terrace, hillside
-		// walkway). A landing anywhere along the chain (a tree trunk's
-		// flare, a stall's base) or mere slope support would anchor
-		// tree-branch ladders and stall canopies as walkable.
+		// band's top bordering non-prop terrain within a step (+ margin) of
+		// its own height — AND the band's top must sit within 2.5 of the
+		// highest terrain beneath the band (supported: filled terrace,
+		// hillside walkway). A landing anywhere along the chain (a tree
+		// trunk's flare, a stall's base) or mere slope support would anchor
+		// tree-branch ladders and stall canopies as walkable. The landing
+		// tolerance is the step rule: a block top you could climb onto
+		// (rise ≤ MAX_STEP_UP) is a landing; anything taller has no landing
+		// and must resolve as a wall instead.
 		for ref in refs {
 			i := ref.i
 			b := band[i]
@@ -704,7 +760,7 @@ terrain_heightfield_build :: proc(zone: ^Zone_Definition) {
 					ni := nr * cols + nc
 					if !hf.valid[ni] || band[ni] != 0 do continue
 					if hf.heights[ni] > ground_h[ni] + 0.01 do continue
-					if abs(hf.heights[i] - ground_h[ni]) <= 0.45 {
+					if abs(hf.heights[i] - ground_h[ni]) <= MAX_STEP_UP + 0.05 {
 						band_ok[b] = true
 						break
 					}
@@ -808,21 +864,24 @@ terrain_heightfield_build :: proc(zone: ^Zone_Definition) {
 				nlen := math.sqrt(nx * nx + ny * ny + nz * nz)
 				if nlen < 1e-9 do continue
 				if math.abs(ny) / nlen >= WALL_TRI_NY_MAX do continue
-				// the wall piece's vertical extent (inflated so proxies
-				// never leave hairline gaps at top/bottom)
+				// the wall piece's vertical extent. Inflated DOWNWARD only
+				// (stacked rows seam); the top stays exact so an actor
+				// standing on the surface this wall supports is above its
+				// band and can walk off the edge — inflating upward made
+				// every platform edge an invisible railing.
 				y_min := min(min(ay, by), cy) - 0.15
-				y_max := max(max(ay, by), cy) + 0.15
+				y_max := max(max(ay, by), cy)
 				ex, ez := bx - ax, bz - az
 				if ex * ex + ez * ez > 0.01 {
-					append(&segs, Wall_Seg{ax, az, bx, bz, y_min, y_max})
+					append(&segs, Wall_Seg{ax, az, bx, bz, y_min, y_max, true})
 				}
 				ex, ez = cx - bx, cz - bz
 				if ex * ex + ez * ez > 0.01 {
-					append(&segs, Wall_Seg{bx, bz, cx, cz, y_min, y_max})
+					append(&segs, Wall_Seg{bx, bz, cx, cz, y_min, y_max, true})
 				}
 				ex, ez = ax - cx, az - cz
 				if ex * ex + ez * ez > 0.01 {
-					append(&segs, Wall_Seg{cx, cz, ax, az, y_min, y_max})
+					append(&segs, Wall_Seg{cx, cz, ax, az, y_min, y_max, true})
 				}
 			}
 		}
@@ -831,10 +890,10 @@ terrain_heightfield_build :: proc(zone: ^Zone_Definition) {
 		xa, xb := col.x - col.w * 0.5, col.x + col.w * 0.5
 		za, zb := col.z - col.d * 0.5, col.z + col.d * 0.5
 		y_min, y_max := _seg_band_from_ground(hf, col.x, col.z)
-		append(&segs, Wall_Seg{xa, za, xb, za, y_min, y_max})
-		append(&segs, Wall_Seg{xb, za, xb, zb, y_min, y_max})
-		append(&segs, Wall_Seg{xb, zb, xa, zb, y_min, y_max})
-		append(&segs, Wall_Seg{xa, zb, xa, za, y_min, y_max})
+		append(&segs, Wall_Seg{xa, za, xb, za, y_min, y_max, true})
+		append(&segs, Wall_Seg{xb, za, xb, zb, y_min, y_max, true})
+		append(&segs, Wall_Seg{xb, zb, xa, zb, y_min, y_max, true})
+		append(&segs, Wall_Seg{xa, zb, xa, za, y_min, y_max, true})
 	}
 	// c) blocking world-object instances (fences, statues): the oriented
 	//    rectangle around each. Fence segments placed end-to-end also get a
@@ -850,10 +909,10 @@ terrain_heightfield_build :: proc(zone: ^Zone_Definition) {
 		x2, z2 := inst.x + fx - gx, inst.z + fz - gz
 		x3, z3 := inst.x - fx - gx, inst.z - fz - gz
 		y_min, y_max := _seg_band_from_ground(hf, inst.x, inst.z)
-		append(&segs, Wall_Seg{x0, z0, x1, z1, y_min, y_max})
-		append(&segs, Wall_Seg{x1, z1, x2, z2, y_min, y_max})
-		append(&segs, Wall_Seg{x2, z2, x3, z3, y_min, y_max})
-		append(&segs, Wall_Seg{x3, z3, x0, z0, y_min, y_max})
+		append(&segs, Wall_Seg{x0, z0, x1, z1, y_min, y_max, true})
+		append(&segs, Wall_Seg{x1, z1, x2, z2, y_min, y_max, true})
+		append(&segs, Wall_Seg{x2, z2, x3, z3, y_min, y_max, true})
+		append(&segs, Wall_Seg{x3, z3, x0, z0, y_min, y_max, true})
 	}
 	for i in 0 ..< len(zone.instances) {
 		a := &zone.instances[i]
@@ -872,9 +931,126 @@ terrain_heightfield_build :: proc(zone: ^Zone_Definition) {
 			d_bear := _fold_pi(bearing - a.yaw)
 			if math.abs(d_bear) > 0.35 do continue
 			y_min, y_max := _seg_band_from_ground(hf, (a.x + b.x) * 0.5, (a.z + b.z) * 0.5)
-			append(&segs, Wall_Seg{a.x, a.z, b.x, b.z, y_min, y_max})
+			append(&segs, Wall_Seg{a.x, a.z, b.x, b.z, y_min, y_max, true})
 		}
 	}
+
+	// d) Structure faces from the visual bake: every steep (>60°),
+	//    wall-sized triangle — building sides, rock faces, monuments,
+	//    dungeon walls, terrain-chip mounds and hills alike. The hit
+	//    proxies are the authored truth but far too sparse on their own;
+	//    the bake carries every vertical face the map actually shows, and
+	//    per the game's collision rule EVERYTHING is solid except foliage
+	//    (the decor GLB, excluded below by triangle provenance) and other
+	//    players. Floor-level risers and stair steps stay under the
+	//    movement threshold and only block shots at their own band. Each
+	//    segment keeps its triangle's true Y extent (canopies never block
+	//    anything below them). Duplicates are deduped on a 0.05u grid and
+	//    collinear pieces merge back into full walls.
+	{
+		seen := map[[4]i32]bool{}
+		defer delete(seen)
+		// Provenance sets (quantized triangle centroids): the ground model
+		// is the area's FLOOR chips + fill (slopes stay walkable, wall
+		// threshold 60°); the decor model is foliage (never a wall). Faces
+		// in neither set are solid structures — walls with battered bases,
+		// rubble, rocks — and wall from 45°.
+		ground_tri: map[[3]i32]bool
+		defer delete(ground_tri)
+		decor_tri: map[[3]i32]bool
+		defer delete(decor_tri)
+		if zone.ground_model != nil {
+			gm := &zone.ground_model.model
+			_hf_collect_tri_keys(&ground_tri, gm)
+		}
+		if zone.decor_model != nil {
+			dm := &zone.decor_model.model
+			_hf_collect_tri_keys(&decor_tri, dm)
+		}
+		for mi in 0 ..< int(model.meshCount) {
+			mesh := &model.meshes[mi]
+			verts := mesh.vertices
+			if verts == nil do continue
+			vcount := int(mesh.vertexCount)
+			tri_n := vcount
+			if mesh.indices != nil do tri_n = int(mesh.triangleCount) * 3
+			for t := 0; t + 2 < tri_n; t += 3 {
+				ia := [3]int{t, t + 1, t + 2}
+				if mesh.indices != nil {
+					ia[0] = int(mesh.indices[t])
+					ia[1] = int(mesh.indices[t + 1])
+					ia[2] = int(mesh.indices[t + 2])
+					if ia[0] >= vcount || ia[1] >= vcount || ia[2] >= vcount do continue
+				}
+				ax, ay, az := verts[ia[0] * 3], verts[ia[0] * 3 + 1], verts[ia[0] * 3 + 2]
+				bx, by, bz := verts[ia[1] * 3], verts[ia[1] * 3 + 1], verts[ia[1] * 3 + 2]
+				cx, cy, cz := verts[ia[2] * 3], verts[ia[2] * 3 + 1], verts[ia[2] * 3 + 2]
+				if !_f32_finite(ax) || !_f32_finite(ay) || !_f32_finite(az) ||
+					!_f32_finite(bx) || !_f32_finite(by) || !_f32_finite(bz) ||
+					!_f32_finite(cx) || !_f32_finite(cy) || !_f32_finite(cz) {
+					continue
+				}
+				// garbage mega-vertices (uninitialized weights etc.) pass
+				// the finite gate at 1e30; world coordinates stay ±2k
+				if abs(ax) > 10000 || abs(ay) > 10000 || abs(az) > 10000 ||
+					abs(bx) > 10000 || abs(by) > 10000 || abs(bz) > 10000 ||
+					abs(cx) > 10000 || abs(cy) > 10000 || abs(cz) > 10000 {
+					continue
+				}
+				if len(decor_tri) > 0 &&
+					_tri_centroid_key(ax, ay, az, bx, by, bz, cx, cy, cz) in decor_tri {
+					continue // foliage: no collision
+				}
+				is_floor_chip := false
+				if len(ground_tri) > 0 &&
+					_tri_centroid_key(ax, ay, az, bx, by, bz, cx, cy, cz) in ground_tri {
+					is_floor_chip = true
+				}
+				nx := (by - ay) * (cz - az) - (bz - az) * (cy - ay)
+				ny := (bz - az) * (cx - ax) - (bx - ax) * (cz - az)
+				nz := (bx - ax) * (cy - ay) - (by - ay) * (cx - ax)
+				nlen := math.sqrt(nx * nx + ny * ny + nz * nz)
+				if nlen < 1e-9 do continue
+				if math.abs(ny) / nlen >= (is_floor_chip ? STRUCT_WALL_NY_MAX : STRUCT_WALL_NY_MAX_SOLID) do continue
+				// Overhead geometry (canopy, awning): its band can only
+				// block what the structure below already blocks, and
+				// forests tessellate canopies into pieces without end.
+				tri_min_y := min(min(ay, by), cy)
+				if g, gok := terrain_height_at(
+					hf,
+					(ax + bx + cx) * (1.0 / 3.0),
+					(az + bz + cz) * (1.0 / 3.0),
+				); gok && tri_min_y - g > STRUCT_WALL_MAX_CLEARANCE {
+					continue
+				}
+				e0 := (bx - ax) * (bx - ax) + (bz - az) * (bz - az)
+				e1 := (cx - bx) * (cx - bx) + (cz - bz) * (cz - bz)
+				e2 := (ax - cx) * (ax - cx) + (az - cz) * (az - cz)
+				if max(max(e0, e1), e2) < STRUCT_WALL_MIN_EXTENT * STRUCT_WALL_MIN_EXTENT do continue
+				// Band inflated DOWNWARD only (stacked rows seam); the top
+				// stays exact so actors standing on the surface this wall
+				// supports walk off its edge freely — the y-span check's
+				// epsilon already treats feet-at-wall-top as above it.
+				y_min := min(min(ay, by), cy) - 0.15
+				y_max := max(max(ay, by), cy)
+				// Movement blocking is for STRUCTURES (non-floor faces:
+				// walls, rubble, rocks, monuments). Terrain steepness is
+				// the heightfield's job — the step gate blocks ascents and
+				// drops fall — and a floor-chip slope face whose base line
+				// is walled shoves actors standing ON the face (mid-slope
+				// equilibrium = stuck). Floor faces stay LOS-only bands.
+				blocks_move := !is_floor_chip && (y_max - y_min) >= STRUCT_WALL_MOVE_HEIGHT
+				_f64_dedup_append(&segs, &seen, ax, az, bx, bz, y_min, y_max, blocks_move)
+				_f64_dedup_append(&segs, &seen, bx, bz, cx, cz, y_min, y_max, blocks_move)
+				_f64_dedup_append(&segs, &seen, cx, cz, ax, az, y_min, y_max, blocks_move)
+			}
+		}
+	}
+	// Merge collinear pieces: the bake tessellates a single wall into many
+	// small strips/rows; each merges back into one segment spanning the
+	// union of extents (and the union Y band of stacked rows). Doorways
+	// survive — only overlapping intervals merge, a gap stays a gap.
+	_hf_merge_collinear(&segs)
 	hf.segs = segs[:]
 
 	// 7b. Segment spatial hash (CSR over SEG_GRID_CELL cells, footprints
@@ -1103,6 +1279,205 @@ _seg_band_from_ground :: proc(hf: ^Terrain_Heightfield, x, z: f32) -> (f32, f32)
 		return g - 1.0, hf.max_y + 1.0
 	}
 	return g - 1.0, g + 3.0
+}
+
+// Quantized triangle centroid (0.05u grid): identity key for the same
+// source triangle appearing in multiple exports (ground model, decor
+// sidecar, visual bake).
+_tri_centroid_key :: proc "contextless" (
+	ax, ay, az, bx, by, bz, cx, cy, cz: f32,
+) -> [3]i32 {
+	kx := i32(math.round_f32((ax + bx + cx) * (1.0 / 3.0) * 20))
+	ky := i32(math.round_f32((ay + by + cy) * (1.0 / 3.0) * 20))
+	kz := i32(math.round_f32((az + bz + cz) * (1.0 / 3.0) * 20))
+	return [3]i32{kx, ky, kz}
+}
+
+// Collect every model triangle's centroid key (provenance sets for the
+// structure-wall extraction).
+_hf_collect_tri_keys :: proc(keys: ^map[[3]i32]bool, model: ^rl.Model) {
+	for mi in 0 ..< int(model.meshCount) {
+		mesh := &model.meshes[mi]
+		verts := mesh.vertices
+		if verts == nil do continue
+		vcount := int(mesh.vertexCount)
+		tri_n := vcount
+		if mesh.indices != nil do tri_n = int(mesh.triangleCount) * 3
+		for t := 0; t + 2 < tri_n; t += 3 {
+			ia := [3]int{t, t + 1, t + 2}
+			if mesh.indices != nil {
+				ia[0] = int(mesh.indices[t])
+				ia[1] = int(mesh.indices[t + 1])
+				ia[2] = int(mesh.indices[t + 2])
+				if ia[0] >= vcount || ia[1] >= vcount || ia[2] >= vcount do continue
+			}
+			keys^[_tri_centroid_key(
+				verts[ia[0] * 3], verts[ia[0] * 3 + 1], verts[ia[0] * 3 + 2],
+				verts[ia[1] * 3], verts[ia[1] * 3 + 1], verts[ia[1] * 3 + 2],
+				verts[ia[2] * 3], verts[ia[2] * 3 + 1], verts[ia[2] * 3 + 2],
+			)] = true
+		}
+	}
+}
+
+// Merge collinear, overlapping wall segments into single full-extent
+// segments: the bake tessellates one wall into strips (columns) and rows,
+// and the same wall often appears in both the hit proxies and the bake.
+// Pieces merge when they lie on the same line (direction within ~2°,
+// offset within 0.15u), overlap along it (touching counts — a gap is a
+// door and stays open), and their Y bands touch (stacked rows unite).
+// Bucketed by coarse angle+offset so each scan only sees plausible
+// partners; the odd piece straddling a bucket boundary simply stays
+// unmerged, which is harmless.
+_hf_merge_collinear :: proc(segs: ^[dynamic]Wall_Seg) {
+	n := len(segs)
+	if n < 2 do return
+
+	ux := make([]f32, n)
+	uz := make([]f32, n)
+	ang := make([]f32, n)
+	off := make([]f32, n)
+	len_along := make([]f32, n)
+	used := make([]bool, n)
+	defer delete(ux)
+	defer delete(uz)
+	defer delete(ang)
+	defer delete(off)
+	defer delete(len_along)
+	defer delete(used)
+
+	for i in 0 ..< n {
+		dx := segs[i].x2 - segs[i].x1
+		dz := segs[i].z2 - segs[i].z1
+		l := math.sqrt(dx * dx + dz * dz)
+		if l < 1e-6 {
+			used[i] = true // degenerate; dropped below
+			continue
+		}
+		ux[i] = dx / l
+		uz[i] = dz / l
+		// fold the direction into [0, PI) so a wall and its reverse match
+		if uz[i] < -1e-6 || (abs(uz[i]) <= 1e-6 && ux[i] < 0) {
+			ux[i] = -ux[i]
+			uz[i] = -uz[i]
+			x, z := segs[i].x1, segs[i].z1
+			segs[i].x1, segs[i].z1 = segs[i].x2, segs[i].z2
+			segs[i].x2, segs[i].z2 = x, z
+		}
+		ang[i] = math.atan2(uz[i], ux[i])
+		if ang[i] < 0 do ang[i] += f32(math.PI)
+		off[i] = -uz[i] * segs[i].x1 + ux[i] * segs[i].z1
+		len_along[i] = l
+	}
+
+	// bucket = 7.5° × 2u; pieces of one wall share a bucket. Implemented
+	// as sort-and-group (stable, no map aliasing games).
+	_Keyed_Seg :: struct {
+		k: [2]i32,
+		i: int,
+	}
+	ord: [dynamic]_Keyed_Seg
+	defer delete(ord)
+	for i in 0 ..< n {
+		if used[i] do continue
+		append(&ord, _Keyed_Seg{
+			[2]i32{i32(ang[i] / (f32(math.PI) / 24)), i32(math.floor_f32(off[i] * 0.5))},
+			i,
+		})
+	}
+	slice.sort_by(ord[:], proc(a, b: _Keyed_Seg) -> bool {
+		if a.k[0] != b.k[0] do return a.k[0] < b.k[0]
+		if a.k[1] != b.k[1] do return a.k[1] < b.k[1]
+		return a.i < b.i
+	})
+
+	out: [dynamic]Wall_Seg
+	defer delete(out)
+	g0 := 0
+	for g0 < len(ord) {
+		g1 := g0 + 1
+		for g1 < len(ord) && ord[g1].k == ord[g0].k {
+			g1 += 1
+		}
+		for gi := g0; gi < g1; gi += 1 {
+			i := ord[gi].i
+			if used[i] do continue
+			used[i] = true
+			seg := segs[i]
+			// grow the interval until no partner extends it
+			t_min := f32(0)
+			t_max := len_along[i]
+			y_min := seg.y_min
+			y_max := seg.y_max
+			for {
+				grew := false
+				for gj := g0; gj < g1; gj += 1 {
+					j := ord[gj].i
+					if used[j] do continue
+					// same line? direction within ~2°, offset within 0.15u
+					if abs(ux[i] * uz[j] - uz[i] * ux[j]) > 0.035 do continue
+					if abs(off[j] - off[i]) > 0.15 do continue
+					// partner's interval projected onto our direction
+					pjx := segs[j].x1 - segs[i].x1
+					pjz := segs[j].z1 - segs[i].z1
+					j1 := pjx * ux[i] + pjz * uz[i]
+					j2 := j1 + len_along[j]
+					lo := max(t_min, min(j1, j2))
+					hi := min(t_max, max(j1, j2))
+					if hi - lo < -0.05 do continue // not touching along the wall
+					// Y bands must touch (stacked rows unite, distant
+					// ledges on the same line stay separate)
+					if segs[j].y_min - y_max > 0.35 || y_min - segs[j].y_max > 0.35 do continue
+					t_min = min(t_min, min(j1, j2))
+					t_max = max(t_max, max(j1, j2))
+					y_min = min(y_min, segs[j].y_min)
+					y_max = max(y_max, segs[j].y_max)
+					if segs[j].move do seg.move = true
+					used[j] = true
+					grew = true
+				}
+				if !grew do break
+			}
+			if t_max - t_min < 0.01 {
+				continue
+			}
+			append(&out, Wall_Seg{
+				segs[i].x1 + ux[i] * t_min,
+				segs[i].z1 + uz[i] * t_min,
+				segs[i].x1 + ux[i] * t_max,
+				segs[i].z1 + uz[i] * t_max,
+				y_min,
+				y_max,
+				seg.move,
+			})
+		}
+		g0 = g1
+	}
+	clear(segs)
+	for seg in out do append(segs, seg)
+}
+
+// Append a bake-structure wall edge unless an equivalent segment (same
+// 0.05u-quantized endpoints, order-normalized) already exists. Shared
+// edges between adjacent triangles and proxy/bake overlap of the same
+// wall collapse to one segment.
+_f64_dedup_append :: proc(
+	segs: ^[dynamic]Wall_Seg,
+	seen: ^map[[4]i32]bool,
+	x1, z1, x2, z2, y_min, y_max: f32,
+	blocks_move: bool,
+) {
+	l2 := (x2 - x1) * (x2 - x1) + (z2 - z1) * (z2 - z1)
+	if l2 < STRUCT_WALL_EDGE_MIN * STRUCT_WALL_EDGE_MIN do return
+	qx1, qz1 := i32(math.round_f32(x1 * 20)), i32(math.round_f32(z1 * 20))
+	qx2, qz2 := i32(math.round_f32(x2 * 20)), i32(math.round_f32(z2 * 20))
+	key := [4]i32{qx1, qz1, qx2, qz2}
+	if qx1 > qx2 || (qx1 == qx2 && qz1 > qz2) {
+		key = [4]i32{qx2, qz2, qx1, qz1}
+	}
+	if key in seen do return
+	seen[key] = true
+	append(segs, Wall_Seg{x1, z1, x2, z2, y_min, y_max, blocks_move})
 }
 
 // Rasterize a wall segment's clearance into the walk mask: cells whose
@@ -1643,6 +2018,26 @@ terrain_band_kept_at :: proc(hf: ^Terrain_Heightfield, x, z: f32) -> bool {
 	return hf.valid[i] && abs(hf.stand[i] - hf.heights[i]) <= 0.05
 }
 
+// Ground-contact test for the steep-face press: is the actor standing
+// against a slope face at their feet? The exact mesh is probed with the
+// upward-slope gate disabled and the cap set to a step above the feet —
+// the highest surface within that window is the face the actor is pressed
+// into (a 60-70° flank the step sampler refuses to climb, e.g. a
+// stalagmite's). Surfaces higher up (the dungeon's next floor overhead at
+// +20, a boulder's far side) never count, and when the point falls in a
+// mesh seam entirely, the coarse field stands in as witness. A ledge
+// beside anything steep still drops — nothing within the window, field
+// below.
+_terrain_pressed_contact :: proc(hf: ^Terrain_Heightfield, x, z, y: f32) -> bool {
+	if mh, mok := terrain_mesh_ground_at(hf, x, z, y + MAX_STEP_UP + 0.15, 1e30, false, 1e30); mok {
+		// The face can sit a hair below y (last frame's snap): the feet
+		// are on it either way.
+		return mh > y - 0.05
+	}
+	fh, fok := terrain_height_at(hf, x, z)
+	return fok && fh > y + 0.05 && fh <= y + MAX_STEP_UP + 0.15
+}
+
 // Convenience for draw sites: terrain height or 0 (flat-planet fallback).
 terrain_y_at :: proc(zone: ^Zone_Definition, x, wz: f32) -> f32 {
 	if zone == nil || zone.heightfield == nil do return 0
@@ -1726,6 +2121,17 @@ terrain_walkable :: proc(hf: ^Terrain_Heightfield, x, z: f32) -> bool {
 _terrain_ground_at :: proc(hf: ^Terrain_Heightfield, x, z, y_top, y_cur: f32) -> (f32, bool) {
 	stand_ref, field_ok := terrain_height_at(hf, x, z)
 	if hg, ok := terrain_mesh_ground_at(hf, x, z, y_top, y_cur, field_ok, stand_ref); ok {
+		// Mesh seam over solid ground: chip T-junctions leave XZ points
+		// inside no bucketed floor triangle, and the probe then "sees" a
+		// LOWER LEVEL's surface through solid geometry — the detach-into-
+		// the-floor bug. Signature: the deep surface sits well below any
+		// walkable drop (≥1.25u — a ledge or incline descent the player
+		// must be allowed to fall through reads ≤~1.2 at the rim cell)
+		// while the coarse field still says local ground within the probe
+		// cap. Honest drops have the field dropping with the mesh.
+		if field_ok && hg < y_cur - 0.6 && stand_ref > hg + 1.25 && stand_ref <= y_top {
+			return stand_ref, true
+		}
 		return hg, true
 	}
 	if h, ok := terrain_height_at(hf, x, z); ok {
@@ -1810,9 +2216,16 @@ terrain_move :: proc(
 		if f, ok := terrain_height_at(hf, px, pz); ok && f > base do base = f
 	}
 	if !terrain_standable(hf, px, pz) {
-		// Spawned / pushed into a hole: accept movement so the actor can
-		// walk back onto solid ground.
-		px, pz = nx, nz
+		// Spawned / pushed into a hole: only moves that REACH standable
+		// ground are accepted — free-roaming inside solid geometry is how
+		// sunk runs happened. When nothing reaches, stay put.
+		if _terrain_step_ok(hf, nx, nz, base, true) {
+			px, pz = nx, nz
+		} else if dx != 0 && _terrain_step_ok(hf, nx, pz, base, true) {
+			px = nx
+		} else if dz != 0 && _terrain_step_ok(hf, px, nz, base, true) {
+			pz = nz
+		}
 	} else if _terrain_step_ok(hf, nx, nz, base, vert.grounded) {
 		px, pz = nx, nz
 	} else if dx != 0 && _terrain_step_ok(hf, nx, pz, base, vert.grounded) {
@@ -1841,6 +2254,7 @@ terrain_move :: proc(
 			k := sr * hf.seg_grid_cols + sc
 			for p in hf.seg_ptr[k] ..< hf.seg_ptr[k + 1] {
 					seg := &hf.segs[hf.seg_grid[p]]
+					if !seg.move do continue // LOS-only face (riser/kerb): never shoves
 					if seg.y_max <= y + 0.05 || seg.y_min >= top - 0.05 do continue
 					ex := seg.x2 - seg.x1
 					ez := seg.z2 - seg.z1
@@ -1878,11 +2292,25 @@ terrain_move :: proc(
 			y = g
 			out.vy = 0
 		} else {
-			// Surface dropped away (ledge, cliff) or vanished (hole edge):
-			// detach and let gravity run — no instant teleport to the bottom.
-			out.grounded = false
-			out.vy = 0
-			out.fall_start_y = y
+			// No step-reachable ground. Two very different worlds: a true
+			// ledge (nothing under the feet — fall), or the actor pressed
+			// against a steep 60-70° face whose surface sits just above the
+			// step line (the sampler refuses to snap up it, the field
+			// refuses the fallback — walking into a stalagmite used to
+			// detach into a void fall here). A face within a step of the
+			// feet is contact: stay planted at the current height; anything
+			// higher is just a wall passing by (a ledge beside a boulder
+			// must still drop), and the step gate owns XZ either way.
+			if _terrain_pressed_contact(hf, px, pz, y) {
+				// pressed against the face — keep height, keep contact
+				out.vy = 0
+			} else {
+				// Surface dropped away (ledge, cliff) or vanished (hole
+				// edge): detach and let gravity run — no teleport down.
+				out.grounded = false
+				out.vy = 0
+				out.fall_start_y = y
+			}
 		}
 	}
 	if !out.grounded {
@@ -1900,11 +2328,16 @@ terrain_move :: proc(
 		}
 		// Buried inside terrain, or falling down a sheer (>70°, never
 		// rasterized) column with no landing surface below: relocate to
-		// the nearest walkable ground at/below the current height and
-		// land there — the classic "slide down the cliff to its base".
+		// the nearest walkable ground at/below where the fall BEGAN and
+		// land there — the classic "slide down the cliff to its base". A
+		// fall can never legitimately end higher than it started, so the
+		// ceiling is the fall's start height, not the current (possibly
+		// very deep) one — hunting for ground below a deep y beside a tall
+		// field is what stranded fallers in the void until the world-floor
+		// failsafe.
 		if !out.grounded {
 			if g_field, ok_f := terrain_height_at(hf, px, pz); ok_f && new_y < g_field - 25 {
-				nx2, nz2, wok := _terrain_lower_ground_near(hf, px, pz, min(old_y, new_y), 24)
+				nx2, nz2, wok := _terrain_lower_ground_near(hf, px, pz, out.fall_start_y, 24)
 				if wok {
 					px, pz = nx2, nz2
 					if y3, ok3 := terrain_height_at(hf, px, pz); ok3 {
@@ -2007,7 +2440,6 @@ terrain_ray_hit :: proc(zone: ^Zone_Definition, ray: rl.Ray) -> (bool, rl.Vector
 		best_t = t
 		found = true
 	}
-
 	// 2. Mesh triangles: Amanatides–Woo DDA over the heightfield cells
 	//    along the ray's XZ projection, testing each visited cell's bucket
 	//    with Möller–Trumbore. A triangle is bucketed in every cell its
@@ -2103,6 +2535,58 @@ terrain_ray_hit :: proc(zone: ^Zone_Definition, ray: rl.Ray) -> (bool, rl.Vector
 
 	if !found do return false, {}
 	return true, _ray_at(ray, best_t)
+}
+
+// Clear line-of-sight between two actor positions: true when no wall
+// segment (any kind — authored proxy, footprint, or bake structure face)
+// crosses the chest-height line between them. This is the client twin of
+// the server's WallRegistry.hasLineOfSight (same exported segments, same
+// rule), used to gate auto-attack swings so the client never animates an
+// attack the server will drop. Zones without a heightfield have no walls
+// — everything is visible.
+terrain_los_clear :: proc(zone: ^Zone_Definition, from, to: rl.Vector3) -> bool {
+	if zone == nil do return true
+	hf := zone.heightfield
+	if hf == nil || len(hf.segs) == 0 do return true
+
+	// Chest-height shot line, interpolated at each wall crossing.
+	fx, fz := from.x, from.z
+	tx, tz := to.x, to.z
+	fy, ty := from.y + 1.2, to.y + 1.2
+	dx, dz := tx - fx, tz - fz
+	len := math.sqrt(dx * dx + dz * dz)
+	if len < 0.25 do return true
+	dx, dz = dx / len, dz / len
+
+	// Candidate segments: every spatial-hash bucket the line's AABB covers
+	// (combat ranges are short; AABB cover is exact for a superset).
+	cmin := int(math.floor_f32((min(fx, tx) - hf.origin_x) / SEG_GRID_CELL))
+	cmax := int(math.floor_f32((max(fx, tx) - hf.origin_x) / SEG_GRID_CELL))
+	rmin := int(math.floor_f32((min(fz, tz) - hf.origin_z) / SEG_GRID_CELL))
+	rmax := int(math.floor_f32((max(fz, tz) - hf.origin_z) / SEG_GRID_CELL))
+	for r in rmin ..= rmax {
+		for c in cmin ..= cmax {
+			if c < 0 || c >= hf.seg_grid_cols || r < 0 || r >= hf.seg_grid_rows do continue
+			k := r * hf.seg_grid_cols + c
+			for p in hf.seg_ptr[k] ..< hf.seg_ptr[k + 1] {
+				seg := &hf.segs[hf.seg_grid[p]]
+				ex := seg.x2 - seg.x1
+				ez := seg.z2 - seg.z1
+				denom := dx * ez - dz * ex
+				if abs(denom) < 1e-9 do continue
+				ox := seg.x1 - fx
+				oz := seg.z1 - fz
+				t := (ox * ez - oz * ex) / denom
+				if t <= 0.01 || t >= len - 0.01 do continue
+				u := (ox * dz - oz * dx) / denom
+				if u < 0 || u > 1 do continue
+				h := fy + (ty - fy) * (t / len)
+				if h < seg.y_min + 0.1 || h > seg.y_max - 0.1 do continue
+				return false
+			}
+		}
+	}
+	return true
 }
 
 // Möller–Trumbore ray/triangle distance; -1 when parallel, outside, or

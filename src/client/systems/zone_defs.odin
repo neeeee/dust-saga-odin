@@ -113,6 +113,12 @@ Zone_Definition :: struct {
 	// raylib's glTF loader flattens these maps into thousands of meshes
 	// (up to ~38k), so render_zone frustum-culls them one sphere each.
 	terrain_spheres: [][4]f32,
+	// Per-material glTF alpha state for the terrain bake (see
+	// glb_material_alpha): raylib's loaded materials drop alphaMode /
+	// alphaCutoff, so the cutout shader receives them as per-draw uniforms.
+	// nil → every material runs the shader's OPAQUE default path.
+	terrain_alpha_modes:   []u8,
+	terrain_alpha_cutoffs: []f32,
 	// The area's original _hit.dxg collision proxies, exported to GLB by the
 	// Pandora pipeline and named from the JSON's own source.collision field
 	// (variant areas name their own proxy set; terrain-name derivation is
@@ -128,6 +134,11 @@ Zone_Definition :: struct {
 	// can only ground via band-kept surfaces). nil → the legacy shape
 	// classifier runs on the visual bake.
 	ground_model: ^Model_Entry,
+	// The area's foliage GLB (<terrain>_decor.glb — plants, grass, flowers
+	// from the same export). Its triangles are excluded from structure
+	// walls: crossed billboard quads must never block anything. nil → no
+	// foliage exclusion.
+	decor_model: ^Model_Entry,
 	// Rasterized collision/elevation data built from the terrain GLB (see
 	// terrain_collision.odin). nil for procedural zones — every terrain_move /
 	// terrain_height_at call site degrades to the legacy flat behavior.
@@ -207,7 +218,13 @@ zone_destroy :: proc(z: ^Zone_Definition) {
 		assets_model_release(z.ground_model)
 		z.ground_model = nil
 	}
+	if z.decor_model != nil {
+		assets_model_release(z.decor_model)
+		z.decor_model = nil
+	}
 	if z.terrain_spheres != nil do delete(z.terrain_spheres)
+	if z.terrain_alpha_modes != nil do delete(z.terrain_alpha_modes)
+	if z.terrain_alpha_cutoffs != nil do delete(z.terrain_alpha_cutoffs)
 	if z.heightfield != nil {
 		if z.heightfield.heights != nil do delete(z.heightfield.heights)
 		if z.heightfield.stand != nil do delete(z.heightfield.stand)

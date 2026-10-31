@@ -144,7 +144,8 @@ export class CombatSystem extends System {
     attacker: PlayerSession,
     targetId: string,
     enemies: Map<string, EnemyInstance>,
-    players: Map<string, PlayerSession>
+    players: Map<string, PlayerSession>,
+    zoneId: string
   ): DamageInfo[] {
     const now = Date.now();
     const cooldown = GAME_CONFIG.ATTACK_COOLDOWN;
@@ -184,6 +185,9 @@ export class CombatSystem extends System {
       ? COMBAT_CONFIG.RANGED_ATTACK_RANGE
       : COMBAT_CONFIG.ATTACK_RANGE + (attacker.mounted ? MOUNT_CONFIG.MELEE_RANGE_BONUS : 0);
     if (dist > attackRange) return [];
+    // Walls break the attack line: no hitting (or healing-beam targeting)
+    // through buildings, rocks or dungeon walls.
+    if (!hasLineOfSight(zoneId, attacker.position, targetPosition)) return [];
 
     const effective = attacker.effectiveStats ?? getEffectiveStats(attacker.stats, attacker.statPoints, attacker.statusEffects || []);
 
@@ -281,6 +285,7 @@ export class CombatSystem extends System {
       const dist = Math.sqrt(dx * dx + dz * dz);
       if (dist > range) continue;
       if (!this.isAlongManualAttackLine(isRanged, dx, dz, dist, facingX, facingZ, halfCone, arrowHalfWidthSq)) continue;
+      if (!hasLineOfSight(zoneId, attacker.position, enemy.position)) continue;
       const def = getEnemyDefinition(enemy.enemyType);
       candidates.push({ id, position: enemy.position, defense: def?.defense || 0, isEnemy: true, enemyRef: enemy, playerRef: null });
     }
@@ -292,6 +297,7 @@ export class CombatSystem extends System {
       const dist = Math.sqrt(dx * dx + dz * dz);
       if (dist > range) continue;
       if (!this.isAlongManualAttackLine(isRanged, dx, dz, dist, facingX, facingZ, halfCone, arrowHalfWidthSq)) continue;
+      if (!hasLineOfSight(zoneId, attacker.position, player.position)) continue;
       const pe = player.effectiveStats ?? getEffectiveStats(player.stats, player.statPoints, player.statusEffects || []);
       candidates.push({ id, position: player.position, defense: pe.defense, isEnemy: false, enemyRef: null, playerRef: player });
     }
@@ -398,6 +404,7 @@ export class CombatSystem extends System {
   processEnemyAttack(
     enemy: EnemyInstance,
     target: PlayerSession,
+    zoneId: string,
     powerMult = 1
   ): DamageInfo | null {
     const def = getEnemyDefinition(enemy.enemyType);
@@ -408,6 +415,8 @@ export class CombatSystem extends System {
       (enemy.position.z - target.position.z) ** 2
     );
     if (dist > attackRange) return null;
+    // Mobs don't swing through walls either.
+    if (!hasLineOfSight(zoneId, enemy.position, target.position)) return null;
 
     const targetDodge = target.statBreakdown?.totalDodge ?? 0;
     const enemyAccuracy = enemy.level + 7;

@@ -52,6 +52,7 @@ import { DummyManager, DummyMeta } from '../world/DummyManager';
 import { SpatialIndexManager } from '../world/SpatialIndexManager';
 import { AOEZoneManager } from '../world/AOEZoneManager';
 import { SongProximityManager } from '../world/SongProximityManager';
+import { hasLineOfSight } from '../world/LineOfSight';
 import { BlockingProximityManager } from '../world/BlockingProximityManager';
 import { KnockbackManager } from '../world/KnockbackManager';
 import { SummonCombatDeps } from '../world/SummonManager';
@@ -1794,7 +1795,7 @@ export class NetworkServer implements NetworkContext {
       const enemy = this.spawnMgr.getEnemy(enemyId);
       if (!enemy || enemy.state === 'dead') return;
 
-      const result = this.combat.processEnemyAttack(enemy, target);
+      const result = this.combat.processEnemyAttack(enemy, target, target.zoneId);
       if (!result) return;
 
       this.applyEnemyAttackResult(enemyId, target, result);
@@ -1829,7 +1830,7 @@ export class NetworkServer implements NetworkContext {
         data: { entityId: enemyId, animation: 'Skill', skillName: skill.name, kind: skill.kind }
       });
 
-      const result = this.combat.processEnemyAttack(enemy, target, skill.powerMult);
+      const result = this.combat.processEnemyAttack(enemy, target, target.zoneId, skill.powerMult);
       if (!result) return;
 
       this.applyEnemyAttackResult(enemyId, target, result);
@@ -2391,6 +2392,10 @@ export class NetworkServer implements NetworkContext {
       if (enemy && enemy.state === 'dead') continue;
       const playerTarget = this.state.players.get(entry.id);
 
+      // A blade doesn't cut through walls.
+      const victimPos = enemy?.position ?? playerTarget?.position;
+      if (victimPos && !hasLineOfSight(session.zoneId, session.position, victimPos)) continue;
+
       const dx = entry.x - originX;
       const dz = entry.z - originZ;
 
@@ -2596,6 +2601,14 @@ export class NetworkServer implements NetworkContext {
       if (target.id !== characterId && this.state.players.has(target.id)) {
         if (this.isPartyMember(characterId, target.id)) continue;
         if (!isZonePvpEnabled(session.zoneId)) continue;
+      }
+
+      // Walls shield AOE victims: the caster needs line of sight to the
+      // target itself (ice storm behind a wall stays behind the wall).
+      {
+        const enemyPos = this.spawnMgr.getEnemy(target.id)?.position;
+        const victimPos = enemyPos ?? this.state.players.get(target.id)?.position;
+        if (victimPos && !hasLineOfSight(session.zoneId, session.position, victimPos)) continue;
       }
 
       const targetResult = primaryResult && primaryResult.damage

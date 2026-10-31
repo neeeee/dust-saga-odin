@@ -2,6 +2,7 @@ package systems
 
 import "core:encoding/json"
 import "core:fmt"
+import "core:c"
 import "core:math"
 import "core:os"
 import "core:strings"
@@ -81,6 +82,11 @@ load_zone_map :: proc(zone_id: string) -> ^Zone_Definition {
 		terrain_name,
 	)
 	z.ground_model = load_ground_model(terrain_name)
+	z.decor_model = load_decor_model(terrain_name)
+	if z.terrain != nil && len(terrain_name) > 0 {
+		z.terrain_alpha_modes, z.terrain_alpha_cutoffs =
+			glb_material_alpha(fmt.tprintf("%s/%s", MAPS_DIR, terrain_name))
+	}
 	if terrain_name != "" do delete(terrain_name)
 	if z.terrain != nil {
 		m := &z.terrain.model
@@ -180,6 +186,451 @@ load_ground_model :: proc(basename: string) -> ^Model_Entry {
 	if len(basename) == 0 || !strings.has_suffix(basename, ".glb") do return nil
 	path := fmt.tprintf("%s/%s_ground.glb", MAPS_DIR, basename[:len(basename) - 4])
 	return assets_model_acquire(path)
+}
+
+// The area's foliage GLB (plants/grass/flowers — the ground export's
+// <name>_decor.glb sidecar). Its triangles are excluded from structure
+// walls: crossed billboard quads must never block movement or shots.
+// nil when absent — no foliage exclusion.
+load_decor_model :: proc(basename: string) -> ^Model_Entry {
+	if len(basename) == 0 || !strings.has_suffix(basename, ".glb") do return nil
+	path := fmt.tprintf("%s/%s_decor.glb", MAPS_DIR, basename[:len(basename) - 4])
+	return assets_model_acquire(path)
+}
+
+glb_keys_has :: proc(keys: [dynamic][]u8, key: []u8) -> bool {
+	for k in keys {
+		if len(k) == len(key) {
+			same := true
+			for i in 0 ..< len(k) {
+				if k[i] != key[i] {
+					same = false
+					break
+				}
+			}
+			if same do return true
+		}
+	}
+	return false
+}
+
+// chunk[start] is '"'; returns the index just past the closing quote.
+glb_scan_string :: proc "contextless" (chunk: []u8, start: int) -> int {
+	i := start + 1
+	for i < len(chunk) {
+		c := chunk[i]
+		if c == '\\' {
+			i += 2
+			continue
+		}
+		if c == '"' {
+			return i + 1
+		}
+		i += 1
+	}
+	return i
+}
+
+// End of a bare token (number / true / false / null / punctuation).
+glb_prim_end :: proc "contextless" (chunk: []u8, start: int) -> int {
+	i := start
+	for i < len(chunk) {
+		c := chunk[i]
+		if c == ',' || c == ':' || c == '}' || c == ']' ||
+		c == ' ' || c == '\t' || c == '\n' || c == '\r' {
+			break
+		}
+		i += 1
+	}
+	return i
+}
+
+glb_is_ws :: proc "contextless" (c: u8) -> bool {
+	return c == ' ' || c == '\t' || c == '\n' || c == '\r'
+}
+
+// Renames duplicate object keys so core:json's strict parser (hard error on
+// duplicates) accepts the bake exports: the Pandora exporter writes
+// {"alphaMode":"MASK","alphaMode":"BLEND"} on its fx materials. Every later
+// duplicate key is rewritten to "_dupN_<key>" (N = 2..) — value bytes pass
+// through untouched, so structure and commas stay exactly as exported.
+// Keys seen per object reference into `chunk`, which outlives the parse.
+glb_json_dedupe :: proc(chunk: []u8) -> []u8 {
+	Key_Frame :: struct {
+		is_obj: bool,
+		keys:   [dynamic][]u8,
+	}
+
+	out := make([dynamic]u8, 0, len(chunk))
+	frames := make([dynamic]Key_Frame)
+	defer {
+		for f in frames {
+			if f.keys != nil do delete(f.keys)
+		}
+		delete(frames)
+	}
+
+	i := 0
+	for i < len(chunk) {
+		c := chunk[i]
+		if c == '{' || c == '[' {
+			append(&frames, Key_Frame{is_obj = c == '{'})
+			append(&out, c)
+			i += 1
+		} else if c == '}' || c == ']' {
+			f := pop(&frames)
+			if f.keys != nil do delete(f.keys)
+			append(&out, c)
+			i += 1
+		} else if c == '"' {
+			end := glb_scan_string(chunk, i)
+			j := end
+			for j < len(chunk) && glb_is_ws(chunk[j]) {
+				j += 1
+			}
+			key_bytes := chunk[i:end]
+			if j < len(chunk) && chunk[j] == ':' && len(frames) > 0 && frames[len(frames) - 1].is_obj {
+				f := &frames[len(frames) - 1]
+				if glb_keys_has(f.keys, key_bytes) {
+					n := 2
+					for {
+						prefix := fmt.tprintf("_dup%d_", n)
+						cand := make([]u8, len(key_bytes) + len(prefix))
+						copy(cand, key_bytes[:1]) // opening quote
+						copy(cand[1:], prefix)    // inserted inside the quotes
+						copy(cand[1 + len(prefix):], key_bytes[1:])
+						if !glb_keys_has(f.keys, cand) {
+							for b in cand do append(&out, b)
+							append(&f.keys, cand)
+							break
+						}
+						delete(cand)
+						n += 1
+					}
+				} else {
+					for b in key_bytes do append(&out, b)
+					append(&f.keys, key_bytes)
+				}
+			} else {
+				for b in key_bytes do append(&out, b)
+			}
+			i = end
+		} else if glb_is_ws(c) {
+			append(&out, c)
+			i += 1
+		} else if c == ',' || c == ':' {
+			append(&out, c)
+			i += 1
+		} else {
+			end := glb_prim_end(chunk, i)
+			for k in i ..< end do append(&out, chunk[k])
+			i = end
+		}
+	}
+	return out[:]
+}
+
+// Field lookups with keep-last semantics over the deduped chunk: the
+// exporter's later value is the one the original engine honors
+// ({"alphaMode":"MASK","alphaMode":"BLEND"} renders as BLEND).
+glb_last_string :: proc(o: JSON_Object, key: string) -> string {
+	for n := 8; n >= 2; n -= 1 {
+		k := fmt.tprintf("_dup%d_%s", n, key)
+		if has_field(o, k) {
+			return get_string(o, k, "")
+		}
+	}
+	return get_string(o, key, "")
+}
+
+glb_last_f32 :: proc(o: JSON_Object, key: string, default: f32) -> f32 {
+	for n := 8; n >= 2; n -= 1 {
+		k := fmt.tprintf("_dup%d_%s", n, key)
+		if has_field(o, k) {
+			return get_f32(o, k, default)
+		}
+	}
+	return get_f32(o, key, default)
+}
+
+glb_u32_le :: proc "contextless" (data: []u8, off: int) -> u32 {
+	return u32(data[off]) |
+		u32(data[off + 1]) << 8 |
+		u32(data[off + 2]) << 16 |
+		u32(data[off + 3]) << 24
+}
+
+// The GLB's binary chunk payload, or nil when absent.
+glb_bin_chunk :: proc "contextless" (data: []u8) -> []u8 {
+	total := int(glb_u32_le(data, 8))
+	off := 12
+	for off + 8 <= len(data) && off + 8 <= total {
+		clen := int(glb_u32_le(data, off))
+		ctype := glb_u32_le(data, off + 4)
+		if off + 8 + clen > len(data) do break
+		if ctype == 0x004E4942 { // 'BIN'
+			return data[off + 8 : off + 8 + clen]
+		}
+		off += 8 + clen
+	}
+	return nil
+}
+
+// True when any texel survives an alpha>=128 cut. False means the texture is
+// a fully-transparent helper (bounding-box props) — every material on it
+// renders nothing in the original client.
+glb_image_has_opaque :: proc(image: rl.Image) -> bool {
+	if image.data == nil || image.width <= 0 || image.height <= 0 do return true
+	if image.format != .UNCOMPRESSED_R8G8B8A8 do return true
+	pixels := ([^]u8)(image.data)[0 : int(image.width) * int(image.height) * 4]
+	for i := 3; i < len(pixels); i += 4 {
+		if pixels[i] >= 128 do return true
+	}
+	return false
+}
+
+// True when the alpha channel is SOFT: a non-binary gradient (> 6% of
+// texels between full transparent and full opaque). A real glTF MASK cutout
+// is binary (0 or 255 with a thin AA fringe); soft alpha over complete RGB
+// is an export artifact painted onto building-facade textures, and a
+// spec-honest cutout of it dissolves the whole facade.
+glb_image_alpha_soft :: proc(image: rl.Image) -> bool {
+	if image.data == nil || image.width <= 0 || image.height <= 0 do return false
+	if image.format != .UNCOMPRESSED_R8G8B8A8 do return false
+	pixels := ([^]u8)(image.data)[0 : int(image.width) * int(image.height) * 4]
+	soft: int = 0
+	total: int = 0
+	for i := 3; i < len(pixels); i += 4 {
+		a := pixels[i]
+		total += 1
+		if a >= 8 && a <= 247 do soft += 1
+	}
+	return total > 0 && f32(soft) / f32(total) > 0.06
+}
+
+// Reads a GLB's JSON chunk and extracts the glTF alpha state for EVERY
+// PRIMITIVE, emitted in raylib's flatten order (depth-first over the scene's
+// node list, one raylib mesh per primitive). The returned arrays are indexed
+// by raylib's meshMaterial values — which are PER-PRIMITIVE MATERIAL SLOTS,
+// NOT glTF material indices (raylib creates one material slot per loaded
+// primitive); keying by glTF material index instead silently left most
+// meshes on stale uniforms (missing building fronts/texture layers).
+//
+// Per glTF material: alphaMode (as Alpha_Mode) and alphaCutoff, plus three
+// derived classes from the texture content:
+//   OPAQUE material on a no-opaque-texel texture -> HIDDEN (bbox helper
+//     props; the original client never shows them).
+//   OPAQUE material on a texture also used by MASK materials -> MASK (the
+//     bake's duplicated foliage cards: tree leaves ship a MASK material plus
+//     an OPAQUE twin whose transparent texels' RGB is flat olive).
+//   MASK material on a SOFT-alpha texture (non-binary gradient — export
+//     garbage over complete RGB) -> OPAQUE (the bake's building facades:
+//     ~98% of a facade's texels fall below its own cutoff, dissolving the
+//     whole front; the original client ignores the channel).
+// nil arrays on any failure (no file, not a GLB, no materials): the draw
+// loop then leaves the shader on its OPAQUE default.
+glb_material_alpha :: proc(path: string) -> (modes: []u8, cutoffs: []f32) {
+	data, err := os.read_entire_file_from_path(path, allocator = context.allocator)
+	if err != nil {
+		return
+	}
+	defer delete(data)
+
+	// GLB layout: 12-byte header ("glTF", version, length), then chunks of
+	// (u32 length, u32 type, payload) — chunk 0 is always the JSON, the BIN
+	// chunk holds the embedded images.
+	if len(data) < 20 || data[0] != 'g' || data[1] != 'l' || data[2] != 'T' || data[3] != 'F' {
+		return
+	}
+	json_len := int(glb_u32_le(data, 12))
+	if json_len < 4 || 20 + json_len > len(data) {
+		return
+	}
+	bin := glb_bin_chunk(data)
+
+	chunk := glb_json_dedupe(data[20 : 20 + json_len])
+	defer delete(chunk)
+	root_v, perr := json.parse(chunk)
+	if perr != .None {
+		return
+	}
+	defer json.destroy_value(root_v)
+	root := obj_of(root_v)
+	if is_null(root_v) {
+		return
+	}
+
+	// Decode each image once and flag two alpha-channel properties: no
+	// opaque texel at all (invisible bbox-helper textures) and SOFT alpha
+	// (a non-binary gradient — export garbage over valid RGB). Shared
+	// images are common (47 textures per bake), hence the source-keyed cache.
+	src_hidden := map[int]bool{}
+	src_soft := map[int]bool{}
+	textures := as_dyn(get_array(root, "textures"))
+	images := as_dyn(get_array(root, "images"))
+	views := as_dyn(get_array(root, "bufferViews"))
+	tex_hidden := make(map[int]bool)
+	tex_soft := make(map[int]bool)
+	defer delete(tex_hidden)
+	defer delete(tex_soft)
+	for ti in 0 ..< len(textures) {
+		src := get_int(obj_of(textures[ti]), "source", -1)
+		if src < 0 || src >= len(images) do continue
+		if h, ok := src_hidden[src]; ok {
+			tex_hidden[ti] = h
+			tex_soft[ti] = src_soft[src]
+			continue
+		}
+		hidden := false
+		soft := false
+		img := obj_of(images[src])
+		bv := get_int(img, "bufferView", -1)
+		mime := get_string(img, "mimeType", "")
+		ext: string = ".png"
+		if mime == "image/jpeg" do ext = ".jpg"
+		else if mime != "image/png" do bv = -1
+		if bv >= 0 && bv < len(views) {
+			v := obj_of(views[bv])
+			off := get_int(v, "byteOffset", 0)
+			ln := get_int(v, "byteLength", 0)
+			if ln > 0 && off >= 0 && off + ln <= len(bin) {
+				payload := bin[off : off + ln]
+				decoded := rl.LoadImageFromMemory(assets_cstring(ext), raw_data(payload), c.int(ln))
+				hidden, soft = !glb_image_has_opaque(decoded), glb_image_alpha_soft(decoded)
+				rl.UnloadImage(decoded)
+			}
+		}
+		src_hidden[src] = hidden
+		src_soft[src] = soft
+		tex_hidden[ti] = hidden
+		tex_soft[ti] = soft
+	}
+
+	dyn := as_dyn(get_array(root, "materials"))
+	if len(dyn) == 0 {
+		return
+	}
+
+	// Per-GLTF-MATERIAL classification (Alpha_Mode + derived HIDDEN).
+	mat_modes := make([]u8, len(dyn))
+	mat_cutoffs := make([]f32, len(dyn))
+	defer delete(mat_modes)
+	defer delete(mat_cutoffs)
+	for i in 0 ..< len(dyn) {
+		o := obj_of(dyn[i])
+		mat_modes[i] = u8(Alpha_Mode.OPAQUE)
+		mat_cutoffs[i] = 0.5
+		switch glb_last_string(o, "alphaMode") {
+		case "MASK":
+			mat_modes[i] = u8(Alpha_Mode.MASK)
+		case "BLEND":
+			mat_modes[i] = u8(Alpha_Mode.BLEND)
+		}
+		mat_cutoffs[i] = glb_last_f32(o, "alphaCutoff", 0.5)
+	}
+
+	// Textures also used by MASK materials: OPAQUE materials on them are the
+	// bake's duplicated foliage cards (trees ship a MASK leaf material plus
+	// an OPAQUE twin on the same texture). The original asset is a cutout —
+	// and the exporter filled the transparent texels' RGB with flat olive —
+	// so rendering the twin opaque painted solid blobs over the canopy.
+	// Render those twins as MASK (their own cutoff; binary alpha either way).
+	tex_has_mask := make(map[int]bool)
+	defer delete(tex_has_mask)
+	for i in 0 ..< len(dyn) {
+		if mat_modes[i] != u8(Alpha_Mode.MASK) do continue
+		o := obj_of(dyn[i])
+		pbr := obj_of(json.Value(get_object(o, "pbrMetallicRoughness")))
+		bct := get_object(pbr, "baseColorTexture")
+		tex_has_mask[get_int(bct, "index", -1)] = true
+	}
+
+	for i in 0 ..< len(dyn) {
+		if mat_modes[i] != u8(Alpha_Mode.OPAQUE) do continue
+		o := obj_of(dyn[i])
+		pbr := obj_of(json.Value(get_object(o, "pbrMetallicRoughness")))
+		bct := get_object(pbr, "baseColorTexture")
+		tex := get_int(bct, "index", -1)
+		if h, ok := tex_hidden[tex]; ok && h {
+			mat_modes[i] = u8(Alpha_Mode.HIDDEN)
+		} else if tex_has_mask[tex] {
+			mat_modes[i] = u8(Alpha_Mode.MASK)
+		}
+	}
+
+	// MASK materials on SOFT-alpha textures: the alpha channel is export
+	// garbage painted over complete RGB (the bake's building facades —
+	// ~98% of a facade's texels fall below its own 0.392 cutoff, dissolving
+	// the whole front). The original client ignores the channel, so force
+	// those materials OPAQUE (alpha ignored). Real cutouts (foliage, cloth)
+	// stay binary and keep their cutout.
+	for i in 0 ..< len(dyn) {
+		if mat_modes[i] != u8(Alpha_Mode.MASK) do continue
+		o := obj_of(dyn[i])
+		pbr := obj_of(json.Value(get_object(o, "pbrMetallicRoughness")))
+		bct := get_object(pbr, "baseColorTexture")
+		tex := get_int(bct, "index", -1)
+		if soft, ok := tex_soft[tex]; ok && soft {
+			mat_modes[i] = u8(Alpha_Mode.OPAQUE)
+		}
+	}
+
+	// Emit per-PRIMITIVE state in raylib's flatten order: depth-first over
+	// the scene's node list, one slot per mesh primitive. raylib's
+	// meshMaterial values index THIS sequence.
+	nodes := as_dyn(get_array(root, "nodes"))
+	meshes := as_dyn(get_array(root, "meshes"))
+	scenes := as_dyn(get_array(root, "scenes"))
+	if len(nodes) == 0 || len(meshes) == 0 || len(scenes) == 0 {
+		return
+	}
+	scene_i := get_int(root, "scene", 0)
+	if scene_i < 0 || scene_i >= len(scenes) do scene_i = 0
+	scene_roots := as_dyn(get_array(obj_of(scenes[scene_i]), "nodes"))
+
+	modes_dyn := make([dynamic]u8, 0, 1024)
+	cutoffs_dyn := make([dynamic]f32, 0, 1024)
+	for r in scene_roots {
+		glb_visit_node(int_of(r), nodes, meshes, mat_modes, mat_cutoffs, tex_soft, &modes_dyn, &cutoffs_dyn)
+	}
+	if len(modes_dyn) == 0 {
+		return
+	}
+	modes = modes_dyn[:]
+	cutoffs = cutoffs_dyn[:]
+	return
+}
+
+glb_visit_node :: proc(
+	ni: int,
+	nodes: [dynamic]json.Value,
+	meshes: [dynamic]json.Value,
+	mat_modes: []u8,
+	mat_cutoffs: []f32,
+	tex_soft: map[int]bool,
+	modes: ^[dynamic]u8,
+	cutoffs: ^[dynamic]f32,
+) {
+	if ni < 0 || ni >= len(nodes) do return
+	n := obj_of(nodes[ni])
+	if mi := get_int(n, "mesh", -1); mi >= 0 && mi < len(meshes) {
+		mesh := obj_of(meshes[mi])
+		for p in as_dyn(get_array(mesh, "primitives")) {
+			po := obj_of(p)
+			mat := get_int(po, "material", -1)
+			mode: u8 = u8(Alpha_Mode.OPAQUE)
+			cutoff: f32 = 0.5
+			if mat >= 0 && mat < len(mat_modes) {
+				mode = mat_modes[mat]
+				cutoff = mat_cutoffs[mat]
+			}
+			append(modes, mode)
+			append(cutoffs, cutoff)
+		}
+	}
+	for c in as_dyn(get_array(n, "children")) {
+		glb_visit_node(int_of(c), nodes, meshes, mat_modes, mat_cutoffs, tex_soft, modes, cutoffs)
+	}
 }
 
 parse_objects :: proc(z: ^Zone_Definition, arr: json.Array) {
@@ -382,7 +833,12 @@ render_zone :: proc(z: ^Zone_Definition) {
 	// frustum culling — these models flatten to thousands of meshes and the
 	// plain DrawModel would issue every one of them every frame.
 	if z.terrain != nil {
-		draw_terrain_culled(z.terrain.model, z.terrain_spheres)
+		draw_terrain_culled(
+			z.terrain.model,
+			z.terrain_spheres,
+			z.terrain_alpha_modes,
+			z.terrain_alpha_cutoffs,
+		)
 	}
 
 	// Structures (platforms / fences / houses) as boxes.
@@ -453,25 +909,86 @@ normalize4 :: proc "contextless" (p: [4]f32) -> [4]f32 {
 	return {p[0] / l, p[1] / l, p[2] / l, p[3] / l}
 }
 
+// Debug switch: draw every terrain mesh, skipping frustum culling. Set by
+// diagnostic tools to separate culling bugs from shader/material bugs.
+terrain_culling_disabled: bool
+
+// Debug: when range_active, only meshes in [range_lo, range_hi) draw
+// (culling bypassed); when force_active, all meshes cull normally EXCEPT
+// those in the range, which always draw — both let tools attribute rendered
+// pixels to meshes. Probe-only; the game leaves them false.
+range_active: bool = false
+force_active: bool = false
+range_lo, range_hi: int = 0, 0
+terrain_debug_flat: bool = false
+
 // Draw each terrain mesh whose bounding sphere crosses the camera frustum.
 // Meshes already sit in world space (the glTF loader bakes node transforms).
-draw_terrain_culled :: proc(model: rl.Model, spheres: [][4]f32) {
+// modes/cutoffs carry the per-material glTF alpha state (see
+// glb_material_alpha); the cutout shader is bound for the whole pass and its
+// uniforms are set per visible mesh.
+//
+// NOTE: the shader MUST be bound (BeginShaderMode) before the per-mesh
+// rl.SetShaderValue calls - raylib submits uniforms to the CURRENTLY bound
+// program, and without an explicit bind they land on whatever drew last
+// (the previous frame's tail), leaving meshes with stale discard state
+// (building fronts vanishing depending on draw history).
+draw_terrain_culled :: proc(model: rl.Model, spheres: [][4]f32, modes: []u8, cutoffs: []f32) {
 	if model.meshCount == 0 do return
 	if len(spheres) < int(model.meshCount) do return
 
 	planes := frustum_planes()
 	ident := rl.Matrix(1)
+	sh := terrain_shader_get()
 	for i in 0..<int(model.meshCount) {
 		s := spheres[i]
+		// Degenerate guard: some bakes contain point-sized helper/corrupt
+		// meshes (zero-volume AABB) whose GPU data renders as huge garbage
+		// triangles at camera-dependent positions — the original client
+		// never shows them. Skip unconditionally.
+		if s[3] <= 0.01 do continue
 		visible := true
-		for p in planes {
-			if p[0] * s[0] + p[1] * s[1] + p[2] * s[2] + p[3] < -s[3] {
-				visible = false
-				break
+		if range_active {
+			visible = i >= range_lo && i < range_hi
+		} else if !terrain_culling_disabled {
+			for p in planes {
+				if p[0] * s[0] + p[1] * s[1] + p[2] * s[2] + p[3] < -s[3] {
+					visible = false
+					break
+				}
 			}
 		}
+		if force_active && i >= range_lo && i < range_hi do visible = true
 		if !visible do continue
+		mat := int(model.meshMaterial[i])
+		// Bind the shader PER MESH: rl.SetShaderValue submits uniforms to the
+		// CURRENTLY bound program, and without an explicit re-bind here some
+		// meshes render with stale alpha-discard state (building fronts
+		// vanishing depending on what drew before them).
+		rl.BeginShaderMode(sh)
+		terrain_shader_set_material(sh, mat, modes, cutoffs)
+		if terrain_debug_flat && terrain_loc_dbg_flat >= 0 {
+			// flat + tint by alpha mode: OPAQUE=red, MASK=green, BLEND=blue,
+			// HIDDEN=black — shows which discard state each fragment has.
+			flat: c.int = 1
+			mode_tints := [4][3]f32{
+				{1, 0, 0},
+				{0, 1, 0},
+				{0, 0, 1},
+				{0, 0, 0},
+			}
+			tint: [3]f32 = {0.5, 0.5, 0.5}
+			if mat >= 0 && mat < len(modes) {
+				tint = mode_tints[int(modes[mat])]
+			}
+			rl.SetShaderValue(sh, terrain_loc_dbg_flat, &flat, .INT)
+			rl.SetShaderValue(sh, terrain_loc_dbg_tint, &tint, .VEC3)
+		} else if terrain_loc_dbg_flat >= 0 {
+			flat: c.int = 0
+			rl.SetShaderValue(sh, terrain_loc_dbg_flat, &flat, .INT)
+		}
 		rl.DrawMesh(model.meshes[i], model.materials[model.meshMaterial[i]], ident)
+		rl.EndShaderMode()
 	}
 }
 

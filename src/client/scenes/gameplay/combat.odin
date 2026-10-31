@@ -169,6 +169,9 @@ try_auto_attack :: proc() {
 	max_range := sys.GAME.ATTACK_RANGE
 	if player_weapon_is_ranged() do max_range = sys.GAME.RANGED_ATTACK_RANGE
 	if math.sqrt(dx * dx + dz * dz) > max_range do return
+	// Walls drop server-side attacks without line of sight — gate the send
+	// here too so the character doesn't keep swinging into obstructions.
+	if !sys.terrain_los_clear(state.ctx.zone, state.player.position, t) do return
 
 	cd := sys.COMBAT.AUTO_ATTACK_BASE_COOLDOWN
 	if state.player.stats.cast_speed > 0 {

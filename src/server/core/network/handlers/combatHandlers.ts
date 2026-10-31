@@ -99,7 +99,8 @@ function handleAttack(ctx: NetworkContext, socket: Socket, data: any): void {
     session,
     data.targetId,
     ctx.spawnMgr.getEnemiesInZone(session.zoneId) || new Map(),
-    ctx.state.players
+    ctx.state.players,
+    session.zoneId
   );
 
   if (damageInfos.length > 0) {
