@@ -60,6 +60,7 @@ assets_texture :: proc(path: string) -> rl.Texture2D {
 		tex = assets_texture_tga(path)
 	} else {
 		tex = rl.LoadTexture(assets_cstring(path))
+		assets_texture_quality(&tex)
 	}
 	if tex.id == 0 {
 		rl.TraceLog(.WARNING, "assets: failed to load texture %s", assets_cstring(path))
@@ -208,6 +209,20 @@ assets_model_acquire :: proc(path: string) -> ^Model_Entry {
 	rl.TraceLog(.INFO, "assets: loaded model %s (%d meshes)",
 		assets_cstring(path), model.meshCount)
 
+	// Lit entity shader on every model (characters, monsters, horses,
+	// gear — and the terrain bakes, which load_terrain_model re-swaps to
+	// the terrain cutout shader right after). Avatar subset material
+	// copies carry the shader along, so one hook covers all entity draws.
+	// Also: mipmaps + anisotropic filtering on every texture map — the
+	// GLTF loader uploads raw without mips, which made the world shimmer.
+	sh := lighting_entity_shader_get()
+	for i in 0 ..< int(model.materialCount) {
+		model.materials[i].shader = sh
+		for _, map_i in rl.MaterialMapIndex {
+			assets_texture_quality(&model.materials[i].maps[int(map_i)].texture)
+		}
+	}
+
 	entry := new(Model_Entry)
 	entry.model = model
 	entry.refs = 1
@@ -237,4 +252,14 @@ assets_model_release :: proc(entry: ^Model_Entry) {
 // the heap for one-shot init-time loads — both fine to leave unreleased.
 assets_cstring :: proc(s: string) -> cstring {
 	return strings.clone_to_cstring(s, context.temp_allocator)
+}
+
+// Mipmaps + anisotropic trilinear filtering on a freshly uploaded texture.
+// Without it, GLB/PNG textures sample a single mip level and the world
+// shimmers like static whenever the camera moves (minification aliasing).
+// Call once per texture right after load.
+assets_texture_quality :: proc(tex: ^rl.Texture) {
+	if tex.id == 0 do return
+	rl.GenTextureMipmaps(tex)
+	rl.SetTextureFilter(tex^, .ANISOTROPIC_8X)
 }

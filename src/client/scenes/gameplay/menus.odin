@@ -4,6 +4,7 @@ import sys "../../systems"
 import ui "../../ui/"
 import "core:fmt"
 import "core:math"
+import "core:strconv"
 import "core:strings"
 import rl "vendor:raylib"
 
@@ -2151,6 +2152,15 @@ DEBUG_SPEED_SLIDER_ID :: 2900
 // mirrors each toggle by id).
 DEBUG_TOGGLE_COLLISION_ID  :: 2890
 DEBUG_TOGGLE_GROUND_RAY_ID :: 2891
+DEBUG_TOGGLE_LIGHTING_ID   :: 2892
+DEBUG_TIME_SLIDER_ID       :: 2885
+DEBUG_TIME_SYNC_ID         :: 2884
+// Manual position override: three numeric text fields + apply/copy buttons.
+DEBUG_POS_APPLY_ID :: 2870
+DEBUG_POS_FILL_ID  :: 2871
+DEBUG_POS_X_ID     :: 2880
+DEBUG_POS_Y_ID     :: 2881
+DEBUG_POS_Z_ID     :: 2882
 
 refresh_debug_menu :: proc() {
 	m := &state.debug_menu
@@ -2197,8 +2207,30 @@ refresh_debug_menu :: proc() {
 	} else {
 		ui.menu_add_label(m, "Terrain: none (flat zone)")
 	}
+	ui.menu_add_toggle_id(m, "Lighting", sys.lighting_enabled, DEBUG_TOGGLE_LIGHTING_ID)
+	// Day/night: 0-24h; the override holds until "Sync to clock".
+	time_now := sys.lighting_time_now()
+	ui.menu_add_slider_id(m, fmt.tprintf("Time %.1fh", time_now), time_now, 0.0, 24.0, 0.25, DEBUG_TIME_SLIDER_ID)
+	ui.menu_add_button_id(m, "Reset to noon", DEBUG_TIME_SYNC_ID)
 	ui.menu_add_toggle_id(m, "Show collision", sys.debug_collision_vis, DEBUG_TOGGLE_COLLISION_ID)
 	ui.menu_add_toggle_id(m, "Feet-to-ground ray", sys.debug_ground_ray, DEBUG_TOGGLE_GROUND_RAY_ID)
+
+	// Manual position override. The client owns the transform (PLAYER_MOVE
+	// streams state.player.position to the server every movement tick), so a
+	// local set takes effect immediately everywhere.
+	ui.menu_add_separator(m)
+	ui.menu_add_label(m, "Set position (Enter applies)")
+	ui.menu_add_text_id(m, "X", DEBUG_POS_X_ID, state.pos_input[0][:], &state.pos_input_len[0], true)
+	ui.menu_add_text_id(m, "Y", DEBUG_POS_Y_ID, state.pos_input[1][:], &state.pos_input_len[1], true)
+	ui.menu_add_text_id(m, "Z", DEBUG_POS_Z_ID, state.pos_input[2][:], &state.pos_input_len[2], true)
+	if state.pos_input_msg_len > 0 && state.clock_ms - state.pos_input_msg_ms < 3000 {
+		ui.menu_add_label(
+			m,
+			string(state.pos_input_msg[:state.pos_input_msg_len]),
+		)
+	}
+	ui.menu_add_button_id(m, "Copy current pos", DEBUG_POS_FILL_ID)
+	ui.menu_add_button_id(m, "Teleport", DEBUG_POS_APPLY_ID)
 	ui.menu_add_separator(m)
 
 	// GM command buttons
@@ -2223,8 +2255,34 @@ handle_debug_menu_clicks :: proc() {
 	if item := ui.menu_find(m, DEBUG_TOGGLE_COLLISION_ID); item != nil && item.clicked {
 		sys.debug_collision_vis = item.checked
 	}
+	if item := ui.menu_find(m, DEBUG_TOGGLE_LIGHTING_ID); item != nil && item.clicked {
+		sys.lighting_enabled = item.checked
+		sys.lighting_refresh() // re-push uniforms from the stored zone env
+	}
+	// Day/night time: dragging the slider overrides the wall clock (the
+	// env re-evaluates every frame in lighting_set_camera — no push needed).
+	if item := ui.menu_find(m, DEBUG_TIME_SLIDER_ID); item != nil {
+		sys.lighting_time_hours = item.value >= 24.0 ? -1.0 : item.value
+	}
+	if item := ui.menu_find(m, DEBUG_TIME_SYNC_ID); item != nil && item.clicked {
+		sys.lighting_time_hours = -1
+	}
 	if item := ui.menu_find(m, DEBUG_TOGGLE_GROUND_RAY_ID); item != nil && item.clicked {
 		sys.debug_ground_ray = item.checked
+	}
+	// Position override: Enter in any field applies (menu_update flags the
+	// focused TEXT item clicked on ENTER); the buttons do the same by click.
+	pos_field_ids := [3]int{DEBUG_POS_X_ID, DEBUG_POS_Y_ID, DEBUG_POS_Z_ID}
+	for id in pos_field_ids {
+		if item := ui.menu_find(m, id); item != nil && item.clicked {
+			debug_apply_position()
+		}
+	}
+	if item := ui.menu_find(m, DEBUG_POS_FILL_ID); item != nil && item.clicked {
+		debug_fill_current_position()
+	}
+	if item := ui.menu_find(m, DEBUG_POS_APPLY_ID); item != nil && item.clicked {
+		debug_apply_position()
 	}
 	for i in 0 ..< len(m.items) {
 		item := &m.items[i]
@@ -2234,6 +2292,71 @@ handle_debug_menu_clicks :: proc() {
 			sys.send_chat(state.net, DEBUG_COMMANDS[idx].cmd)
 		}
 	}
+}
+
+// Writes the player's current coordinates into the X/Y/Z fields (starting
+// point for small nudges).
+debug_fill_current_position :: proc() {
+	vals := [3]f32{
+		state.player.position.x,
+		state.player.position.y,
+		state.player.position.z,
+	}
+	for i in 0 ..< 3 {
+		s := fmt.tprintf("%.1f", vals[i])
+		n := min(len(s), len(state.pos_input[i]))
+		copy(state.pos_input[i][:], s[:n])
+		state.pos_input_len[i] = n
+	}
+}
+
+// Parses the X/Y/Z fields and relocates the local player. X and Z are
+// required; an empty Y snaps to the terrain surface (flat zones: y=0). The
+// client owns its transform — the next PLAYER_MOVE tick carries the new
+// position to the server, so nothing else needs notifying.
+debug_apply_position :: proc() {
+	x, ok_x := strconv.parse_f64(string(state.pos_input[0][:state.pos_input_len[0]]))
+	z, ok_z := strconv.parse_f64(string(state.pos_input[2][:state.pos_input_len[2]]))
+	if !ok_x || !ok_z {
+		debug_pos_msg("need numeric X and Z")
+		return
+	}
+	y := f32(0)
+	if state.pos_input_len[1] > 0 {
+		yd, ok_y := strconv.parse_f64(string(state.pos_input[1][:state.pos_input_len[1]]))
+		if !ok_y {
+			debug_pos_msg("Y must be numeric or empty (ground snap)")
+			return
+		}
+		y = f32(yd)
+	} else {
+		y = sys.terrain_y_at(state.ctx.zone, f32(x), f32(z))
+	}
+
+	p := state.player
+	p.position = {f32(x), y, f32(z)}
+	// Re-settle vertically from a clean airborne state: gravity lands the
+	// actor on whatever surface is now beneath it.
+	p.vert = sys.Vertical_State{fall_start_y = y}
+	cancel_click_to_move()
+	// Warn when the target lies outside the terrain heightfield (fog-colored
+	// void out there — easy to mistake for a broken/fogged map).
+	note := ""
+	if hf := state.ctx.zone.heightfield; hf != nil {
+		half := f32(hf.cols) * hf.cell * 0.5
+		if math.abs(f32(x)) > half || math.abs(f32(z)) > half {
+			note = fmt.tprintf("  [outside terrain %.0fm]", half)
+		}
+	}
+	debug_pos_msg(fmt.tprintf("moved to (%.1f, %.1f, %.1f)%s", f32(x), y, f32(z), note))
+}
+
+// Short-lived status line under the position fields (3s).
+debug_pos_msg :: proc(msg: string) {
+	n := min(len(msg), len(state.pos_input_msg))
+	copy(state.pos_input_msg[:], msg[:n])
+	state.pos_input_msg_len = n
+	state.pos_input_msg_ms = state.clock_ms
 }
 
 // ── settings / keybind rebind ──────────────────────────────────────────────

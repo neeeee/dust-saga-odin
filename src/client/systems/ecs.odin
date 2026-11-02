@@ -594,6 +594,12 @@ render :: proc(s: ^Scene, camera: rl.Camera3D) {
 		axis, angle := euler_y_to_raylib(t.rotation.y)
 		scl := rl.Vector3{r.radius / 0.5, r.height / 1.8, r.radius / 0.5}
 
+		// Soft ground disc (the original engine's per-actor blob shadow);
+		// mounts share the ground spot with their rider, so scale it up.
+		blob_d := math.clamp(r.radius * 2.6, 0.8, 1.6)
+		if r.mount.valid do blob_d = 2.2
+		blob_shadow_draw(t.position.x, t.position.y, t.position.z, blob_d)
+
 		#partial switch r.shape {
 		case .CAPSULE:
 			if r.avatar != nil {

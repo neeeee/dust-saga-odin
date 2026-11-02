@@ -75,6 +75,14 @@ state: struct {
 	guild_menu:             ui.Menu,
 	quest_list_menu:        ui.Menu,
 	quest_log_abandon_idx:  int,
+	// Debug window (F1) manual position override: three NUL-free numeric
+	// buffers (X/Y/Z), a transient apply/copy button id, and a short-lived
+	// status line with its expiry clock.
+	pos_input:              [3][24]u8,
+	pos_input_len:          [3]int,
+	pos_input_msg:          [96]u8,
+	pos_input_msg_len:      int,
+	pos_input_msg_ms:       u64,
 	// enhancement window selections (inventory item ids — re-resolved to
 	// indices every frame so INVENTORY_UPDATE shifts can't desync them)
 	enhance_weapon_id:      [64]u8,
@@ -316,8 +324,11 @@ update :: proc(dt: f32) -> (requested: sys.App_State, has_request: bool) {
 		return .TITLE, false
 	}
 
-	// 3. Input.
-	inp := sys.poll_input(state.chat_focused, state.player, state.ctx.zone, dt)
+	// 3. Input. A focused debug-menu text field takes over the keyboard the
+	//    same way chat focus does (typing coordinates must not move the
+	//    character or trip keybound windows).
+	debug_typing := ui.menu_text_input_active(&state.debug_menu)
+	inp := sys.poll_input(state.chat_focused || debug_typing, state.player, state.ctx.zone, dt)
 	handle_chat_input(inp)
 
 	// 2b. ESC chain: close menus → unfocus chat → untarget → toggle system menu.
@@ -503,6 +514,10 @@ cancel_click_to_move :: proc() {
 apply_escape :: proc() {
 	esc := rl.IsKeyPressed(.ESCAPE)
 	if !esc do return
+
+	// A focused debug text field consumes Esc (unfocus only — menu_update
+	// clears the field; nothing else in the chain may react).
+	if ui.menu_text_input_active(&state.debug_menu) do return
 
 	// Cancel a ground-target reticle first (before the menu/escape chain).
 	if state.ground_target.active {
@@ -1107,7 +1122,11 @@ cursor_over_ui :: proc() -> bool {
 // through this — the chat gate lives in one place, and the key comes from the
 // settings keybind table (so e.g. inventory on I, J, or whatever the user set).
 menu_keybind :: proc(m: ^ui.Menu, action: sys.Action) {
-	if !state.chat_focused && sys.bind_pressed(action) do ui.menu_toggle(m)
+	if !state.chat_focused &&
+	!ui.menu_text_input_active(&state.debug_menu) &&
+	sys.bind_pressed(action) {
+		ui.menu_toggle(m)
+	}
 }
 
 // Centered rect for the "Respawn at Homepoint" button on the death overlay.

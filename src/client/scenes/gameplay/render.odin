@@ -14,7 +14,7 @@ import rl "vendor:raylib"
 render :: proc() {
 	if !state.initialized do return
 
-	rl.ClearBackground(rl.SKYBLUE)
+	sys.postfx_begin(sys.lighting_clear_color())
 
 	rl.BeginMode3D(state.player.camera)
 	if state.ctx.zone != nil {
@@ -32,6 +32,10 @@ render :: proc() {
 	}
 	draw_debug_ground_ray()
 	rl.EndMode3D()
+
+	// Bloom + vibrance composite onto the backbuffer; the 2D HUD below
+	// draws unbloomed.
+	sys.postfx_end()
 
 	// 2D entity nameplates / health bars / target indicators.
 	sys.render_entity_ui_2d(state.scene, state.player.camera)
@@ -284,6 +288,7 @@ draw_ground_reticle_hint :: proc() {
 
 draw_local_player :: proc() {
 	p := state.player.position
+	sys.blob_shadow_draw(p.x, p.y, p.z, state.player.mounted ? 1.9 : 0.9)
 	axis, angle := sys.euler_y_to_raylib(state.player.yaw)
 	// Untinted like every other entity — the old light-blue wash darkened
 	// skin/armor and made the greave straps read as black bands.

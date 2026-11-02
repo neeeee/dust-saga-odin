@@ -1128,6 +1128,22 @@ export const ZONE_DATABASE: Record<string, ZoneDefinition> = {
     environmentObjects: [],
     isPvpEnabled: false
   },
+  '2001001': {
+    id: '2001001',
+    name: 'F01_01',
+    description: 'Pandora Saga area F01_01 (field; terrain map_F01_01.glb).',
+    type: ZoneType.PVE,
+    levelRange: [1, 10],
+    groundColor: { r: 0.902, g: 0.7843, b: 0.549 },
+    fogColor: { r: 0.902, g: 0.7843, b: 0.549 },
+    fogDensity: 0.0008,
+    size: 1520,
+    playerSpawn: { x: -8.9, y: 0, z: 62.4 },
+    connections: [],
+    spawns: [],
+    environmentObjects: [],
+    isPvpEnabled: false
+  },
   '2001002': {
     id: '2001002',
     name: 'F01_02',

@@ -19,6 +19,13 @@ ASSETS_ROOT :: "assets/"
 MASTER_VOLUME :: f32(0.8)
 BGM_VOLUME    :: f32(0.6)
 
+// Master audio kill switch (TEMPORARY). The scene/zone BGM picks are
+// placeholder heuristics, not the real per-zone tracks, and they get grating
+// during testing — flip to true to bring everything back. With this off,
+// audio_init leaves audio_ready false, which already no-ops every play call,
+// and no audio device is opened at all.
+AUDIO_ENABLED :: false
+
 // Fixed per-scene tracks (arbitrary but stable picks from BGM_000..028).
 BGM_TITLE  :: "sound/BGM/BGM_026.ogg"
 BGM_LOGIN  :: "sound/BGM/BGM_027.ogg"
@@ -31,6 +38,7 @@ audio_bgm_path:  string // heap-owned path of the current/last track, "" = none
 audio_bgm_valid: bool
 
 audio_init :: proc() {
+	if !AUDIO_ENABLED do return
 	rl.InitAudioDevice()
 	rl.SetMasterVolume(MASTER_VOLUME)
 	audio_sounds = make(map[string]rl.Sound)

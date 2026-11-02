@@ -45,6 +45,36 @@ at camera-dependent positions (floating slabs, misplaced wall wedges).
 meshes — texture with zero opaque texels) from the export entirely, or give
 them an explicitly empty mesh.
 
+## Bug 3 (high): default_ground exported over chipped cells
+
+Every 2026-10-30 bake ships BOTH terrain copies at full opacity:
+
+- the FM_* chip tiles — the detailed surface the player sees
+- `default_ground` — the coarse base heightmap (one quad per map grid cell,
+  e.g. 71×71 verts @24u for `map_F05_01.glb`, incl. real ridge heights)
+
+The original engine renders the default ground ONLY on cells with no chip
+placed ("default" = the no-chip fallback). The export bakes both over the
+same cells, so the coarse surface crosses the detailed one: tan wedges
+poking through slopes, the chip layer reading as hovering/doubled, open
+seams wherever the two disagree. Visible on every F/D/E bake (all the
+field/dungeon zones); the T-town bakes only escape because their terrain
+is flat enough for both surfaces to coincide.
+
+Examples: `map_F05_01.glb` default_ground is flat y≈0 at the map center
+while the chip terrain there spans y 21-40; `map_D01_01.glb` default_ground
+is a flat y≈0 plane vs chips up to y 38.
+
+**Fix**: when writing `default_ground`, drop the quads whose grid cell
+contains any terrain chip (the source data knows chip placement — it's the
+same list that emits the FM_* tiles). The `<area>_ground.glb` sidecar used
+for collision should keep the full default_ground unchanged.
+
+**Client-side state** (already shipped): `map_builder.odin` →
+`terrain_mask_default_ground` rebuilds the default_ground mesh at load,
+keeping exactly the triangles whose grid cell no FM_* chip footprint
+touches (grid cell size from the JSON's `grid.chip_size`).
+
 ## Verification
 
 - Noesis (GLB, alpha-honoring) and the Dust Saga client must both show the
@@ -60,12 +90,22 @@ them an explicitly empty mesh.
 
 ## Client-side state (already shipped, no action needed)
 
-`src/client/systems/map_builder.odin` (`glb_material_alpha`) now parses the
-GLB JSON chunk and classifies per-PRIMITIVE (in raylib's flatten order —
-raylib's `meshMaterial` indexes per-primitive material slots, NOT glTF
-material indices; keying by glTF material index silently left most meshes
-on stale uniforms). Rules: MASK-on-soft-alpha → OPAQUE (alpha ignored),
-OPAQUE-on-all-transparent-texture → HIDDEN (skip), OPAQUE-twin-of-MASK →
-MASK, BLEND kept, everything else OPAQUE. The draw also binds the shader
-per mesh (`BeginShaderMode` before `SetShaderValue`) — uniforms submitted
-without an explicit bind land on the previously bound program.
+`src/client/systems/map_builder.odin` (`glb_material_alpha`) parses the
+GLB JSON chunk and classifies per-MATERIAL. Rules: MASK-on-soft-alpha →
+OPAQUE (alpha ignored), OPAQUE-on-all-transparent-texture → HIDDEN (skip),
+OPAQUE-twin-of-MASK → MASK, BLEND kept, everything else OPAQUE. The draw
+binds the shader per mesh (`BeginShaderMode` before `SetShaderValue`) —
+uniforms submitted without an explicit bind land on the previously bound
+program.
+
+IMPORTANT indexing note (2026-10-31): the shipped `raylib.dll`'s GLTF
+loader stores `meshMaterial[mesh] = gltf_material_index + 1` (slot 0 =
+default white; one material slot per glTF material, SHARED across meshes —
+verified with `tools/matprobe.odin`: map_T01_01.glb → 1694 meshes over 433
+shared slots). `glb_material_alpha` therefore emits arrays indexed by that
+material slot. The earlier per-primitive scheme (built when the dll
+appeared to create one slot per primitive) silently swapped alpha state on
+the F/D/E bakes — e.g. map_F05_01.glb's first meshes alternate slots
+[1,2,1,2,…], so grass cards went OPAQUE (solid green quads) and foliage
+MASK/BLEND shuffled; the T bakes only survived because their material
+order happened to align the two sequences.

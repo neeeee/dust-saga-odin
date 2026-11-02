@@ -36,6 +36,7 @@ Menu_Item_Kind :: enum {
 	SLIDER,
 	LABEL,
 	SEPARATOR,
+	TEXT,
 }
 
 Menu_Item :: struct {
@@ -51,6 +52,12 @@ Menu_Item :: struct {
 	slider_drag: bool,
 	label_color: rl.Color,
 	active:      bool,
+	// TEXT fields: the buffer lives in the caller's state (stable across the
+	// per-frame menu rebuilds) and is edited in place while focused — the
+	// same ownership model as the stable-id sliders' value read-back.
+	text_buf:    []u8,
+	text_len:    ^int,
+	numeric:     bool,
 }
 
 Menu :: struct {
@@ -60,6 +67,9 @@ Menu :: struct {
 	focused:      bool,
 	items:        [dynamic]Menu_Item,
 	next_id:      int,
+	// Focused TEXT item id (-1 none). Lives on the Menu, not the item, so it
+	// survives the per-frame clear/rebuild cycle of dynamic menus.
+	active_text_id: int,
 	scroll_y:     f32,
 	max_scroll:   f32,
 	dragging:     bool,
@@ -110,6 +120,7 @@ menu_create :: proc(title: string, x, y, w, h: f32) -> Menu {
 	m.open = false
 	m.items = make([dynamic]Menu_Item)
 	m.next_id = 1
+	m.active_text_id = -1
 	m.bg_color = MENU_COL_BG
 	m.border_color = MENU_COL_BORDER
 	m.title_bg = MENU_COL_TITLE_BG
@@ -228,6 +239,37 @@ menu_add_separator :: proc(m: ^Menu) {
 	})
 }
 
+// Text input field for menus rebuilt every frame (stable id). The buffer is
+// caller-owned and edited in place; `len_ptr` tracks its live length.
+// numeric=true restricts typing to 0-9 . - + (coordinates etc.).
+menu_add_text_id :: proc(
+	m: ^Menu,
+	label: string,
+	id: int,
+	buf: []u8,
+	len_ptr: ^int,
+	numeric: bool,
+) {
+	append(&m.items, Menu_Item {
+		kind = .TEXT,
+		id = id,
+		label = label,
+		label_color = MENU_COL_BTN_TXT,
+		text_buf = buf,
+		text_len = len_ptr,
+		numeric = numeric,
+		active = id == m.active_text_id,
+	})
+	if id >= m.next_id do m.next_id = id + 1
+}
+
+// True while any TEXT field of this menu holds keyboard focus — callers gate
+// gameplay key handling on it (typing must not move the character or pop
+// keybound windows).
+menu_text_input_active :: proc(m: ^Menu) -> bool {
+	return m.open && m.active_text_id >= 0
+}
+
 // ── clear / find ──────────────────────────────────────────────────────────
 
 menu_clear :: proc(m: ^Menu) {
@@ -259,6 +301,7 @@ menu_open :: proc(m: ^Menu) {
 menu_close :: proc(m: ^Menu) {
 	m.open = false
 	m.focused = false
+	m.active_text_id = -1
 	for i in 0 ..< len(m.items) {
 		m.items[i].slider_drag = false
 	}
@@ -309,12 +352,24 @@ menu_update :: proc(m: ^Menu) {
 	m.rect.x = math.clamp(m.rect.x, -m.rect.width + 100, sw - 100)
 	m.rect.y = math.clamp(m.rect.y, -MENU_TITLE_H, sh - 50)
 
+	// A focused text field swallows Esc (leave the field, keep the menu
+	// open) before the window's close_on_esc handling.
+	if m.active_text_id >= 0 && rl.IsKeyPressed(.ESCAPE) {
+		m.active_text_id = -1
+		return
+	}
+
 	if m.close_on_esc && rl.IsKeyPressed(.ESCAPE) {
 		menu_close(m)
 		return
 	}
 
 	m.focused = rl.CheckCollisionPointRec(mouse, m.rect)
+
+	// Clicking outside the menu drops text focus (chat-like behavior).
+	if m.active_text_id >= 0 && rl.IsMouseButtonPressed(.LEFT) && !m.focused {
+		m.active_text_id = -1
+	}
 
 	// title bar drag
 	title_rect := rl.Rectangle{m.rect.x, m.rect.y, m.rect.width, MENU_TITLE_H}
@@ -351,6 +406,38 @@ menu_update :: proc(m: ^Menu) {
 		}
 	}
 
+	// The focused text field consumes the keyboard: typed chars append to
+	// its caller-owned buffer, Backspace removes, Ctrl+V pastes (filtered),
+	// Enter reports as a click (the caller applies the value). Runs BEFORE
+	// the dragging/focus early-outs — a focused field keeps the keyboard
+	// even when the pointer has left the window.
+	for i in 0 ..< len(m.items) {
+		item := &m.items[i]
+		if item.kind != .TEXT || item.id != m.active_text_id do continue
+		item.active = true
+
+		if rl.IsKeyPressedRepeat(.BACKSPACE) && item.text_len^ > 0 {
+			item.text_len^ -= 1
+		}
+
+		if rl.IsKeyDown(.LEFT_CONTROL) && rl.IsKeyPressed(.V) {
+			clip := rl.GetClipboardText()
+			if clip != nil {
+				cb := transmute([^]u8)(clip)
+				for j := 0; cb[j] != 0; j += 1 {
+					text_field_accept(item, cb[j])
+				}
+			}
+		}
+		for c := rl.GetCharPressed(); c != 0; c = rl.GetCharPressed() {
+			if c >= 32 && c <= 255 do text_field_accept(item, u8(c))
+		}
+
+		if rl.IsKeyPressed(.ENTER) || rl.IsKeyPressed(.KP_ENTER) {
+			item.clicked = true
+		}
+	}
+
 	if m.dragging do return
 	if !m.focused do return
 
@@ -369,14 +456,23 @@ menu_update :: proc(m: ^Menu) {
 
 		#partial switch item.kind {
 		case .BUTTON:
-			if hov && rl.IsMouseButtonPressed(.LEFT) do item.clicked = true
+			if hov && rl.IsMouseButtonPressed(.LEFT) {
+				item.clicked = true
+				m.active_text_id = -1
+			}
 		case .TOGGLE:
 			if hov && rl.IsMouseButtonPressed(.LEFT) {
 				item.checked = !item.checked
 				item.clicked = true
+				m.active_text_id = -1
 			}
 		case .SLIDER:
-			if hov && rl.IsMouseButtonPressed(.LEFT) do item.slider_drag = true
+			if hov && rl.IsMouseButtonPressed(.LEFT) {
+				item.slider_drag = true
+				m.active_text_id = -1
+			}
+		case .TEXT:
+			if hov && rl.IsMouseButtonPressed(.LEFT) do m.active_text_id = item.id
 		}
 	}
 
@@ -457,6 +553,8 @@ menu_draw :: proc(m: ^Menu) {
 			draw_lbl_item(item, ir)
 		case .SEPARATOR:
 			draw_sep_item(ir)
+		case .TEXT:
+			draw_txt_item(item, ir)
 		}
 	}
 
@@ -467,6 +565,48 @@ menu_draw :: proc(m: ^Menu) {
 }
 
 // ── item draw helpers ─────────────────────────────────────────────────────
+
+// Appends one byte to a focused TEXT field's buffer, honoring the numeric
+// charset and the buffer capacity.
+text_field_accept :: proc(item: ^Menu_Item, b: u8) {
+	if item.text_len^ >= len(item.text_buf) do return
+	if item.numeric {
+		ok := (b >= '0' && b <= '9') || b == '.' || b == '-' || b == '+'
+		if !ok do return
+	} else if b < 32 do return
+	item.text_buf[item.text_len^] = b
+	item.text_len^ += 1
+}
+
+draw_txt_item :: proc(item: ^Menu_Item, r: rl.Rectangle) {
+	draw_str(
+		item.label,
+		i32(r.x),
+		i32(r.y + (r.height - f32(MENU_LBL_FZ)) / 2),
+		MENU_LBL_FZ,
+		item.label_color,
+	)
+
+	lw := f32(measure_str(item.label, MENU_LBL_FZ))
+	box := rl.Rectangle{r.x + lw + 10, r.y + 3, r.width - lw - 14, r.height - 6}
+	rl.DrawRectangleRec(box, rl.Color{16, 16, 22, 255})
+	border := MENU_COL_BORDER
+	if item.active do border = rl.Color{120, 170, 240, 255}
+	rl.DrawRectangleLinesEx(box, 1, border)
+
+	text := string(item.text_buf[:item.text_len^])
+	draw_str(
+		text,
+		i32(box.x) + 4,
+		i32(box.y + (box.height - f32(MENU_LBL_FZ)) / 2),
+		MENU_LBL_FZ,
+		rl.WHITE,
+	)
+	if item.active && i64(rl.GetTime() * 2.0) % 2 == 0 {
+		cx := box.x + 6 + f32(measure_str(text, MENU_LBL_FZ))
+		rl.DrawRectangleRec({cx, box.y + 4, 2, box.height - 8}, rl.Color{200, 210, 235, 255})
+	}
+}
 
 draw_btn_item :: proc(item: ^Menu_Item, r: rl.Rectangle) {
 	mouse := rl.GetMousePosition()

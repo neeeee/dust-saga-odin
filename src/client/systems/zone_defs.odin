@@ -105,6 +105,19 @@ Zone_Definition :: struct {
 	instances:    [dynamic]Map_Instance,
 	loaded:       bool, // parsed successfully from disk
 
+	// Lighting environment parsed from the JSON's `environment` block
+	// (the original game's env_settings CSVs) — sun, hemisphere ambient,
+	// fog. Applied to the lit shaders by lighting_apply at load.
+	lighting: Zone_Lighting,
+	// Static sun shadow bake for this zone (lighting_bake_shadows); freed
+	// by zone_destroy -> lighting_release_zone.
+	shadow_rt: rl.RenderTexture,
+	// Skydome textures (sky_load_zone from source.sky; id 0 = none — the
+	// zone keeps the fog-colored backdrop). Cached process-lifetime in
+	// sky.odin, never unloaded per zone.
+	sky_tex1: rl.Texture,
+	sky_tex2: rl.Texture,
+
 	// Whole-area terrain GLB (Pandora maps: source.terrain_glb in the JSON).
 	// Owned by the assets cache — release via assets_model_release, never
 	// UnloadModel directly. nil for the older procedural zones (no GLB).
@@ -202,6 +215,7 @@ zone_destroy :: proc(z: ^Zone_Definition) {
 		assets_model_release(z.terrain)
 		z.terrain = nil
 	}
+	lighting_release_zone(z)
 	for c in z.colliders {
 		zone_str_free(c.label)
 	}

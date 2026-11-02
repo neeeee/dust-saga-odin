@@ -24,6 +24,7 @@ import title_screen "scenes/title_screen"
 main :: proc() {
 	sys.autoplay_parse_args()
 
+	rl.SetConfigFlags({rl.ConfigFlag.MSAA_4X_HINT, rl.ConfigFlag.VSYNC_HINT})
 	rl.InitWindow(1280, 720, "Dust Saga")
 	rl.SetTargetFPS(60)
 	rl.SetExitKey(.KEY_NULL) // we handle ESC ourselves
